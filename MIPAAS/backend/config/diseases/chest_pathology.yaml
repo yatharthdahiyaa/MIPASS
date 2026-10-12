@@ -1,0 +1,78 @@
+# Chest Pathology — Disease Configuration
+# Models: CheXNet DenseNet-121 (14-class), TorchXRayVision
+
+disease_id: chest_pathology
+display_name: "Chest X-ray Multi-Pathology Detection"
+modalities: [XRAY]
+
+models:
+  - adapter: CheXNetAdapter
+    name: chexnet_densenet121
+    version: "1.0"
+    checkpoint: "gs://mipaas-models/chexnet/densenet121_v1.pt"
+    source_repo: "https://github.com/mlmed/torchxrayvision"
+    task: classification
+    output_type: multi_label_probabilities
+    classes:
+      - atelectasis
+      - cardiomegaly
+      - effusion
+      - infiltration
+      - mass
+      - nodule
+      - pneumonia
+      - pneumothorax
+      - consolidation
+      - edema
+      - emphysema
+      - fibrosis
+      - pleural_thickening
+      - hernia
+    description: "DenseNet-121 for 14 chest pathology classification from X-ray"
+
+  - adapter: CheXNetAdapter
+    name: chexnet_resnet18
+    version: "1.0"
+    checkpoint: "gs://mipaas-models/chexnet/resnet18_v1.pt"
+    source_repo: "https://github.com/mipaas/chest-xray-classifier"
+    task: classification
+    output_type: multi_label_probabilities
+    classes:
+      - atelectasis
+      - cardiomegaly
+      - effusion
+      - infiltration
+      - mass
+      - nodule
+      - pneumonia
+      - pneumothorax
+      - consolidation
+      - edema
+      - emphysema
+      - fibrosis
+      - pleural_thickening
+      - hernia
+    description: "ResNet-18 lightweight model for 14 chest pathology screening"
+
+preprocessing:
+  target_size: [224, 224]  # 2D input
+  is_3d: false
+  normalize: imagenet  # ImageNet mean/std normalization
+  grayscale_to_rgb: true
+  histogram_equalization: true
+
+xai:
+  primary: gradcam_plus_plus
+  validation: [occlusion_sensitivity, integrated_gradients]
+  gradcam:
+    target_layer: auto
+    upsample: bilinear  # 2D upsampling
+  occlusion:
+    patch_size: [16, 16]
+    stride: [8, 8]
+  integrated_gradients:
+    n_steps: 50
+    baseline: zeros
+
+segmentation:
+  enabled: false  # 2D X-ray — heatmap overlay only, no volumetric segmentation

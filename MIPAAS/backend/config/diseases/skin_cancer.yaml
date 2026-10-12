@@ -1,0 +1,46 @@
+# Skin Cancer / Lesion — Disease Configuration
+# Models: HAM10000 EfficientNet-B0 Lesion Classifier
+
+disease_id: skin_cancer
+display_name: "Skin Cancer & Lesion Classification (HAM10000)"
+modalities: [DERMOSCOPY, PHOTO]
+
+models:
+  - adapter: SkinLesionAdapter
+    name: efficientnet_b0
+    version: "1.0"
+    checkpoint: "gs://mipaas-models/skin/efficientnet_inference.pth"
+    source_repo: "https://github.com/rohitpal/HAM10000-Skin-Lesion-Classifier"
+    task: classification
+    output_type: class_probabilities
+    classes:
+      - akiec
+      - bcc
+      - bkl
+      - df
+      - mel
+      - nv
+      - vasc
+    description: "EfficientNet-B0 7-class dermoscopy classifier with malignancy risk triage"
+
+preprocessing:
+  target_size: [224, 224]
+  is_3d: false
+  normalize: imagenet
+  color_space: RGB
+
+xai:
+  primary: gradcam_plus_plus
+  validation: [occlusion_sensitivity, integrated_gradients]
+  gradcam:
+    target_layer: "features[-1]"
+    upsample: bilinear
+  occlusion:
+    patch_size: [16, 16]
+    stride: [8, 8]
+  integrated_gradients:
+    n_steps: 50
+    baseline: zeros
+
+segmentation:
+  enabled: false

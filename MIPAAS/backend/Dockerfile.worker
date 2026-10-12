@@ -1,0 +1,66 @@
+# ──────────────────────────────────────────────
+# MIPAAS Worker — GPU-enabled Dockerfile
+# For preprocessing, inference, XAI, segmentation workers
+# ──────────────────────────────────────────────
+
+FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04 AS base
+
+# System dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3.11-venv \
+    python3-pip \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set Python 3.11 as default
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 \
+    && update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1
+
+WORKDIR /app
+
+# Install PyTorch with CUDA support
+RUN pip install --no-cache-dir \
+    torch==2.4.0+cu121 \
+    torchvision==0.19.0+cu121 \
+    --index-url https://download.pytorch.org/whl/cu121
+
+# Install remaining dependencies
+COPY requirements-worker.txt .
+RUN pip install --no-cache-dir -r requirements-worker.txt
+
+# Copy application code
+COPY app/ app/
+COPY config/ config/
+COPY models/ models/
+COPY workers/ workers/
+
+# Environment
+ENV PYTHONUNBUFFERED=1
+ENV PORT=8080
+ENV MODEL_CACHE_DIR=/tmp/model_cache
+ENV NVIDIA_VISIBLE_DEVICES=all
+
+# Create model cache directory
+RUN mkdir -p ${MODEL_CACHE_DIR}
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD curl -f http://localhost:${PORT}/health || exit 1
+
+EXPOSE ${PORT}
+
+# Worker type is determined by the entrypoint (set at deploy time)
+# Examples:
+#   gunicorn "workers.preprocessing.worker:app" ...
+#   gunicorn "workers.inference.worker:app" ...
+#   gunicorn "workers.xai.worker:app" ...
+#   gunicorn "workers.segmentation.worker:app" ...
+CMD exec gunicorn \
+    --bind :${PORT} \
+    --workers 1 \
+    --threads 1 \
+    --timeout 600 \
+    --access-logfile - \
+    --error-logfile - \
+    "${WORKER_MODULE:-workers.preprocessing.worker}:app"

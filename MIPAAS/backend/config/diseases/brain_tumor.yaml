@@ -1,0 +1,56 @@
+# Brain Tumor — Disease Configuration
+# Models: BraTS SegResNet (MONAI), 3D DenseNet (tumor grading)
+
+disease_id: brain_tumor
+display_name: "Brain Tumor Segmentation & Grading"
+modalities: [MRI_T1, MRI_T2, MRI_FLAIR, MRI_T1CE]
+
+models:
+  - adapter: BraTSAdapter
+    name: brats_segresnet
+    version: "1.0"
+    checkpoint: "gs://mipaas-models/brats/segresnet_v1.pt"
+    source_repo: "https://github.com/Project-MONAI/model-zoo"
+    task: segmentation
+    output_type: multi_class_mask
+    classes: ["background", "edema", "enhancing_tumor", "necrotic_core"]
+    description: "BraTS glioma segmentation using SegResNet"
+
+  - adapter: DenseNet3DAdapter
+    name: densenet3d_grade
+    version: "1.0"
+    checkpoint: "gs://mipaas-models/densenet3d/brain_grade_v1.pt"
+    source_repo: "https://github.com/Project-MONAI/model-zoo"
+    task: classification
+    output_type: class_probabilities
+    classes: ["low_grade_glioma", "high_grade_glioma"]
+    description: "3D DenseNet tumor grade classification"
+
+preprocessing:
+  target_spacing: [1.0, 1.0, 1.0]
+  target_size: [128, 128, 128]
+  normalize: z_score  # MRI uses z-score normalization (no Hounsfield units)
+  skull_strip: true
+  register_to_template: MNI152
+  multi_channel: true  # Stack T1, T2, FLAIR, T1CE as channels
+
+xai:
+  primary: gradcam_plus_plus
+  validation: [occlusion_sensitivity, integrated_gradients]
+  gradcam:
+    target_layer: auto
+    upsample: trilinear
+  occlusion:
+    patch_size: [8, 8, 8]
+    stride: [4, 4, 4]
+  integrated_gradients:
+    n_steps: 50
+    baseline: zeros
+
+segmentation:
+  enabled: true
+  method: shap_feature_attribution
+  lesion_mask:
+    threshold: 0.5
+    min_volume_mm3: 50
+    post_processing: connected_components

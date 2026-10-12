@@ -1,0 +1,42 @@
+# Cardiac — Disease Configuration
+# Models: ACDC U-Net (ventricle segmentation)
+
+disease_id: cardiac
+display_name: "Cardiac MRI — Ventricle Segmentation"
+modalities: [MRI_CINE]
+
+models:
+  - adapter: CardiacUNetAdapter
+    name: acdc_unet
+    version: "1.0"
+    checkpoint: "gs://mipaas-models/cardiac/acdc_unet_v1.pt"
+    source_repo: "https://github.com/Project-MONAI/model-zoo"
+    task: segmentation
+    output_type: multi_class_mask
+    classes: ["background", "left_ventricle", "myocardium", "right_ventricle"]
+    description: "U-Net ventricle and myocardium segmentation from cardiac MRI"
+
+preprocessing:
+  target_spacing: [1.25, 1.25, -1]  # In-plane only, keep slice spacing
+  target_size: [256, 256]
+  normalize: z_score
+  is_3d: false  # Process per-slice (2D+time)
+  temporal: true  # Cardiac has temporal dimension
+
+xai:
+  primary: gradcam_plus_plus
+  validation: [integrated_gradients]
+  gradcam:
+    target_layer: auto
+    upsample: bilinear
+  integrated_gradients:
+    n_steps: 30
+    baseline: zeros
+
+segmentation:
+  enabled: true
+  method: shap_feature_attribution
+  lesion_mask:
+    threshold: 0.5
+    post_processing: morphological_closing
+    compute_volumes: true  # Compute LV/RV volumes, ejection fraction

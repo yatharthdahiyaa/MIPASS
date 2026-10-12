@@ -1,0 +1,25 @@
+# MIPAAS Backend — API Dependencies
+# Install: pip install -r requirements.txt
+
+# Web Framework
+flask>=3.0,<4.0
+gunicorn>=22.0
+flask-cors>=5.0
+
+# GCP SDKs
+google-cloud-storage>=2.18
+google-cloud-pubsub>=2.23
+google-cloud-firestore>=2.19
+google-cloud-secret-manager>=2.20
+google-cloud-logging>=3.11
+google-auth>=2.34
+
+# Utilities
+pyyaml>=6.0
+marshmallow>=3.22
+python-dotenv>=1.0
+structlog>=24.4
+redis>=5.1
+
+# Medical imaging (lightweight, for metadata parsing only)
+pydicom>=3.0

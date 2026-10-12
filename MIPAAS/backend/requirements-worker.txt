@@ -1,0 +1,26 @@
+# MIPAAS Backend — Worker Dependencies (GPU)
+# Install: pip install -r requirements-worker.txt
+# Note: Install PyTorch with CUDA support separately:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+
+-r requirements.txt
+
+# Deep Learning
+torch>=2.4
+torchvision>=0.19
+monai>=1.4
+
+# Medical Imaging
+nibabel>=5.3
+SimpleITK>=2.4
+scikit-image>=0.24
+scipy>=1.14
+numpy>=1.26
+
+# XAI Libraries
+captum>=0.7
+shap>=0.46
+
+# Visualization
+matplotlib>=3.9
+Pillow>=10.4

@@ -12,6 +12,11 @@ node_modules/
 # Testing
 coverage/
 **/coverage/
+.coverage
+**/.coverage
+*.coverage*
+htmlcov/
+**/htmlcov/
 
 # Next.js
 .next/
@@ -47,3 +52,57 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 **/next-env.d.ts
+
+# Python
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+**/*.egg-info/
+.eggs/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+**/venv/
+**/.venv/
+
+# PyTorch model weights (too large for git)
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.bin
+
+# Medical imaging data (PHI — never commit)
+*.dcm
+*.dicom
+*.nii
+*.nii.gz
+*.npy
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# GCP
+*-service-account.json
+gcp-credentials.json
+
+# Docker
+docker-compose.override.yml
+
+# Large media files
+*.mp4
+*.avi
+*.mov
+
+# External / Local Models directory
+MODELS/
+**/MODELS/

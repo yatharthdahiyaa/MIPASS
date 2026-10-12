@@ -1,0 +1,32 @@
+# Diabetic Foot / Diabetes Mellitus — Disease Configuration
+# Models: Plantar Thermogram Bilateral Asymmetry & GLCM Classifier
+
+disease_id: diabetic_foot
+display_name: "Diabetic Foot & Neuropathy Screening (Plantar Thermogram)"
+modalities: [THERMAL]
+
+models:
+  - adapter: DiabeticFootAdapter
+    name: thermal_dm_predictor
+    version: "1.0"
+    checkpoint: "gs://mipaas-models/thermal/thermal_dm_model.joblib"
+    source_repo: "https://github.com/mipaas/diabetic-foot-detect-thermal"
+    task: risk_prediction
+    output_type: class_probabilities
+    classes:
+      - Control
+      - DM
+    description: "Plantar thermogram bilateral asymmetry and GLCM texture classifier for DM screening"
+
+preprocessing:
+  target_size: [128, 64]
+  is_3d: false
+  normalize: min_max
+  repair_holes: true
+
+xai:
+  primary: thermal_asymmetry_map
+  validation: []
+
+segmentation:
+  enabled: false

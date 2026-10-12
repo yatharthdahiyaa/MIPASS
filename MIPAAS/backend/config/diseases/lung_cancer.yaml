@@ -1,0 +1,56 @@
+# Lung Cancer — Disease Configuration
+# Models: Sybil (MIT), 3D ResNet (MONAI-based nodule classifier)
+
+disease_id: lung_cancer
+display_name: "Lung Cancer Detection & Risk Prediction"
+modalities: [CT]
+
+models:
+  - adapter: SybilAdapter
+    name: sybil
+    version: "1.0"
+    checkpoint: "gs://mipaas-models/sybil/sybil_ensemble.ckpt"
+    source_repo: "https://github.com/reginabarzilaygroup/Sybil"
+    task: risk_prediction
+    output_type: temporal_risk_scores
+    classes: ["1yr", "2yr", "3yr", "4yr", "5yr", "6yr"]
+    description: "6-year lung cancer risk prediction from low-dose CT"
+
+  - adapter: ResNet3DAdapter
+    name: resnet3d_nodule
+    version: "1.0"
+    checkpoint: "gs://mipaas-models/resnet3d/nodule_classifier_v1.pt"
+    source_repo: "https://github.com/Project-MONAI/model-zoo"
+    task: classification
+    output_type: class_probabilities
+    classes: ["benign", "malignant"]
+    description: "3D ResNet nodule malignancy classification"
+
+preprocessing:
+  target_spacing: [1.0, 1.0, 1.0]
+  target_size: [64, 256, 256]
+  intensity_window: [-1000, 400]  # Hounsfield unit windowing for CT
+  normalize: true
+  clip_body: true
+
+xai:
+  primary: gradcam_plus_plus
+  validation: [occlusion_sensitivity, integrated_gradients]
+  gradcam:
+    target_layer: auto
+    upsample: trilinear
+  occlusion:
+    patch_size: [8, 16, 16]
+    stride: [4, 8, 8]
+  integrated_gradients:
+    n_steps: 50
+    baseline: zeros
+
+segmentation:
+  enabled: true
+  method: shap_deepshap
+  lesion_mask:
+    threshold: 0.5
+    min_volume_mm3: 10
+    morphology: [opening, closing]
+    kernel_size: 3

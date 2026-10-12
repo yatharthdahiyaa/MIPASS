@@ -1,0 +1,128 @@
+# ──────────────────────────────────────────────
+# MIPAAS Backend — Local Development
+# docker-compose up to start all services locally
+# ──────────────────────────────────────────────
+
+services:
+  # ──── Flask API Gateway ────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - FLASK_ENV=development
+      - GCP_PROJECT_ID=mipaas-dev
+      - GCS_DATA_BUCKET=mipaas-dev-data
+      - GCS_MODELS_BUCKET=mipaas-models
+      - FIRESTORE_EMULATOR_HOST=firestore:8080
+      - PUBSUB_EMULATOR_HOST=pubsub:8085
+      - REDIS_HOST=redis
+      - CORS_ORIGINS=http://localhost:3000
+      - DISEASE_CONFIG_DIR=/app/config/diseases
+    depends_on:
+      - firestore
+      - pubsub
+      - redis
+    volumes:
+      - ./app:/app/app
+      - ./config:/app/config
+
+  # ──── Preprocessing Worker ────
+  worker-preprocess:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    ports:
+      - "8081:8080"
+    environment:
+      - WORKER_MODULE=workers.preprocessing.worker
+      - GCP_PROJECT_ID=mipaas-dev
+      - GCS_DATA_BUCKET=mipaas-dev-data
+      - FIRESTORE_EMULATOR_HOST=firestore:8080
+      - PUBSUB_EMULATOR_HOST=pubsub:8085
+    depends_on:
+      - firestore
+      - pubsub
+
+  # ──── Inference Worker ────
+  worker-inference:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    ports:
+      - "8082:8080"
+    environment:
+      - WORKER_MODULE=workers.inference.worker
+      - GCP_PROJECT_ID=mipaas-dev
+      - GCS_DATA_BUCKET=mipaas-dev-data
+      - GCS_MODELS_BUCKET=mipaas-models
+      - FIRESTORE_EMULATOR_HOST=firestore:8080
+      - PUBSUB_EMULATOR_HOST=pubsub:8085
+      - MODEL_CACHE_DIR=/tmp/model_cache
+    depends_on:
+      - firestore
+      - pubsub
+    # Uncomment for GPU support:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # ──── XAI Worker ────
+  worker-xai:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    ports:
+      - "8083:8080"
+    environment:
+      - WORKER_MODULE=workers.xai.worker
+      - GCP_PROJECT_ID=mipaas-dev
+      - GCS_DATA_BUCKET=mipaas-dev-data
+      - GCS_MODELS_BUCKET=mipaas-models
+      - FIRESTORE_EMULATOR_HOST=firestore:8080
+      - PUBSUB_EMULATOR_HOST=pubsub:8085
+    depends_on:
+      - firestore
+      - pubsub
+
+  # ──── Segmentation Worker ────
+  worker-segmentation:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    ports:
+      - "8084:8080"
+    environment:
+      - WORKER_MODULE=workers.segmentation.worker
+      - GCP_PROJECT_ID=mipaas-dev
+      - GCS_DATA_BUCKET=mipaas-dev-data
+      - GCS_MODELS_BUCKET=mipaas-models
+      - FIRESTORE_EMULATOR_HOST=firestore:8080
+      - PUBSUB_EMULATOR_HOST=pubsub:8085
+    depends_on:
+      - firestore
+      - pubsub
+
+  # ──── GCP Emulators ────
+  firestore:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    command: gcloud emulators firestore start --host-port=0.0.0.0:8080
+    ports:
+      - "8086:8080"
+
+  pubsub:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    command: gcloud beta emulators pubsub start --host-port=0.0.0.0:8085
+    ports:
+      - "8085:8085"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
