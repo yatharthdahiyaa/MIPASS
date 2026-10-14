@@ -9,6 +9,7 @@ import {
   ROLE_DEFINITIONS,
   UserProfile,
 } from '@/types/rbac';
+import { iamAuthService, IamUserResult } from '@/services/iamAuthService';
 
 interface RBACContextType {
   currentUser: UserProfile;
@@ -27,6 +28,11 @@ interface RBACContextType {
   ) => void;
   isRBACModalOpen: boolean;
   setRBACModalOpen: (open: boolean) => void;
+  // IAM Authentication Integration
+  iamUser: IamUserResult | null;
+  isIamAuthenticated: boolean;
+  loginWithIAM: (user: IamUserResult) => void;
+  logoutIAM: () => Promise<void>;
 }
 
 const RBACContext = createContext<RBACContextType | undefined>(undefined);
@@ -83,10 +89,39 @@ export function RBACProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<UserProfile>(() => CLINICAL_PERSONAS['rad-01']);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(INITIAL_AUDIT_LOGS);
   const [isRBACModalOpen, setRBACModalOpen] = useState(false);
+  const [iamUser, setIamUser] = useState<IamUserResult | null>(null);
 
-  // Restore saved persona from localStorage if available
+  // Restore saved IAM user from URL SSO param or localStorage
   useEffect(() => {
     try {
+      if (typeof window !== 'undefined') {
+        const urlParams = new URLSearchParams(window.location.search);
+        const ssoUserParam = urlParams.get('sso_user');
+        if (ssoUserParam) {
+          try {
+            const parsed = JSON.parse(decodeURIComponent(atob(ssoUserParam))) as IamUserResult;
+            setIamUser(parsed);
+            setCurrentUser(iamAuthService.mapIamUserToClinicalProfile(parsed));
+            localStorage.setItem('mipaas_iam_user', JSON.stringify(parsed));
+            // Clean up the URL query param without full page reload
+            urlParams.delete('sso_user');
+            const newSearch = urlParams.toString();
+            const cleanUrl = window.location.pathname + (newSearch ? `?${newSearch}` : '') + window.location.hash;
+            window.history.replaceState({}, '', cleanUrl);
+            return;
+          } catch {
+            // fallback to local storage
+          }
+        }
+      }
+
+      const savedIam = localStorage.getItem('mipaas_iam_user');
+      if (savedIam) {
+        const parsed = JSON.parse(savedIam) as IamUserResult;
+        setIamUser(parsed);
+        setCurrentUser(iamAuthService.mapIamUserToClinicalProfile(parsed));
+        return;
+      }
       const savedPersonaId = localStorage.getItem('mipaas_active_persona');
       if (savedPersonaId && CLINICAL_PERSONAS[savedPersonaId]) {
         setCurrentUser(CLINICAL_PERSONAS[savedPersonaId]);
@@ -199,6 +234,44 @@ export function RBACProvider({ children }: { children: React.ReactNode }) {
     [currentUser]
   );
 
+  const loginWithIAM = useCallback(
+    (user: IamUserResult) => {
+      setIamUser(user);
+      const clinicalProfile = iamAuthService.mapIamUserToClinicalProfile(user);
+      setCurrentUser(clinicalProfile);
+      try {
+        localStorage.setItem('mipaas_iam_user', JSON.stringify(user));
+        localStorage.removeItem('mipaas_active_persona');
+      } catch {
+        // ignore
+      }
+      addAuditLog(
+        'auth:iam_login_success',
+        `iam:user/${user.isRoot ? 'root' : user.username}`,
+        'allow',
+        {
+          account_id: user.accountId,
+          is_root: user.isRoot,
+          iam_roles: user.roles,
+          clinical_role: clinicalProfile.role,
+        }
+      );
+    },
+    [addAuditLog]
+  );
+
+  const logoutIAM = useCallback(async () => {
+    try {
+      await iamAuthService.logout();
+      localStorage.removeItem('mipaas_iam_user');
+    } catch {
+      // ignore
+    }
+    setIamUser(null);
+    setCurrentUser(CLINICAL_PERSONAS['rad-01']);
+    addAuditLog('auth:iam_logout', 'iam:session', 'allow');
+  }, [addAuditLog]);
+
   return (
     <RBACContext.Provider
       value={{
@@ -213,6 +286,10 @@ export function RBACProvider({ children }: { children: React.ReactNode }) {
         addAuditLog,
         isRBACModalOpen,
         setRBACModalOpen,
+        iamUser,
+        isIamAuthenticated: !!iamUser,
+        loginWithIAM,
+        logoutIAM,
       }}
     >
       {children}

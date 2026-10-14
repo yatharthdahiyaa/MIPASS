@@ -30,11 +30,11 @@ import Footer from '@/components/Footer';
 
 /* ── colour tokens ── */
 const C = {
-  bg:   '#060B11',
-  bg2:  '#0A1823',
-  bg3:  '#0E273A',
+  bg:   '#0B1926',
+  bg2:  '#102333',
+  bg3:  '#132B3A',
   ink:  '#EAF2F6',
-  mute: '#7B8FA0',
+  mute: '#A6B3BD',
   pink: '#EC4899',
   teal: '#00DCCE',
   tealDim: '#008280',
@@ -144,9 +144,9 @@ export default function SkinCancerEnhanced() {
       setTimeout(() => {
         router.push('/doctor');
       }, 500);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Upload failed:', err);
-      setUploadError(err.message || 'Error processing DICOM image');
+      setUploadError(err instanceof Error && err.message ? err.message : 'Error processing DICOM image');
       setUploadPhase('idle');
     }
   };
@@ -215,7 +215,7 @@ export default function SkinCancerEnhanced() {
         pos[i * 3 + 2] = z;
 
         // Color gradient: pink/violet periphery to glowing hot red center
-        let colorMix: any;
+        let colorMix: typeof cHot;
         if (dist < 0.7) {
           colorMix = cHot.clone().lerp(cPink, dist / 0.7);
         } else {
@@ -371,20 +371,20 @@ export default function SkinCancerEnhanced() {
             {/* Left Copy */}
             <div className="lg:col-span-6 z-10">
               <div className="flex items-center gap-2 mb-4">
-                <span className="text-xs font-semibold px-3 py-1 rounded-full bg-pink-500/10 text-pink-400 border border-pink-500/25 backdrop-blur-md">
+                <span className="text-xs font-semibold px-3 py-1 rounded-md bg-[#102333] text-[#7DB7B0] border border-[#7DB7B0]/25">
                   HAM10000 Trained EfficientNet-B0
                 </span>
-                <span className="text-xs text-white/50">Dermoscopy AI Suite</span>
+                <span className="text-xs text-[#A6B3BD]">Dermoscopy AI Suite</span>
               </div>
 
               <h1 className="text-4xl sm:text-5xl lg:text-[58px] font-extrabold tracking-tight leading-[1.08] mb-6">
                 Automated Dermoscopy & <br />
-                <span className="bg-gradient-to-r from-pink-400 via-rose-300 to-purple-400 bg-clip-text text-transparent">
+                <span className="text-[#7DB7B0]">
                   Melanoma Saliency Triage
                 </span>
               </h1>
 
-              <p className="text-base sm:text-lg text-white/70 max-w-xl leading-relaxed mb-8">
+              <p className="text-base sm:text-lg text-[#A6B3BD] max-w-xl leading-relaxed mb-8">
                 Instant 7-class dermatological lesion discrimination with sub-second inference, Grad-CAM++ atypical pigment network attribution, and automated malignancy triage trained on multi-center clinical dermoscopy archives.
               </p>
 
@@ -394,7 +394,7 @@ export default function SkinCancerEnhanced() {
                     const el = document.getElementById('workstation');
                     el?.scrollIntoView({ behavior: 'smooth' });
                   }}
-                  className="bg-gradient-to-r from-pink-500 to-rose-600 text-white font-semibold px-8 py-3.5 rounded-full hover:opacity-95 transition-all shadow-[0_0_30px_rgba(236,72,153,0.4)] flex items-center gap-2 cursor-pointer"
+                  className="bg-[#FF7869] text-[#0B1926] font-semibold px-8 py-3.5 rounded-lg hover:bg-[#F48C7E] transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#7DB7B0] flex items-center gap-2 cursor-pointer"
                 >
                   <Scan className="w-4 h-4" />
                   Launch Dermoscopy Workstation
@@ -402,9 +402,9 @@ export default function SkinCancerEnhanced() {
                 <button
                   type="button"
                   onClick={() => fileRef.current?.click()}
-                  className="px-8 py-3.5 rounded-full border border-white/20 text-white font-medium hover:bg-white/5 transition-all flex items-center gap-2 cursor-pointer"
+                  className="px-8 py-3.5 rounded-lg bg-[#102333] border border-white/20 text-white font-medium hover:border-[#7DB7B0] transition-colors flex items-center gap-2 cursor-pointer"
                 >
-                  <Upload className="w-4 h-4 text-pink-400" />
+                  <Upload className="w-4 h-4 text-[#7DB7B0]" />
                   Upload DICOM / Dermoscopy
                 </button>
                 <input
@@ -428,7 +428,7 @@ export default function SkinCancerEnhanced() {
             <div className="lg:col-span-6 relative">
               <div
                 ref={stageRef}
-                className="relative w-full h-[460px] sm:h-[520px] rounded-3xl border border-white/10 bg-gradient-to-b from-[#0A1823]/80 to-[#060B11]/90 shadow-2xl overflow-hidden flex items-center justify-center"
+                className="relative w-full h-[460px] sm:h-[520px] rounded-2xl border border-white/10 bg-[#102333] overflow-hidden flex items-center justify-center"
               >
                 {/* Holographic Badge Overlay */}
                 <div className="absolute top-6 left-6 z-10 flex flex-col gap-2">
@@ -436,7 +436,7 @@ export default function SkinCancerEnhanced() {
                     <span className="w-2 h-2 rounded-full bg-pink-400 animate-ping" />
                     <span className="text-xs font-mono text-pink-300 font-semibold">3D Cellular Topology Live</span>
                   </div>
-                  <div className="text-[11px] text-white/50 pl-1 font-mono">
+                  <div className="text-[11px] text-[#A6B3BD] pl-1 font-mono">
                     Rot: Dynamic Parallax · Saliency Peak: 94.8%
                   </div>
                 </div>
@@ -444,11 +444,11 @@ export default function SkinCancerEnhanced() {
                 {/* Floating Metric Badges */}
                 <div className="absolute bottom-6 right-6 z-10 flex items-center gap-3">
                   <div className="bg-[#060B11]/85 backdrop-blur-md border border-white/10 px-4 py-2 rounded-xl text-right">
-                    <div className="text-xs text-white/50">Melanoma Sensitivity</div>
+                    <div className="text-xs text-[#A6B3BD]">Melanoma Sensitivity</div>
                     <div className="text-base font-bold text-pink-400 font-mono">96.1%</div>
                   </div>
                   <div className="bg-[#060B11]/85 backdrop-blur-md border border-white/10 px-4 py-2 rounded-xl text-right">
-                    <div className="text-xs text-white/50">HAM10000 AUC</div>
+                    <div className="text-xs text-[#A6B3BD]">HAM10000 AUC</div>
                     <div className="text-base font-bold text-teal-300 font-mono">0.948</div>
                   </div>
                 </div>
@@ -469,7 +469,7 @@ export default function SkinCancerEnhanced() {
                   {counters[idx]}
                   <span className="text-pink-400 text-2xl sm:text-3xl ml-1">{COUNTER_SUFFIXES[idx]}</span>
                 </div>
-                <div className="text-xs sm:text-sm text-white/50 uppercase tracking-wider font-semibold">
+                <div className="text-xs sm:text-sm text-[#A6B3BD] uppercase tracking-wider font-semibold">
                   {COUNTER_LABELS[idx]}
                 </div>
               </div>
@@ -488,7 +488,7 @@ export default function SkinCancerEnhanced() {
             <h2 className="text-3xl sm:text-4xl font-bold text-white mt-3 mb-4">
               End-to-End Teledermoscopy Continuum
             </h2>
-            <p className="text-white/60 text-sm sm:text-base leading-relaxed">
+            <p className="text-[#A6B3BD] text-sm sm:text-base leading-relaxed">
               From raw dermatoscopic image ingestion to calibrated multi-class probability extraction, Grad-CAM++ spatial attribution, and automated EHR clinical sign-off.
             </p>
           </div>
@@ -499,8 +499,8 @@ export default function SkinCancerEnhanced() {
                 key={idx}
                 className={`p-6 rounded-2xl border transition-all duration-500 relative flex flex-col justify-between min-h-[190px] ${
                   stepsActive[idx]
-                    ? 'border-pink-500 bg-pink-500/10 shadow-[0_0_25px_rgba(236,72,153,0.25)]'
-                    : 'border-white/10 bg-[#0A1823]/70 hover:border-white/20'
+                    ? 'border-[#7DB7B0] bg-[#102333]'
+                    : 'border-white/10 bg-[#0A1823] hover:border-white/20'
                 }`}
               >
                 <div>
@@ -509,7 +509,7 @@ export default function SkinCancerEnhanced() {
                     {stepsActive[idx] && <span className="w-2 h-2 rounded-full bg-pink-400 animate-pulse" />}
                   </div>
                   <h3 className="text-base font-bold text-white mb-2 leading-snug">{step.title}</h3>
-                  <p className="text-xs text-white/60 leading-relaxed">{step.desc}</p>
+                  <p className="text-xs text-[#A6B3BD] leading-relaxed">{step.desc}</p>
                 </div>
               </div>
             ))}
@@ -522,7 +522,7 @@ export default function SkinCancerEnhanced() {
         <div className="mx-auto max-w-[81rem] px-6 md:px-8 xl:px-0">
           <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-4">
             <div>
-              <span className="text-xs font-semibold px-3 py-1 rounded-full bg-pink-500/10 text-pink-400 border border-pink-500/20 uppercase tracking-wider">
+              <span className="text-xs font-semibold px-3 py-1 rounded-md bg-[#102333] text-[#7DB7B0] border border-[#7DB7B0]/20 uppercase tracking-wider">
                 Clinical Workstation
               </span>
               <h2 className="text-3xl sm:text-4xl font-bold text-white mt-2">
@@ -530,7 +530,7 @@ export default function SkinCancerEnhanced() {
               </h2>
             </div>
             <div className="flex items-center gap-3">
-              <span className="text-xs text-white/50 font-mono">Status: Connected to Model Engine</span>
+              <span className="text-xs text-[#A6B3BD] font-mono">Status: Connected to Model Engine</span>
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
             </div>
           </div>
@@ -550,7 +550,7 @@ export default function SkinCancerEnhanced() {
                         className={`text-xs font-semibold px-3 py-1.5 rounded-lg border capitalize transition-all cursor-pointer ${
                           activeView === view
                             ? 'bg-pink-500/20 border-pink-500 text-pink-300'
-                            : 'bg-white/5 border-white/10 text-white/60 hover:text-white'
+                            : 'bg-white/5 border-white/10 text-[#A6B3BD] hover:text-white'
                         }`}
                       >
                         {view}
@@ -562,7 +562,7 @@ export default function SkinCancerEnhanced() {
                     <button
                       onClick={() => setShowGradcam(!showGradcam)}
                       className={`text-xs px-3 py-1.5 rounded-lg border transition-all cursor-pointer ${
-                        showGradcam ? 'bg-teal-500/20 border-teal-500 text-teal-300' : 'bg-white/5 border-white/10 text-white/50'
+                        showGradcam ? 'bg-teal-500/20 border-teal-500 text-teal-300' : 'bg-white/5 border-white/10 text-[#A6B3BD]'
                       }`}
                     >
                       Grad-CAM++ Saliency
@@ -570,7 +570,7 @@ export default function SkinCancerEnhanced() {
                     <button
                       onClick={() => setShowBorders(!showBorders)}
                       className={`text-xs px-3 py-1.5 rounded-lg border transition-all cursor-pointer ${
-                        showBorders ? 'bg-purple-500/20 border-purple-500 text-purple-300' : 'bg-white/5 border-white/10 text-white/50'
+                        showBorders ? 'bg-purple-500/20 border-purple-500 text-purple-300' : 'bg-white/5 border-white/10 text-[#A6B3BD]'
                       }`}
                     >
                       ABCDE Border
@@ -632,7 +632,7 @@ export default function SkinCancerEnhanced() {
 
               {/* Slider for Heatmap Opacity */}
               <div className="pt-4 border-t border-white/10 mt-4 flex items-center justify-between gap-4">
-                <span className="text-xs text-white/60 flex items-center gap-1.5">
+                <span className="text-xs text-[#A6B3BD] flex items-center gap-1.5">
                   <Sliders className="w-3.5 h-3.5 text-teal-400" />
                   Grad-CAM++ Attribution Opacity
                 </span>
@@ -655,7 +655,7 @@ export default function SkinCancerEnhanced() {
               <div className="bg-[#060B11] border border-white/10 rounded-3xl p-6 shadow-2xl">
                 <div className="flex items-center justify-between pb-4 border-b border-white/10 mb-4">
                   <div>
-                    <span className="text-[11px] font-mono text-pink-400 font-semibold">DIAGNOSTIC STRATIFICATION</span>
+                    <span className="text-[11px] font-mono text-[#7DB7B0] font-semibold">DIAGNOSTIC STRATIFICATION</span>
                     <h3 className="text-xl font-bold text-white mt-0.5">
                       {selectedLesion.name} ({selectedLesion.code.toUpperCase()})
                     </h3>
@@ -672,13 +672,13 @@ export default function SkinCancerEnhanced() {
                   </span>
                 </div>
 
-                <p className="text-xs text-white/70 leading-relaxed mb-6">
+                <p className="text-xs text-[#A6B3BD] leading-relaxed mb-6">
                   {selectedLesion.desc}
                 </p>
 
                 {/* 7 Classes Selector Pills */}
                 <div className="mb-6">
-                  <div className="text-xs uppercase font-semibold text-white/50 mb-2">Simulate Diagnosis Target:</div>
+                  <div className="text-xs uppercase font-semibold text-[#A6B3BD] mb-2">Simulate Diagnosis Target:</div>
                   <div className="flex flex-wrap gap-1.5">
                     {LESION_CLASSES.map((lesion) => (
                       <button
@@ -687,7 +687,7 @@ export default function SkinCancerEnhanced() {
                         className={`text-xs px-2.5 py-1 rounded-lg border font-mono transition-all cursor-pointer ${
                           selectedLesion.code === lesion.code
                             ? 'bg-pink-500/20 border-pink-500 text-pink-300 font-bold'
-                            : 'bg-white/5 border-white/10 text-white/60 hover:text-white'
+                            : 'bg-white/5 border-white/10 text-[#A6B3BD] hover:text-white'
                         }`}
                       >
                         {lesion.code.toUpperCase()}
@@ -703,7 +703,7 @@ export default function SkinCancerEnhanced() {
                     const prob = isSelected ? 0.948 : lesion.code === 'nv' ? 0.024 : 0.005;
                     return (
                       <div key={lesion.code} className="flex items-center gap-3">
-                        <span className="w-14 text-xs font-mono uppercase text-white/60">{lesion.code}</span>
+                        <span className="w-14 text-xs font-mono uppercase text-[#A6B3BD]">{lesion.code}</span>
                         <div className="flex-1 bg-white/10 rounded-full h-2 overflow-hidden">
                           <div
                             className="h-full rounded-full transition-all duration-700"
@@ -727,12 +727,12 @@ export default function SkinCancerEnhanced() {
                         <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                         <span className="text-xs text-emerald-300 font-semibold">Clinically Verified & Signed</span>
                       </div>
-                      <span className="text-[11px] font-mono text-white/50">{signedAt}</span>
+                      <span className="text-[11px] font-mono text-[#A6B3BD]">{signedAt}</span>
                     </div>
                   ) : (
                     <button
                       onClick={handleSignReport}
-                      className="w-full bg-gradient-to-r from-pink-500 to-rose-600 hover:opacity-95 text-white font-semibold py-3 rounded-xl transition-all shadow-[0_0_20px_rgba(236,72,153,0.3)] flex items-center justify-center gap-2 cursor-pointer text-sm"
+                      className="w-full bg-[#FF7869] hover:bg-[#F48C7E] text-[#0B1926] font-semibold py-3 rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#7DB7B0] flex items-center justify-center gap-2 cursor-pointer text-sm"
                     >
                       <ShieldCheck className="w-4 h-4" />
                       Sign & Finalize Dermatopathology Report
@@ -751,13 +751,13 @@ export default function SkinCancerEnhanced() {
       <section className="py-20">
         <div className="mx-auto max-w-[81rem] px-6 md:px-8 xl:px-0">
           <div className="text-center max-w-2xl mx-auto mb-14">
-            <span className="text-xs font-semibold px-3 py-1 rounded-full bg-pink-500/10 text-pink-400 border border-pink-500/20 uppercase tracking-wider">
+            <span className="text-xs font-semibold px-3 py-1 rounded-md bg-[#102333] text-[#7DB7B0] border border-[#7DB7B0]/20 uppercase tracking-wider">
               Clinical Evidence
             </span>
             <h2 className="text-3xl sm:text-4xl font-bold text-white mt-3 mb-4">
               Engineered for Teledermatology & Oncology
             </h2>
-            <p className="text-white/60 text-sm sm:text-base leading-relaxed">
+            <p className="text-[#A6B3BD] text-sm sm:text-base leading-relaxed">
               Standardized against the international ISIC and HAM10000 benchmarks with sub-cellular saliency localization.
             </p>
           </div>
@@ -769,11 +769,11 @@ export default function SkinCancerEnhanced() {
                 className="p-6 rounded-2xl bg-[#0A1823] border border-white/10 hover:border-white/20 transition-all flex flex-col justify-between min-h-[220px]"
               >
                 <div>
-                  <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-white/5 text-pink-400 border border-pink-500/20">
+                  <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-[#102333] text-[#7DB7B0] border border-[#7DB7B0]/20">
                     {feat.tag}
                   </span>
                   <h3 className="text-lg font-bold text-white mt-4 mb-2">{feat.title}</h3>
-                  <p className="text-xs sm:text-sm text-white/60 leading-relaxed">{feat.desc}</p>
+                  <p className="text-xs sm:text-sm text-[#A6B3BD] leading-relaxed">{feat.desc}</p>
                 </div>
                 <div className="pt-4 border-t border-white/5 flex items-center justify-between text-xs font-mono text-teal-300">
                   <span>VALIDATION</span>

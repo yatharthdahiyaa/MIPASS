@@ -30,11 +30,11 @@ import Footer from '@/components/Footer';
 
 /* ── colour tokens ── */
 const C = {
-  bg:   '#060B11',
-  bg2:  '#0A1823',
-  bg3:  '#0E273A',
+  bg:   '#0B1926',
+  bg2:  '#102333',
+  bg3:  '#132B3A',
   ink:  '#EAF2F6',
-  mute: '#7B8FA0',
+  mute: '#A6B3BD',
   emerald: '#10B981',
   teal: '#00DCCE',
   tealDim: '#008280',
@@ -139,9 +139,9 @@ export default function DiabeticFootEnhanced() {
       setTimeout(() => {
         router.push('/doctor');
       }, 500);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Upload failed:', err);
-      setUploadError(err.message || 'Error processing DICOM image');
+      setUploadError(err instanceof Error && err.message ? err.message : 'Error processing DICOM image');
       setUploadPhase('idle');
     }
   };
@@ -222,7 +222,7 @@ export default function DiabeticFootEnhanced() {
           pos[i * 3 + 2] = z;
 
           // Determine temperature color
-          let tempC: any;
+          let tempC: typeof cHot;
           if (hasHotSpot && v > 0.4 && Math.abs(x) < 0.3) {
             // Hot spot in right metatarsal head
             tempC = cHot.clone().lerp(cWarm, Math.random() * 0.3);
@@ -384,20 +384,20 @@ export default function DiabeticFootEnhanced() {
             {/* Left Copy */}
             <div className="lg:col-span-6 z-10">
               <div className="flex items-center gap-2 mb-4">
-                <span className="text-xs font-semibold px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 backdrop-blur-md">
+                <span className="text-xs font-semibold px-3 py-1 rounded-md bg-[#102333] text-[#7DB7B0] border border-[#7DB7B0]/25">
                   Plantar Thermogram AI Suite
                 </span>
-                <span className="text-xs text-white/50">Diabetic Neuropathy & Ulcer Prevention</span>
+                <span className="text-xs text-[#A6B3BD]">Diabetic Neuropathy & Ulcer Prevention</span>
               </div>
 
               <h1 className="text-4xl sm:text-5xl lg:text-[58px] font-extrabold tracking-tight leading-[1.08] mb-6">
                 Bilateral Thermometry & <br />
-                <span className="bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">
+                <span className="text-[#7DB7B0]">
                   Diabetic Foot Ulcer Triage
                 </span>
               </h1>
 
-              <p className="text-base sm:text-lg text-white/70 max-w-xl leading-relaxed mb-8">
+              <p className="text-base sm:text-lg text-[#A6B3BD] max-w-xl leading-relaxed mb-8">
                 Early detection of sub-clinical microvascular inflammation, diabetic peripheral neuropathy, and pre-ulcerative hot spots using bilateral plantar temperature asymmetry mapping, GLCM spatial texture entropy, and machine learning.
               </p>
 
@@ -407,7 +407,7 @@ export default function DiabeticFootEnhanced() {
                     const el = document.getElementById('workstation');
                     el?.scrollIntoView({ behavior: 'smooth' });
                   }}
-                  className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-semibold px-8 py-3.5 rounded-full hover:opacity-95 transition-all shadow-[0_0_30px_rgba(16,185,129,0.4)] flex items-center gap-2 cursor-pointer"
+                  className="bg-[#FF7869] text-[#0B1926] font-semibold px-8 py-3.5 rounded-lg hover:bg-[#F48C7E] transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#7DB7B0] flex items-center gap-2 cursor-pointer"
                 >
                   <Thermometer className="w-4 h-4" />
                   Launch Thermogram Workstation
@@ -415,9 +415,9 @@ export default function DiabeticFootEnhanced() {
                 <button
                   type="button"
                   onClick={() => fileRef.current?.click()}
-                  className="px-8 py-3.5 rounded-full border border-white/20 text-white font-medium hover:bg-white/5 transition-all flex items-center gap-2 cursor-pointer"
+                  className="px-8 py-3.5 rounded-lg bg-[#102333] border border-white/20 text-white font-medium hover:border-[#7DB7B0] transition-colors flex items-center gap-2 cursor-pointer"
                 >
-                  <Upload className="w-4 h-4 text-emerald-400" />
+                  <Upload className="w-4 h-4 text-[#7DB7B0]" />
                   Upload DICOM / Thermal
                 </button>
                 <input
@@ -441,7 +441,7 @@ export default function DiabeticFootEnhanced() {
             <div className="lg:col-span-6 relative">
               <div
                 ref={stageRef}
-                className="relative w-full h-[460px] sm:h-[520px] rounded-3xl border border-white/10 bg-gradient-to-b from-[#0A1823]/80 to-[#060B11]/90 shadow-2xl overflow-hidden flex items-center justify-center"
+                className="relative w-full h-[460px] sm:h-[520px] rounded-2xl border border-white/10 bg-[#102333] overflow-hidden flex items-center justify-center"
               >
                 {/* Holographic Badge Overlay */}
                 <div className="absolute top-6 left-6 z-10 flex flex-col gap-2">
@@ -449,7 +449,7 @@ export default function DiabeticFootEnhanced() {
                     <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
                     <span className="text-xs font-mono text-emerald-300 font-semibold">Bilateral Thermogram 3D Live</span>
                   </div>
-                  <div className="text-[11px] text-white/50 pl-1 font-mono">
+                  <div className="text-[11px] text-[#A6B3BD] pl-1 font-mono">
                     Left: 31.4°C · Right (Hotspot): 34.2°C · ΔT: 2.8°C
                   </div>
                 </div>
@@ -457,11 +457,11 @@ export default function DiabeticFootEnhanced() {
                 {/* Floating Metric Badges */}
                 <div className="absolute bottom-6 right-6 z-10 flex items-center gap-3">
                   <div className="bg-[#060B11]/85 backdrop-blur-md border border-white/10 px-4 py-2 rounded-xl text-right">
-                    <div className="text-xs text-white/50">Asymmetry Alert</div>
+                    <div className="text-xs text-[#A6B3BD]">Asymmetry Alert</div>
                     <div className="text-base font-bold text-rose-400 font-mono">ΔT ≥ 2.2°C</div>
                   </div>
                   <div className="bg-[#060B11]/85 backdrop-blur-md border border-white/10 px-4 py-2 rounded-xl text-right">
-                    <div className="text-xs text-white/50">Model Accuracy</div>
+                    <div className="text-xs text-[#A6B3BD]">Model Accuracy</div>
                     <div className="text-base font-bold text-emerald-300 font-mono">92.4%</div>
                   </div>
                 </div>
@@ -482,7 +482,7 @@ export default function DiabeticFootEnhanced() {
                   {counters[idx]}
                   <span className="text-emerald-400 text-2xl sm:text-3xl ml-1">{COUNTER_SUFFIXES[idx]}</span>
                 </div>
-                <div className="text-xs sm:text-sm text-white/50 uppercase tracking-wider font-semibold">
+                <div className="text-xs sm:text-sm text-[#A6B3BD] uppercase tracking-wider font-semibold">
                   {COUNTER_LABELS[idx]}
                 </div>
               </div>
@@ -501,7 +501,7 @@ export default function DiabeticFootEnhanced() {
             <h2 className="text-3xl sm:text-4xl font-bold text-white mt-3 mb-4">
               End-to-End Plantar Thermometry Continuum
             </h2>
-            <p className="text-white/60 text-sm sm:text-base leading-relaxed">
+            <p className="text-[#A6B3BD] text-sm sm:text-base leading-relaxed">
               From raw radiometric temperature matrix ingestion to bilateral geometric alignment, GLCM spatial texture extraction, contralateral asymmetry scoring, and automated podiatric reporting.
             </p>
           </div>
@@ -512,8 +512,8 @@ export default function DiabeticFootEnhanced() {
                 key={idx}
                 className={`p-6 rounded-2xl border transition-all duration-500 relative flex flex-col justify-between min-h-[190px] ${
                   stepsActive[idx]
-                    ? 'border-emerald-500 bg-emerald-500/10 shadow-[0_0_25px_rgba(16,185,129,0.25)]'
-                    : 'border-white/10 bg-[#0A1823]/70 hover:border-white/20'
+                    ? 'border-[#7DB7B0] bg-[#102333]'
+                    : 'border-white/10 bg-[#0A1823] hover:border-white/20'
                 }`}
               >
                 <div>
@@ -522,7 +522,7 @@ export default function DiabeticFootEnhanced() {
                     {stepsActive[idx] && <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />}
                   </div>
                   <h3 className="text-base font-bold text-white mb-2 leading-snug">{step.title}</h3>
-                  <p className="text-xs text-white/60 leading-relaxed">{step.desc}</p>
+                  <p className="text-xs text-[#A6B3BD] leading-relaxed">{step.desc}</p>
                 </div>
               </div>
             ))}
@@ -535,7 +535,7 @@ export default function DiabeticFootEnhanced() {
         <div className="mx-auto max-w-[81rem] px-6 md:px-8 xl:px-0">
           <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-4">
             <div>
-              <span className="text-xs font-semibold px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase tracking-wider">
+              <span className="text-xs font-semibold px-3 py-1 rounded-md bg-[#102333] text-[#7DB7B0] border border-[#7DB7B0]/20 uppercase tracking-wider">
                 Clinical Workstation
               </span>
               <h2 className="text-3xl sm:text-4xl font-bold text-white mt-2">
@@ -543,7 +543,7 @@ export default function DiabeticFootEnhanced() {
               </h2>
             </div>
             <div className="flex items-center gap-3">
-              <span className="text-xs text-white/50 font-mono">Status: Connected to ML Engine</span>
+              <span className="text-xs text-[#A6B3BD] font-mono">Status: Connected to ML Engine</span>
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
             </div>
           </div>
@@ -563,7 +563,7 @@ export default function DiabeticFootEnhanced() {
                         className={`text-xs font-semibold px-3 py-1.5 rounded-lg border capitalize transition-all cursor-pointer ${
                           activePalette === pal
                             ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
-                            : 'bg-white/5 border-white/10 text-white/60 hover:text-white'
+                            : 'bg-white/5 border-white/10 text-[#A6B3BD] hover:text-white'
                         }`}
                       >
                         {pal}
@@ -575,7 +575,7 @@ export default function DiabeticFootEnhanced() {
                     <button
                       onClick={() => setShowAngiosomes(!showAngiosomes)}
                       className={`text-xs px-3 py-1.5 rounded-lg border transition-all cursor-pointer ${
-                        showAngiosomes ? 'bg-teal-500/20 border-teal-500 text-teal-300' : 'bg-white/5 border-white/10 text-white/50'
+                        showAngiosomes ? 'bg-teal-500/20 border-teal-500 text-teal-300' : 'bg-white/5 border-white/10 text-[#A6B3BD]'
                       }`}
                     >
                       Angiosome Boundaries
@@ -583,7 +583,7 @@ export default function DiabeticFootEnhanced() {
                     <button
                       onClick={() => setShowAsymmetryMap(!showAsymmetryMap)}
                       className={`text-xs px-3 py-1.5 rounded-lg border transition-all cursor-pointer ${
-                        showAsymmetryMap ? 'bg-rose-500/20 border-rose-500 text-rose-300' : 'bg-white/5 border-white/10 text-white/50'
+                        showAsymmetryMap ? 'bg-rose-500/20 border-rose-500 text-rose-300' : 'bg-white/5 border-white/10 text-[#A6B3BD]'
                       }`}
                     >
                       ΔT Asymmetry Map
@@ -604,7 +604,7 @@ export default function DiabeticFootEnhanced() {
                         : 'radial-gradient(ellipse at 50% 60%, #334155 0%, #1e293b 50%, #0f172a 100%)',
                     }}
                   >
-                    <div className="text-[10px] font-mono text-white/70 text-center">LEFT FOOT (CONTROL)</div>
+                    <div className="text-[10px] font-mono text-[#A6B3BD] text-center">LEFT FOOT (CONTROL)</div>
                     <div className="text-center font-mono text-xs text-emerald-300 font-bold">31.4°C Mean</div>
                   </div>
 
@@ -634,7 +634,7 @@ export default function DiabeticFootEnhanced() {
                       <div className="absolute inset-2 border border-dashed border-teal-400/40 rounded-3xl pointer-events-none" />
                     )}
 
-                    <div className="text-[10px] font-mono text-white/70 text-center z-10">RIGHT FOOT (SUSPECT)</div>
+                    <div className="text-[10px] font-mono text-[#A6B3BD] text-center z-10">RIGHT FOOT (SUSPECT)</div>
                     <div className="text-center font-mono text-xs text-rose-400 font-bold z-10">
                       34.2°C (ΔT +2.8°C)
                     </div>
@@ -649,7 +649,7 @@ export default function DiabeticFootEnhanced() {
 
               {/* Slider for Heatmap Opacity */}
               <div className="pt-4 border-t border-white/10 mt-4 flex items-center justify-between gap-4">
-                <span className="text-xs text-white/60 flex items-center gap-1.5">
+                <span className="text-xs text-[#A6B3BD] flex items-center gap-1.5">
                   <Sliders className="w-3.5 h-3.5 text-teal-400" />
                   Thermal Map Blend Intensity
                 </span>
@@ -672,7 +672,7 @@ export default function DiabeticFootEnhanced() {
               <div className="bg-[#060B11] border border-white/10 rounded-3xl p-6 shadow-2xl">
                 <div className="flex items-center justify-between pb-4 border-b border-white/10 mb-4">
                   <div>
-                    <span className="text-[11px] font-mono text-emerald-400 font-semibold">PODIATRIC RISK STRATIFICATION</span>
+                    <span className="text-[11px] font-mono text-[#7DB7B0] font-semibold">PODIATRIC RISK STRATIFICATION</span>
                     <h3 className="text-xl font-bold text-white mt-0.5">
                       Elevated Pre-Ulcerative Risk Flag
                     </h3>
@@ -682,13 +682,13 @@ export default function DiabeticFootEnhanced() {
                   </span>
                 </div>
 
-                <p className="text-xs text-white/70 leading-relaxed mb-6">
+                <p className="text-xs text-[#A6B3BD] leading-relaxed mb-6">
                   Significant contralateral temperature discrepancy (ΔT = 2.8°C) detected at the Right Medial Plantar Artery (MPA) angiosome exceeding the 2.2°C critical clinical threshold for acute tissue breakdown.
                 </p>
 
                 {/* Angiosome Metric Rows */}
                 <div className="space-y-3 mb-6">
-                  <div className="text-xs uppercase font-semibold text-white/50 mb-1">Angiosome Temperature Differentials:</div>
+                  <div className="text-xs uppercase font-semibold text-[#A6B3BD] mb-1">Angiosome Temperature Differentials:</div>
                   {ANGIOSOMES.map((ang) => (
                     <div
                       key={ang.code}
@@ -704,13 +704,13 @@ export default function DiabeticFootEnhanced() {
                           {ang.code} — {ang.name}
                           {ang.hot && <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 font-mono">HOT</span>}
                         </div>
-                        <div className="text-[11px] text-white/50">{ang.area}</div>
+                        <div className="text-[11px] text-[#A6B3BD]">{ang.area}</div>
                       </div>
                       <div className="text-right">
                         <div className={`text-sm font-mono font-bold ${ang.diff >= 2.2 ? 'text-rose-400' : 'text-emerald-300'}`}>
                           ΔT +{ang.diff}°C
                         </div>
-                        <div className="text-[10px] text-white/50 font-mono">
+                        <div className="text-[10px] text-[#A6B3BD] font-mono">
                           {ang.leftTemp}°C / {ang.rightTemp}°C
                         </div>
                       </div>
@@ -726,12 +726,12 @@ export default function DiabeticFootEnhanced() {
                         <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                         <span className="text-xs text-emerald-300 font-semibold">Podiatrist Verified & Signed</span>
                       </div>
-                      <span className="text-[11px] font-mono text-white/50">{signedAt}</span>
+                      <span className="text-[11px] font-mono text-[#A6B3BD]">{signedAt}</span>
                     </div>
                   ) : (
                     <button
                       onClick={handleSignReport}
-                      className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:opacity-95 text-white font-semibold py-3 rounded-xl transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)] flex items-center justify-center gap-2 cursor-pointer text-sm"
+                      className="w-full bg-[#FF7869] hover:bg-[#F48C7E] text-[#0B1926] font-semibold py-3 rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#7DB7B0] flex items-center justify-center gap-2 cursor-pointer text-sm"
                     >
                       <ShieldCheck className="w-4 h-4" />
                       Sign & Finalize Podiatry Vascular Report
@@ -750,13 +750,13 @@ export default function DiabeticFootEnhanced() {
       <section className="py-20">
         <div className="mx-auto max-w-[81rem] px-6 md:px-8 xl:px-0">
           <div className="text-center max-w-2xl mx-auto mb-14">
-            <span className="text-xs font-semibold px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase tracking-wider">
+            <span className="text-xs font-semibold px-3 py-1 rounded-md bg-[#102333] text-[#7DB7B0] border border-[#7DB7B0]/20 uppercase tracking-wider">
               Clinical Evidence
             </span>
             <h2 className="text-3xl sm:text-4xl font-bold text-white mt-3 mb-4">
               Engineered for Preventative Podiatry
             </h2>
-            <p className="text-white/60 text-sm sm:text-base leading-relaxed">
+            <p className="text-[#A6B3BD] text-sm sm:text-base leading-relaxed">
               Standardized against multi-center plantar thermogram databases with calibrated bilateral differential analysis.
             </p>
           </div>
@@ -768,11 +768,11 @@ export default function DiabeticFootEnhanced() {
                 className="p-6 rounded-2xl bg-[#0A1823] border border-white/10 hover:border-white/20 transition-all flex flex-col justify-between min-h-[220px]"
               >
                 <div>
-                  <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-white/5 text-emerald-400 border border-emerald-500/20">
+                  <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-[#102333] text-[#7DB7B0] border border-[#7DB7B0]/20">
                     {feat.tag}
                   </span>
                   <h3 className="text-lg font-bold text-white mt-4 mb-2">{feat.title}</h3>
-                  <p className="text-xs sm:text-sm text-white/60 leading-relaxed">{feat.desc}</p>
+                  <p className="text-xs sm:text-sm text-[#A6B3BD] leading-relaxed">{feat.desc}</p>
                 </div>
                 <div className="pt-4 border-t border-white/5 flex items-center justify-between text-xs font-mono text-teal-300">
                   <span>VALIDATION</span>

@@ -1,0 +1,246 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id           String    @id @default(cuid())
+  name         String
+  accountAlias String?   @unique
+  rootUserId   String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  users        User[]
+  roles        Role[]
+  policies     Policy[]
+  groups       Group[]
+  auditLogs    AuditLog[]
+
+  @@map("accounts")
+}
+
+model User {
+  id                  String             @id @default(cuid())
+  accountId           String
+  username            String
+  email               String
+  passwordHash        String
+  isRoot              Boolean            @default(false)
+  isSuspended         Boolean            @default(false)
+  isMfaEnabled        Boolean            @default(false)
+  forcePasswordReset  Boolean            @default(false)
+  failedLoginAttempts Int                @default(0)
+  lockUntil           DateTime?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  account             Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  userRoles           UserRole[]
+  userGroups          UserGroup[]
+  refreshTokens       RefreshToken[]
+  mfaSecret           MfaSecret?
+  auditLogs           AuditLog[]
+  passwordResets      PasswordReset[]
+  emailVerifications  EmailVerification[]
+
+  @@unique([accountId, username])
+  @@index([email])
+  @@index([accountId])
+  @@map("users")
+}
+
+model Role {
+  id          String       @id @default(cuid())
+  accountId   String
+  name        String
+  description String?
+  isSystem    Boolean      @default(false)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  account     Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  rolePolicies RolePolicy[]
+  userRoles   UserRole[]
+  groupRoles  GroupRole[]
+
+  @@unique([accountId, name])
+  @@index([accountId])
+  @@map("roles")
+}
+
+model Policy {
+  id          String       @id @default(cuid())
+  accountId   String
+  name        String
+  description String?
+  document    Json
+  isSystem    Boolean      @default(false)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  account     Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  rolePolicies RolePolicy[]
+
+  @@unique([accountId, name])
+  @@index([accountId])
+  @@map("policies")
+}
+
+model Group {
+  id          String       @id @default(cuid())
+  accountId   String
+  name        String
+  description String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  account     Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  groupRoles  GroupRole[]
+  userGroups  UserGroup[]
+
+  @@unique([accountId, name])
+  @@index([accountId])
+  @@map("groups")
+}
+
+model UserRole {
+  id         String   @id @default(cuid())
+  userId     String
+  roleId     String
+  assignedAt DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@index([userId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+model GroupRole {
+  id         String   @id @default(cuid())
+  groupId    String
+  roleId     String
+  assignedAt DateTime @default(now())
+
+  group      Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  role       Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, roleId])
+  @@index([groupId])
+  @@index([roleId])
+  @@map("group_roles")
+}
+
+model UserGroup {
+  id         String   @id @default(cuid())
+  userId     String
+  groupId    String
+  assignedAt DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group      Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, groupId])
+  @@index([userId])
+  @@index([groupId])
+  @@map("user_groups")
+}
+
+model RolePolicy {
+  id         String   @id @default(cuid())
+  roleId     String
+  policyId   String
+  attachedAt DateTime @default(now())
+
+  role       Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  policy     Policy   @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, policyId])
+  @@index([roleId])
+  @@index([policyId])
+  @@map("role_policies")
+}
+
+model RefreshToken {
+  id              String   @id @default(cuid())
+  userId          String
+  tokenHash       String   @unique
+  expiresAt       DateTime
+  isRevoked       Boolean  @default(false)
+  replacedByToken String?
+  createdAt       DateTime @default(now())
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model MfaSecret {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  secret      String
+  backupCodes Json
+  isVerified  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("mfa_secrets")
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  accountId String
+  userId    String?
+  action    String
+  resource  String
+  effect    String
+  ipAddress String?
+  userAgent String?
+  details   Json?
+  timestamp DateTime @default(now())
+
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([accountId, timestamp])
+  @@index([userId])
+  @@map("audit_logs")
+}
+
+model PasswordReset {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  isUsed    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_resets")
+}
+
+model EmailVerification {
+  id         String   @id @default(cuid())
+  userId     String
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  isVerified Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("email_verifications")
+}

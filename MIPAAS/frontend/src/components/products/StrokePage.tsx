@@ -23,15 +23,16 @@ import {
   Upload,
 } from 'lucide-react';
 import Link from 'next/link';
+import AnatomyViewer from '@/components/common/AnatomyViewer';
 
 const C = {
-  bg:   '#060B11',
-  bg2:  '#0A1823',
-  bg3:  '#0E273A',
+  bg:   '#0B1926',
+  bg2:  '#102333',
+  bg3:  '#132B3A',
   ink:  '#EAF2F6',
-  mute: '#7B8FA0',
-  teal: '#00DCCE',
-  tealDim: '#008280',
+  mute: '#A6B3BD',
+  teal: '#7DB7B0',
+  tealDim: '#7DB7B0',
   coral:'#FF7869',
   lav:  '#98AED9',
   violet:'#7C5CFC',
@@ -112,14 +113,12 @@ const STROKE_CASES = [
 type UploadPhase = 'idle' | 'uploading' | 'processing' | 'done';
 
 export default function StrokePage() {
-  const stageRef = useRef<HTMLDivElement>(null);
   const stepsRef = useRef<HTMLDivElement>(null);
-  const gridRef  = useRef<HTMLDivElement>(null);
   const fileRef  = useRef<HTMLInputElement>(null);
 
-  const { currentUser, hasPermission, setRBACModalOpen } = useRBAC();
+  const { currentUser, isIamAuthenticated } = useRBAC();
   const router = useRouter();
-  const isAuthenticated = hasPermission('jobs:create') || hasPermission('jobs:read');
+  const isAuthenticated = isIamAuthenticated;
 
   const redirectToLogin = useCallback(() => {
     router.push('/login?redirect=/stroke');
@@ -141,157 +140,6 @@ export default function StrokePage() {
   const COUNTER_SUFFIXES = ['%', 's', '/10', 'm'];
   const COUNTER_LABELS  = ['LVO Sensitivity', 'Inference Latency', 'Automated ASPECTS', 'Transfer Time Saved'];
 
-  /* ── Three.js 3D Vascular & Stroke Model ── */
-  useEffect(() => {
-    const el = stageRef.current;
-    if (!el) return;
-
-    let cleanup = false;
-
-    const loadThree = async () => {
-      const threeModule = await import('three').catch(() => null);
-      if (!threeModule || cleanup) return;
-      const THREE = threeModule;
-
-      const W = () => el.clientWidth;
-      const H = () => el.clientHeight;
-
-      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-      renderer.setSize(W(), H());
-      el.prepend(renderer.domElement);
-      renderer.domElement.style.borderRadius = '28px';
-
-      const scene = new THREE.Scene();
-      const cam = new THREE.PerspectiveCamera(45, W() / H(), 0.1, 100);
-      cam.position.set(0, 0, 7.5);
-
-      const root = new THREE.Group();
-      scene.add(root);
-
-      // Brain silhouette point cloud
-      const N = 4800;
-      const pos = new Float32Array(N * 3);
-      const col = new Float32Array(N * 3);
-      const cA = new THREE.Color(0xf5a623); // gold
-      const cB = new THREE.Color(0x98aed9); // lavender
-
-      for (let i = 0; i < N; i++) {
-        let x: number, y: number, z: number;
-        do {
-          x = Math.random() * 2 - 1;
-          y = Math.random() * 2 - 1;
-          z = Math.random() * 2 - 1;
-        } while (x * x + y * y + z * z > 1);
-
-        pos[i * 3]     = x * 1.35;
-        pos[i * 3 + 1] = y * 1.1 + 0.1;
-        pos[i * 3 + 2] = z * 1.5;
-
-        const mixed = cA.clone().lerp(cB, Math.random());
-        col[i * 3] = mixed.r;
-        col[i * 3 + 1] = mixed.g;
-        col[i * 3 + 2] = mixed.b;
-      }
-
-      const pointGeo = new THREE.BufferGeometry();
-      pointGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-      pointGeo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-      const points = new THREE.Points(
-        pointGeo,
-        new THREE.PointsMaterial({
-          size: 0.03,
-          vertexColors: true,
-          transparent: true,
-          opacity: 0.75,
-          depthWrite: false,
-        })
-      );
-      root.add(points);
-
-      // Circle of Willis arteries
-      const arteryMat = new THREE.MeshBasicMaterial({ color: 0xff4154, wireframe: true, transparent: true, opacity: 0.8 });
-      const basilar = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 2, 8, 4), arteryMat);
-      basilar.position.set(0, -0.6, 0);
-      root.add(basilar);
-
-      // Middle cerebral artery occlusion marker
-      const lvoMarker = new THREE.Mesh(
-        new THREE.SphereGeometry(0.24, 16, 16),
-        new THREE.MeshBasicMaterial({ color: 0xff4154 })
-      );
-      lvoMarker.position.set(0.7, 0.2, 0.3);
-      root.add(lvoMarker);
-
-      // Scanning plane
-      const planeGeo = new THREE.PlaneGeometry(3.6, 3.2);
-      const scanPlane = new THREE.Mesh(
-        planeGeo,
-        new THREE.MeshBasicMaterial({ color: 0xf5a623, transparent: true, opacity: 0.1, side: THREE.DoubleSide })
-      );
-      scanPlane.rotation.x = Math.PI / 2;
-      root.add(scanPlane);
-
-      const scanEdge = new THREE.LineSegments(
-        new THREE.EdgesGeometry(planeGeo),
-        new THREE.LineBasicMaterial({ color: 0xf5a623, transparent: true, opacity: 0.4 })
-      );
-      scanEdge.rotation.x = Math.PI / 2;
-      root.add(scanEdge);
-
-      /* Mouse interaction */
-      let drag = false, px = 0, ry = 0;
-      const vy = 0.0035;
-      el.addEventListener('pointerdown', (e) => { drag = true; px = e.clientX; el.style.cursor = 'grabbing'; });
-      window.addEventListener('pointerup', () => { drag = false; el.style.cursor = 'grab'; });
-      window.addEventListener('pointermove', (e) => {
-        if (drag) { ry += (e.clientX - px) * 0.01; px = e.clientX; }
-      });
-
-      let visible = true;
-      const visObs = new IntersectionObserver(([e]) => { visible = e.isIntersecting; });
-      visObs.observe(el);
-
-      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-      function loop(t: number) {
-        if (cleanup) return;
-        requestAnimationFrame(loop);
-        if (!visible) return;
-
-        if (!drag && !reducedMotion) ry += vy;
-        root.rotation.y = ry;
-        root.rotation.x = Math.sin(t / 2800) * 0.08;
-
-        lvoMarker.scale.setScalar(1 + 0.25 * Math.sin(t / 300));
-        scanPlane.position.y = scanEdge.position.y = -1.2 + ((Math.sin(t / 1600) + 1) / 2) * 2.4;
-
-        renderer.render(scene, cam);
-      }
-      requestAnimationFrame(loop);
-
-      const onResize = () => {
-        renderer.setSize(W(), H());
-        cam.aspect = W() / H();
-        cam.updateProjectionMatrix();
-      };
-      window.addEventListener('resize', onResize);
-
-      return () => {
-        cleanup = true;
-        window.removeEventListener('resize', onResize);
-        visObs.disconnect();
-        renderer.dispose();
-      };
-    };
-
-    const disposePromise = loadThree();
-    return () => {
-      cleanup = true;
-      disposePromise.then((d) => d?.());
-    };
-  }, []);
-
   /* ── pipeline reveal ── */
   useEffect(() => {
     const el = stepsRef.current;
@@ -307,24 +155,6 @@ export default function StrokePage() {
     }, { threshold: 0.3 });
     obs.observe(el);
     return () => obs.disconnect();
-  }, []);
-
-  /* ── 3D tilt ── */
-  useEffect(() => {
-    const el = gridRef.current;
-    if (!el || !window.matchMedia('(hover: hover)').matches) return;
-    const cards = el.querySelectorAll<HTMLElement>('.feat-card');
-    cards.forEach((c) => {
-      const move = (e: PointerEvent) => {
-        const b = c.getBoundingClientRect();
-        const x = (e.clientX - b.left) / b.width - 0.5;
-        const y = (e.clientY - b.top) / b.height - 0.5;
-        c.style.transform = `perspective(800px) rotateY(${x * 12}deg) rotateX(${-y * 12}deg) translateZ(8px)`;
-      };
-      const leave = () => { c.style.transform = ''; };
-      c.addEventListener('pointermove', move as EventListener);
-      c.addEventListener('pointerleave', leave);
-    });
   }, []);
 
   /* ── animated counters ── */
@@ -401,9 +231,9 @@ export default function StrokePage() {
       setTimeout(() => {
         router.push('/doctor');
       }, 500);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Upload failed:', err);
-      setUploadError(err.message || 'Error processing DICOM image');
+      setUploadError(err instanceof Error && err.message ? err.message : 'Error processing DICOM image');
       setUploadPhase('idle');
     }
   };
@@ -416,7 +246,7 @@ export default function StrokePage() {
 
   return (
     <div className="lc-page">
-      <style jsx global>{`
+      <style jsx>{`
         .lc-page {
           background: ${C.bg};
           color: ${C.ink};
@@ -434,31 +264,31 @@ export default function StrokePage() {
         .lc-sub { color: ${C.mute}; max-width: 54ch; margin: 0 0 52px; font-size: 17px; line-height: 1.7; }
         .lc-h2 { font-size: clamp(28px, 4vw, 44px); margin-bottom: 14px; }
         .lc-btn {
-          display: inline-flex; align-items: center; gap: 8px; border-radius: 999px;
+          display: inline-flex; align-items: center; gap: 8px; border-radius: 10px;
           padding: 14px 28px; font-weight: 600; font-size: 15px; border: 1px solid ${C.line};
-          background: rgba(255,255,255,.05); color: ${C.ink}; cursor: pointer;
-          transition: transform .2s, box-shadow .3s; text-decoration: none;
+          background: ${C.bg2}; color: ${C.ink}; cursor: pointer;
+          transition: background .2s, border-color .2s; text-decoration: none;
         }
-        .lc-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 30px -8px rgba(245,166,35,.35); }
+        .lc-btn:hover { border-color: ${C.teal}; background: ${C.bg3}; }
+        .lc-btn:focus-visible { outline: 2px solid ${C.teal}; outline-offset: 3px; }
         .lc-btn-p {
-          background: linear-gradient(135deg, ${C.gold}, #e08b10);
-          border: 0; color: #07131D; font-weight: 700; box-shadow: 0 12px 36px -10px ${C.gold};
+          background: ${C.coral};
+          border: 1px solid ${C.coral}; color: #0B1926; font-weight: 700;
         }
-        .lc-btn-p:hover { box-shadow: 0 16px 44px -8px ${C.gold}; }
+        .lc-btn-p:hover { background: #F48C7E; border-color: #F48C7E; }
         .lc-tag {
-          font-size: 12px; padding: 5px 12px; border-radius: 99px;
-          background: rgba(245,166,35,.15); color: ${C.gold}; font-weight: 500; letter-spacing: .02em;
+          font-size: 12px; padding: 5px 12px; border-radius: 6px;
+          background: ${C.bg2}; color: ${C.teal}; font-weight: 500; letter-spacing: .02em;
         }
-        .orb { position: absolute; border-radius: 50%; pointer-events: none; filter: blur(100px); opacity: .12; }
 
         .lc-header {
           position: fixed; top: 0; left: 0; right: 0; z-index: 50;
-          backdrop-filter: blur(16px) saturate(1.4); background: rgba(6,11,17,.8);
+          backdrop-filter: blur(16px) saturate(1.4); background: ${C.bg};
           border-bottom: 1px solid ${C.line};
         }
         .lc-header-inner { display: flex; align-items: center; justify-content: space-between; height: 64px; }
         .lc-brand { font: 700 20px Sora; display: flex; gap: 10px; align-items: center; text-decoration: none; color: #fff; }
-        .lc-brand-icon { width: 24px; height: 24px; border-radius: 8px; background: linear-gradient(135deg, ${C.gold}, ${C.coral}); }
+        .lc-brand-icon { width: 24px; height: 24px; border-radius: 8px; background: ${C.teal}; }
         .lc-nav { display: flex; gap: 28px; color: ${C.mute}; font-size: 14px; }
         .lc-nav a { text-decoration: none; color: inherit; transition: color .2s; }
         .lc-nav a:hover { color: #fff; }
@@ -467,11 +297,7 @@ export default function StrokePage() {
         .lc-hero { position: relative; min-height: 100vh; display: flex; align-items: center; padding: 120px 0 80px; overflow: hidden; }
         .lc-hero-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: center; width: 100%; }
         .lc-hero h1 { font-size: clamp(38px, 5.2vw, 62px); }
-        .lc-hero h1 em {
-          font-style: normal;
-          background: linear-gradient(135deg, ${C.gold}, ${C.coral});
-          -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        }
+        .lc-hero h1 em { font-style: normal; color: ${C.teal}; }
         .lc-hero-p { color: ${C.mute}; max-width: 48ch; margin: 22px 0 36px; font-size: 17px; line-height: 1.7; }
         .lc-acts { display: flex; gap: 14px; flex-wrap: wrap; }
         .lc-strip { display: flex; gap: 36px; margin-top: 44px; }
@@ -479,30 +305,19 @@ export default function StrokePage() {
         .lc-strip span { color: ${C.mute}; font-size: 13px; display: block; margin-top: 2px; }
 
         .lc-stage {
-          position: relative; height: 520px; border-radius: 28px;
-          background: radial-gradient(circle at 50% 45%, rgba(245,166,35,.12), transparent 65%);
-          border: 1px solid rgba(255,255,255,.08); cursor: grab; touch-action: pan-y; overflow: hidden;
+          position: relative; height: 520px; border-radius: 16px;
+          background: ${C.bg2}; border: 1px solid ${C.line}; overflow: hidden;
         }
-        .lc-stage canvas { display: block; width: 100%; height: 100%; }
-        .lc-chip {
-          position: absolute; padding: 11px 16px; border-radius: 16px;
-          background: rgba(6,11,17,.75); backdrop-filter: blur(14px);
-          border: 1px solid rgba(255,255,255,.1); font-size: 13px; pointer-events: none;
-        }
-        .lc-chip b { display: block; font: 600 14px Sora; margin-bottom: 2px; }
-        .lc-chip-gold b { color: ${C.gold}; }
-        .lc-chip-coral b { color: ${C.coral}; }
-        .lc-hint { position: absolute; bottom: 14px; left: 0; right: 0; text-align: center; font-size: 12px; color: ${C.mute}; pointer-events: none; }
 
         .lc-drop {
-          border: 2px dashed rgba(245,166,35,.35); border-radius: 24px; padding: 56px 24px;
-          text-align: center; background: rgba(255,255,255,.015); transition: all .25s;
+          border: 2px dashed ${C.teal}; border-radius: 14px; padding: 56px 24px;
+          text-align: center; background: ${C.bg2}; transition: border-color .25s, background .25s;
           min-height: 280px; display: flex; flex-direction: column; align-items: center; justify-content: center;
           gap: 16px; cursor: pointer;
         }
-        .lc-drop:hover, .lc-drop.over { border-color: ${C.gold}; background: rgba(245,166,35,.04); transform: scale(1.005); }
+        .lc-drop:hover, .lc-drop.over { border-color: ${C.coral}; background: ${C.bg3}; }
         .lc-bar { width: min(440px, 100%); height: 8px; background: rgba(255,255,255,.08); border-radius: 9px; overflow: hidden; }
-        .lc-bar-fill { height: 100%; background: linear-gradient(90deg, ${C.gold}, ${C.coral}); border-radius: 9px; transition: width .15s; }
+        .lc-bar-fill { height: 100%; background: ${C.teal}; border-radius: 9px; transition: width .15s; }
         .lc-spin { width: 56px; height: 56px; border-radius: 50%; border: 3px solid rgba(255,255,255,.1); border-top-color: ${C.gold}; animation: lc-sp 1s linear infinite; }
         @keyframes lc-sp { to { transform: rotate(360deg); } }
         .lc-meta { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; width: 100%; margin-top: 10px; }
@@ -511,17 +326,17 @@ export default function StrokePage() {
 
         .lc-steps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; }
         .lc-step { padding: 24px 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,.06); opacity: .3; transform: translateY(18px); transition: all .6s cubic-bezier(.16,1,.3,1); background: rgba(255,255,255,.02); }
-        .lc-step.on { opacity: 1; transform: none; border-color: rgba(245,166,35,.4); background: rgba(245,166,35,.04); box-shadow: 0 0 30px -10px rgba(245,166,35,.2); }
+        .lc-step.on { opacity: 1; transform: none; border-color: ${C.teal}; background: ${C.bg2}; }
         .lc-step-num { font: 700 13px Sora; margin-bottom: 12px; }
         .lc-step h3 { font-size: 18px; margin: 0 0 8px; }
         .lc-step p { margin: 0; font-size: 13px; color: ${C.mute}; line-height: 1.5; }
 
-        .lc-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; perspective: 1000px; }
-        .feat-card { padding: 30px; border-radius: 22px; background: linear-gradient(160deg, rgba(255,255,255,.06), rgba(255,255,255,.015)); border: 1px solid rgba(255,255,255,.07); transition: transform .2s, box-shadow .35s; will-change: transform; }
-        .feat-card:hover { box-shadow: 0 30px 70px -25px rgba(245,166,35,.35), 0 0 0 1px rgba(245,166,35,.2); }
-        .feat-card h3 { font-size: 19px; margin-top: 14px; }
-        .feat-card p { color: ${C.mute}; font-size: 14px; margin: 10px 0 18px; line-height: 1.6; }
-        .feat-card small { font: 600 13px Sora; color: ${C.gold}; }
+        .lc-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+        .lc-page .feat-card { padding: 30px; border-radius: 14px; background: ${C.bg2}; border: 1px solid ${C.line}; transition: border-color .2s; }
+        .lc-page .feat-card:hover { border-color: ${C.teal}; }
+        .lc-page .feat-card h3 { font-size: 19px; margin-top: 14px; }
+        .lc-page .feat-card p { color: ${C.mute}; font-size: 14px; margin: 10px 0 18px; line-height: 1.6; }
+        .lc-page .feat-card small { font: 600 13px Sora; color: ${C.teal}; }
 
         .lc-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; text-align: center; }
         .lc-stat-n { font: 700 clamp(44px, 5vw, 68px) Sora; color: #fff; line-height: 1; }
@@ -570,14 +385,6 @@ export default function StrokePage() {
                   <Unlock style={{ width: 12, height: 12 }} />
                   <span>{currentUser.name.split(',')[0]}</span>
                 </div>
-                <button
-                  onClick={() => setRBACModalOpen(true)}
-                  className="lc-btn"
-                  style={{ padding: '8px 16px', fontSize: 13 }}
-                >
-                  <Sliders style={{ width: 14, height: 14, color: C.gold }} />
-                  <span>RBAC Matrix</span>
-                </button>
               </div>
             ) : (
               <button
@@ -595,9 +402,6 @@ export default function StrokePage() {
 
       {/* ━━━━━ HERO ━━━━━ */}
       <section className="lc-hero">
-        <div className="orb" style={{ width: 600, height: 600, top: -150, left: -200, background: C.gold }} />
-        <div className="orb" style={{ width: 500, height: 500, bottom: -100, right: -150, background: C.coral }} />
-
         <div className="lc-wrap">
           <div className="lc-hero-grid">
             <div>
@@ -631,17 +435,9 @@ export default function StrokePage() {
               </div>
             </div>
 
-            {/* 3D Vascular Stage */}
-            <div className="lc-stage" ref={stageRef}>
-              <div className="lc-chip lc-chip-gold" style={{ top: 24, left: 24 }}>
-                <b>LVO Detected (M1)</b>
-                ASPECTS Score: 8 / 10
-              </div>
-              <div className="lc-chip lc-chip-coral" style={{ bottom: 38, right: 24 }}>
-                <b>Thrombectomy Candidate</b>
-                Mismatch Ratio: 6.1x (Favorable)
-              </div>
-              <div className="lc-hint">Drag to rotate 3D cerebral vasculature · Circle of Willis model</div>
+            {/* Illustrative cerebral anatomy */}
+            <div className="lc-stage">
+              <AnatomyViewer kind="brain" />
             </div>
           </div>
         </div>
@@ -744,11 +540,10 @@ export default function StrokePage() {
 
       {/* ━━━━━ FEATURES ━━━━━ */}
       <section id="features" className="lc-section lc-alt">
-        <div className="orb" style={{ width: 450, height: 450, bottom: -120, left: '20%', background: C.gold }} />
         <div className="lc-wrap">
           <h2 className="lc-h2">Stroke Care & Perfusion Intelligence</h2>
           <p className="lc-sub">Optimized for rapid intervention decision making in the golden window.</p>
-          <div className="lc-grid" ref={gridRef}>
+          <div className="lc-grid">
             {FEATURES.map((f, i) => (
               <div key={i} className="feat-card">
                 <span className="lc-tag">{f.tag}</span>
@@ -893,7 +688,7 @@ export default function StrokePage() {
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'minmax(320px, 1fr) minmax(320px, 1fr)',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))',
                 gap: 24,
                 marginTop: 24,
               }}

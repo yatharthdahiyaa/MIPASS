@@ -30,16 +30,17 @@ import {
 } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
+import AnatomyViewer from '@/components/common/AnatomyViewer';
 
 /* ── colour tokens ── */
 const C = {
-  bg: '#060B11',
-  bg2: '#0A1823',
-  bg3: '#0E273A',
+  bg: '#0B1926',
+  bg2: '#102333',
+  bg3: '#132B3A',
   ink: '#EAF2F6',
-  mute: '#7B8FA0',
-  teal: '#00DCCE',
-  tealDim: '#008280',
+  mute: '#A6B3BD',
+  teal: '#7DB7B0',
+  tealDim: '#7DB7B0',
   coral: '#FF7869',
   red: '#FF453A',
   amber: '#F5A623',
@@ -139,9 +140,7 @@ const WINDOW_PRESETS = [
 type UploadPhase = 'idle' | 'uploading' | 'processing' | 'done';
 
 export default function QERPage() {
-  const stageRef = useRef<HTMLDivElement>(null);
   const stepsRef = useRef<HTMLDivElement>(null);
-  const gridRef  = useRef<HTMLDivElement>(null);
   const fileRef  = useRef<HTMLInputElement>(null);
 
   const { currentUser, hasPermission, addAuditLog } = useRBAC();
@@ -175,226 +174,6 @@ export default function QERPage() {
   const COUNTER_SUFFIXES = ['%', 's', 'mm', ''];
   const COUNTER_LABELS = ['Acute Bleed Sensitivity', 'STAT Triage Turnaround', 'Midline Shift Precision', 'Bleed Subtypes Classified'];
 
-  /* ── Three.js 3D Cranial Vault & Acute Bleed Stage ── */
-  useEffect(() => {
-    const el = stageRef.current;
-    if (!el) return;
-
-    let cleanup = false;
-
-    const loadThree = async () => {
-      const threeModule = await import('three').catch(() => null);
-      if (!threeModule || cleanup) return;
-      const THREE = threeModule;
-
-      const W = () => el.clientWidth;
-      const H = () => el.clientHeight;
-
-      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-      renderer.setSize(W(), H());
-      el.prepend(renderer.domElement);
-      renderer.domElement.style.borderRadius = '28px';
-
-      const scene = new THREE.Scene();
-      const cam = new THREE.PerspectiveCamera(45, W() / H(), 0.1, 100);
-      cam.position.set(0, 0, 7.5);
-
-      const root = new THREE.Group();
-      scene.add(root);
-
-      /* 1. Cranium / Skull Vault Calvarium Wireframe (Bone Silhouette) */
-      const skullGeo = new THREE.SphereGeometry(1.65, 36, 26);
-      skullGeo.scale(0.85, 1.05, 0.95);
-      const skullMat = new THREE.MeshBasicMaterial({
-        color: new THREE.Color(C.tealDim),
-        wireframe: true,
-        transparent: true,
-        opacity: 0.28,
-      });
-      const skullMesh = new THREE.Mesh(skullGeo, skullMat);
-      root.add(skullMesh);
-
-      /* 2. Brain Parenchyma Point Cloud (Dual Hemispheres) */
-      const brainPointsCount = 5000;
-      const brainPos = new Float32Array(brainPointsCount * 3);
-      const brainCol = new Float32Array(brainPointsCount * 3);
-
-      for (let i = 0; i < brainPointsCount; i++) {
-        const u = Math.random();
-        const v = Math.random();
-        const theta = u * 2 * Math.PI;
-        const phi = Math.acos(2 * v - 1);
-        const r = Math.cbrt(Math.random()) * 1.35;
-
-        let px = r * Math.sin(phi) * Math.cos(theta) * 0.78;
-        let py = r * Math.cos(phi) * 0.92;
-        let pz = r * Math.sin(phi) * Math.sin(theta) * 0.85;
-
-        // Hemispheric fissure gap
-        if (Math.abs(px) < 0.08) {
-          px += px > 0 ? 0.08 : -0.08;
-        }
-
-        brainPos[i * 3]     = px;
-        brainPos[i * 3 + 1] = py;
-        brainPos[i * 3 + 2] = pz;
-
-        // Slate-blue / teal parenchyma
-        brainCol[i * 3]     = 0.12;
-        brainCol[i * 3 + 1] = 0.45;
-        brainCol[i * 3 + 2] = 0.65;
-      }
-
-      const brainGeo = new THREE.BufferGeometry();
-      brainGeo.setAttribute('position', new THREE.BufferAttribute(brainPos, 3));
-      brainGeo.setAttribute('color', new THREE.BufferAttribute(brainCol, 3));
-      const brainMat = new THREE.PointsMaterial({
-        size: 0.035,
-        vertexColors: true,
-        transparent: true,
-        opacity: 0.65,
-        blending: THREE.AdditiveBlending,
-      });
-      root.add(new THREE.Points(brainGeo, brainMat));
-
-      /* 3. Acute Subdural Bleed / Hematoma (Right Convexity - Hyperdense Coral/Red) */
-      const bleedGroup = new THREE.Group();
-      bleedGroup.position.set(0.98, 0.15, 0.1);
-
-      // Crescentic hematoma mesh
-      const bleedGeo = new THREE.TorusGeometry(0.85, 0.18, 16, 40, Math.PI * 0.75);
-      bleedGeo.rotateZ(Math.PI * 0.2);
-      const bleedMat = new THREE.MeshBasicMaterial({
-        color: new THREE.Color(C.red),
-        transparent: true,
-        opacity: 0.85,
-        wireframe: false,
-      });
-      const bleedMesh = new THREE.Mesh(bleedGeo, bleedMat);
-      bleedGroup.add(bleedMesh);
-
-      // Hyperdense core points
-      const coreCount = 800;
-      const corePos = new Float32Array(coreCount * 3);
-      for (let i = 0; i < coreCount; i++) {
-        const ang = (Math.random() - 0.5) * 1.8;
-        const rad = 0.85 + (Math.random() - 0.5) * 0.22;
-        corePos[i * 3]     = rad * Math.cos(ang) * 0.5;
-        corePos[i * 3 + 1] = rad * Math.sin(ang);
-        corePos[i * 3 + 2] = (Math.random() - 0.5) * 0.4;
-      }
-      const coreGeo = new THREE.BufferGeometry();
-      coreGeo.setAttribute('position', new THREE.BufferAttribute(corePos, 3));
-      const coreMat = new THREE.PointsMaterial({
-        color: new THREE.Color(C.coral),
-        size: 0.055,
-        transparent: true,
-        opacity: 0.95,
-        blending: THREE.AdditiveBlending,
-      });
-      bleedGroup.add(new THREE.Points(coreGeo, coreMat));
-      root.add(bleedGroup);
-
-      /* 4. Midline Falx Cerebri Deviation Plane (Shift vector) */
-      const falxMat = new THREE.LineDashedMaterial({
-        color: new THREE.Color(C.coral),
-        dashSize: 0.15,
-        gapSize: 0.08,
-        transparent: true,
-        opacity: 0.8,
-      });
-      const falxGeo = new THREE.BufferGeometry();
-      const fPoints = [
-        new THREE.Vector3(0, 1.4, 0),
-        new THREE.Vector3(-0.25, 0.1, 0), // Shifted to left
-        new THREE.Vector3(0, -1.2, 0),
-      ];
-      falxGeo.setFromPoints(fPoints);
-      const falxLine = new THREE.Line(falxGeo, falxMat);
-      root.add(falxLine);
-
-      /* 5. Sweeping Axial CT Laser Plane */
-      const planeGeo = new THREE.PlaneGeometry(3.6, 3.6);
-      const planeMat = new THREE.MeshBasicMaterial({
-        color: new THREE.Color(C.teal),
-        transparent: true,
-        opacity: 0.14,
-        side: THREE.DoubleSide,
-      });
-      const scanPlane = new THREE.Mesh(planeGeo, planeMat);
-      scanPlane.rotation.x = Math.PI / 2;
-      root.add(scanPlane);
-
-      const edgeGeo = new THREE.EdgesGeometry(planeGeo);
-      const edgeMat = new THREE.LineBasicMaterial({
-        color: new THREE.Color(C.teal),
-        transparent: true,
-        opacity: 0.7,
-      });
-      const scanEdge = new THREE.LineSegments(edgeGeo, edgeMat);
-      scanEdge.rotation.x = Math.PI / 2;
-      root.add(scanEdge);
-
-      /* Interaction & Animation Loop */
-      let drag = false, px = 0, ry = 0;
-      const vy = 0.003;
-      el.addEventListener('pointerdown', (e) => { drag = true; px = e.clientX; el.style.cursor = 'grabbing'; });
-      window.addEventListener('pointerup', () => { drag = false; el.style.cursor = 'grab'; });
-      window.addEventListener('pointermove', (e) => {
-        if (drag) {
-          ry += (e.clientX - px) * 0.01;
-          px = e.clientX;
-        }
-      });
-
-      let visible = true;
-      const visObs = new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; });
-      visObs.observe(el);
-
-      function loop(t: number) {
-        if (cleanup) return;
-        requestAnimationFrame(loop);
-        if (!visible) return;
-
-        if (!drag) ry += vy;
-        root.rotation.y = ry;
-        root.rotation.x = Math.sin(t / 3000) * 0.08;
-
-        // Axial CT plane sweep
-        const k = (Math.sin(t / 1800) + 1) / 2;
-        scanPlane.position.y = scanEdge.position.y = -1.4 + k * 2.8;
-
-        // Pulsing bleed hematoma
-        const pulse = 1 + Math.sin(t / 280) * 0.15;
-        bleedGroup.scale.set(pulse, pulse, pulse);
-
-        renderer.render(scene, cam);
-      }
-      requestAnimationFrame(loop);
-
-      const onResize = () => {
-        renderer.setSize(W(), H());
-        cam.aspect = W() / H();
-        cam.updateProjectionMatrix();
-      };
-      window.addEventListener('resize', onResize);
-
-      return () => {
-        cleanup = true;
-        window.removeEventListener('resize', onResize);
-        visObs.disconnect();
-        renderer.dispose();
-      };
-    };
-
-    const disposePromise = loadThree();
-    return () => {
-      cleanup = true;
-      disposePromise.then((dispose) => dispose?.());
-    };
-  }, []);
-
   /* ── pipeline reveal on scroll ── */
   useEffect(() => {
     const el = stepsRef.current;
@@ -410,46 +189,6 @@ export default function QERPage() {
     }, { threshold: 0.25 });
     obs.observe(el);
     return () => obs.disconnect();
-  }, []);
-
-  /* ── 3D tilt on feature cards ── */
-  useEffect(() => {
-    const el = gridRef.current;
-    if (!el || !window.matchMedia('(hover: hover)').matches) return;
-    const cards = el.querySelectorAll<HTMLElement>('.feat-card');
-    const handlers: Array<{ card: HTMLElement; enter: () => void; leave: () => void; move: (e: MouseEvent) => void }> = [];
-
-    cards.forEach((card) => {
-      let raf = 0;
-      const onMove = (e: MouseEvent) => {
-        cancelAnimationFrame(raf);
-        raf = requestAnimationFrame(() => {
-          const r = card.getBoundingClientRect();
-          const x = (e.clientX - r.left) / r.width - 0.5;
-          const y = (e.clientY - r.top) / r.height - 0.5;
-          card.style.transform = `perspective(800px) rotateY(${x * 12}deg) rotateX(${-y * 12}deg) translateZ(10px)`;
-        });
-      };
-      const onEnter = () => { card.style.transition = 'transform .1s ease-out'; };
-      const onLeave = () => {
-        cancelAnimationFrame(raf);
-        card.style.transition = 'transform .4s ease-out';
-        card.style.transform = 'perspective(800px) rotateY(0deg) rotateX(0deg) translateZ(0)';
-      };
-
-      card.addEventListener('mouseenter', onEnter);
-      card.addEventListener('mousemove', onMove);
-      card.addEventListener('mouseleave', onLeave);
-      handlers.push({ card, enter: onEnter, leave: onLeave, move: onMove });
-    });
-
-    return () => {
-      handlers.forEach(({ card, enter, leave, move }) => {
-        card.removeEventListener('mouseenter', enter);
-        card.removeEventListener('mousemove', move);
-        card.removeEventListener('mouseleave', leave);
-      });
-    };
   }, []);
 
   /* ── animated stats counters ── */
@@ -523,9 +262,9 @@ export default function QERPage() {
       setTimeout(() => {
         router.push('/doctor');
       }, 500);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Upload failed:', err);
-      setUploadError(err.message || 'Error processing DICOM image');
+      setUploadError(err instanceof Error && err.message ? err.message : 'Error processing DICOM image');
       setUploadPhase('idle');
     }
   };
@@ -572,49 +311,42 @@ export default function QERPage() {
         .qer-alt { background: ${C.bg3}; }
         .qer-sub { color: ${C.mute}; max-width: 58ch; margin: 0 0 48px; font-size: 16px; line-height: 1.7; }
         .qer-h2 { font-size: clamp(28px, 4vw, 44px); margin-bottom: 14px; }
-        .qer-btn { display: inline-flex; align-items: center; gap: 8px; border-radius: 999px; padding: 13px 26px; font-weight: 600; font-size: 14px; border: 1px solid ${C.line}; background: rgba(255,255,255,.05); color: ${C.ink}; cursor: pointer; transition: transform .2s, box-shadow .3s; text-decoration: none; }
-        .qer-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 30px -8px rgba(255,120,105,.25); }
-        .qer-btn-p { background: linear-gradient(135deg, ${C.coral}, ${C.red}); border: 0; color: #fff; box-shadow: 0 12px 36px -10px ${C.coral}; }
-        .qer-btn-p:hover { box-shadow: 0 16px 44px -8px ${C.coral}; }
-        .qer-btn-stat { background: linear-gradient(135deg, #FF453A, #B31D1D); border: 0; color: #fff; font-weight: 700; box-shadow: 0 12px 36px -10px #FF453A; animation: statPulse 1.8s infinite; }
-        @keyframes statPulse { 0%, 100% { box-shadow: 0 0 20px rgba(255,69,58,.5); } 50% { box-shadow: 0 0 35px rgba(255,69,58,.9); } }
-        .qer-tag { font-size: 12px; padding: 5px 12px; border-radius: 99px; background: rgba(255,120,105,.15); color: ${C.coral}; font-weight: 600; letter-spacing: .02em; }
+        .qer-btn { display: inline-flex; align-items: center; gap: 8px; border-radius: 10px; padding: 13px 26px; font-weight: 600; font-size: 14px; border: 1px solid ${C.line}; background: ${C.bg2}; color: ${C.ink}; cursor: pointer; transition: background .2s, border-color .2s; text-decoration: none; }
+        .qer-btn:hover { border-color: ${C.teal}; background: ${C.bg3}; }
+        .qer-btn:focus-visible { outline: 2px solid ${C.teal}; outline-offset: 3px; }
+        .qer-btn-p, .qer-btn-stat { background: ${C.coral}; border: 1px solid ${C.coral}; color: #0B1926; font-weight: 700; }
+        .qer-btn-p:hover, .qer-btn-stat:hover { background: #F48C7E; border-color: #F48C7E; }
+        .qer-tag { font-size: 12px; padding: 5px 12px; border-radius: 6px; background: ${C.bg2}; color: ${C.teal}; font-weight: 600; letter-spacing: .02em; }
         
         .qer-hero { position: relative; min-height: 100vh; display: flex; align-items: center; padding: 120px 0 80px; overflow: hidden; }
         .qer-hero-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 36px; align-items: center; width: 100%; }
         .qer-hero h1 { font-size: clamp(38px, 5vw, 60px); }
-        .qer-hero h1 em { font-style: normal; background: linear-gradient(135deg, ${C.coral}, ${C.amber}); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .qer-hero h1 em { font-style: normal; color: ${C.teal}; }
         .qer-hero-p { color: ${C.mute}; max-width: 48ch; margin: 20px 0 32px; font-size: 16px; line-height: 1.7; }
         
-        .qer-stage { position: relative; height: 520px; border-radius: 28px; background: radial-gradient(circle at 50% 45%, rgba(255,120,105,.12), transparent 65%); border: 1px solid rgba(255,255,255,.07); cursor: grab; overflow: hidden; }
-        .qer-stage canvas { display: block; width: 100%; height: 100%; }
-        .qer-chip { position: absolute; padding: 10px 16px; border-radius: 14px; background: rgba(6,11,17,.78); backdrop-filter: blur(14px); border: 1px solid rgba(255,255,255,.1); font-size: 12px; pointer-events: none; }
-        .qer-chip b { display: block; font: 600 13px Sora; margin-bottom: 2px; }
-        .qer-chip-coral b { color: ${C.coral}; }
-        .qer-chip-red b { color: ${C.red}; }
-        .qer-chip-teal b { color: ${C.teal}; }
+        .qer-stage { position: relative; height: 520px; border-radius: 16px; background: ${C.bg2}; border: 1px solid ${C.line}; overflow: hidden; }
 
-        .qer-drop { border: 2px dashed rgba(255,120,105,.35); border-radius: 24px; padding: 50px 24px; text-align: center; background: rgba(255,255,255,.015); transition: all .25s; min-height: 260px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; cursor: pointer; }
-        .qer-drop:hover, .qer-drop.over { border-color: ${C.coral}; background: rgba(255,120,105,.05); transform: scale(1.005); }
+        .qer-drop { border: 2px dashed ${C.teal}; border-radius: 14px; padding: 50px 24px; text-align: center; background: ${C.bg2}; transition: border-color .25s, background .25s; min-height: 260px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; cursor: pointer; }
+        .qer-drop:hover, .qer-drop.over { border-color: ${C.coral}; background: ${C.bg3}; }
         .qer-bar { width: min(440px, 100%); height: 8px; background: rgba(255,255,255,.08); border-radius: 9px; overflow: hidden; }
-        .qer-bar-fill { height: 100%; background: linear-gradient(90deg, ${C.coral}, ${C.red}); border-radius: 9px; transition: width .15s; }
+        .qer-bar-fill { height: 100%; background: ${C.teal}; border-radius: 9px; transition: width .15s; }
 
         .qer-steps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; }
         .qer-step { padding: 22px 18px; border-radius: 20px; border: 1px solid rgba(255,255,255,.06); opacity: .3; transform: translateY(18px); transition: all .6s cubic-bezier(.16,1,.3,1); background: rgba(255,255,255,.02); }
-        .qer-step.on { opacity: 1; transform: none; border-color: rgba(255,120,105,.45); background: rgba(255,120,105,.04); box-shadow: 0 0 30px -10px rgba(255,120,105,.2); }
+        .qer-step.on { opacity: 1; transform: none; border-color: ${C.teal}; background: ${C.bg2}; }
         .qer-step-num { font: 700 12px Sora; margin-bottom: 10px; }
         .qer-step h3 { font-size: 16px; margin: 0 0 6px; }
         .qer-step p { margin: 0; font-size: 12px; color: ${C.mute}; line-height: 1.5; }
 
-        .qer-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; perspective: 1000px; }
-        .feat-card { padding: 28px; border-radius: 22px; background: linear-gradient(160deg, rgba(255,255,255,.06), rgba(255,255,255,.015)); border: 1px solid rgba(255,255,255,.07); transition: transform .2s, box-shadow .35s; will-change: transform; }
-        .feat-card:hover { box-shadow: 0 25px 60px -20px rgba(255,120,105,.3), 0 0 0 1px rgba(255,120,105,.2); }
-        .feat-card h3 { font-size: 18px; margin-top: 12px; }
-        .feat-card p { color: ${C.mute}; font-size: 13px; margin: 8px 0 16px; line-height: 1.6; }
-        .feat-card small { display: block; margin-top: 12px; color: ${C.coral}; font-weight: 600; font-size: 13px; }
+        .qer-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+        .qer-page .feat-card { padding: 28px; border-radius: 14px; background: ${C.bg2}; border: 1px solid ${C.line}; transition: border-color .2s; }
+        .qer-page .feat-card:hover { border-color: ${C.teal}; }
+        .qer-page .feat-card h3 { font-size: 18px; margin-top: 12px; }
+        .qer-page .feat-card p { color: ${C.mute}; font-size: 13px; margin: 8px 0 16px; line-height: 1.6; }
+        .qer-page .feat-card small { display: block; margin-top: 12px; color: ${C.teal}; font-weight: 600; font-size: 13px; }
 
         .qer-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; text-align: center; }
-        .qer-stat-n { font: 700 clamp(36px, 4.5vw, 54px) Sora; font-variant-numeric: tabular-nums; background: linear-gradient(135deg, #fff, ${C.coral}); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .qer-stat-n { font: 700 clamp(36px, 4.5vw, 54px) Sora; font-variant-numeric: tabular-nums; color: ${C.ink}; }
         .qer-stat-l { color: ${C.mute}; font-size: 13px; margin-top: 4px; }
 
         .qer-station { border-radius: 24px; border: 1px solid rgba(255,255,255,.1); background: #0A1823; overflow: hidden; }
@@ -671,23 +403,9 @@ export default function QERPage() {
                 </div>
               </div>
 
-              {/* 3D Anatomical Organ Stage */}
-              <div className="qer-stage" ref={stageRef}>
-                <div className="qer-chip qer-chip-red" style={{ top: 20, left: 20 }}>
-                  <b>STAT CRITICAL ALERT</b>
-                  <span style={{ color: C.mute }}>Acute Subdural Hematoma (38.4 cc)</span>
-                </div>
-                <div className="qer-chip qer-chip-coral" style={{ top: 88, right: 20 }}>
-                  <b>Midline Shift: 6.8 mm</b>
-                  <span style={{ color: C.mute }}>Surgical Decompression Threshold (&gt;5mm)</span>
-                </div>
-                <div className="qer-chip qer-chip-teal" style={{ bottom: 24, left: 20 }}>
-                  <b>Level 1 Trauma Alert</b>
-                  <span style={{ color: C.mute }}>Neurosurgery Pager Auto-Triggered</span>
-                </div>
-                <div style={{ position: 'absolute', bottom: 12, right: 20, fontSize: 11, color: C.mute }}>
-                  Drag to rotate cranial vault in 3D
-                </div>
+              {/* Illustrative cerebral anatomy */}
+              <div className="qer-stage">
+                <AnatomyViewer kind="brain" />
               </div>
             </div>
           </div>
@@ -813,7 +531,7 @@ export default function QERPage() {
               Trained and validated on over 140,000 non-contrast head CT examinations across major academic trauma centers and emergency departments.
             </p>
 
-            <div className="qer-grid" ref={gridRef}>
+            <div className="qer-grid">
               {FEATURES.map((f, i) => (
                 <div key={i} className="feat-card">
                   <span className="qer-tag">{f.tag}</span>
@@ -880,7 +598,7 @@ export default function QERPage() {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: selectedCase.isStatCritical ? C.red : C.teal, fontWeight: 700 }}>
-                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: selectedCase.isStatCritical ? C.red : C.teal, animation: selectedCase.isStatCritical ? 'statPulse 1.5s infinite' : 'none' }} />
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: selectedCase.isStatCritical ? C.red : C.teal }} />
                     {selectedCase.isStatCritical ? 'STAT EMERGENCY CODE 1' : 'STABLE / ROUTINE'}
                   </div>
                 </div>
@@ -948,7 +666,6 @@ export default function QERPage() {
                           borderRadius: '0 80px 80px 0',
                           border: `3px solid ${C.coral}`,
                           background: 'radial-gradient(circle, rgba(255,69,58,0.7) 0%, rgba(255,120,105,0.4) 80%)',
-                          boxShadow: `0 0 30px ${C.red}`,
                           animation: 'pulse 1.8s infinite',
                         }}
                       >
@@ -968,7 +685,6 @@ export default function QERPage() {
                           height: 65,
                           borderRadius: '50%',
                           background: 'radial-gradient(circle, rgba(255,69,58,0.8) 0%, rgba(255,120,105,0.3) 70%)',
-                          boxShadow: `0 0 25px ${C.coral}`,
                         }}
                       >
                         <div style={{ position: 'absolute', top: -18, left: -20, fontSize: 10, background: C.red, color: '#fff', padding: '2px 6px', borderRadius: 4, fontWeight: 700, whiteSpace: 'nowrap' }}>
@@ -988,7 +704,6 @@ export default function QERPage() {
                           borderRadius: '50%',
                           border: `2px solid ${C.red}`,
                           background: 'radial-gradient(circle, rgba(255,69,58,0.75) 0%, rgba(245,166,35,0.3) 70%)',
-                          boxShadow: `0 0 25px ${C.red}`,
                         }}
                       >
                         <div style={{ position: 'absolute', top: -16, left: 0, fontSize: 10, background: C.red, color: '#fff', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>
@@ -1156,7 +871,7 @@ export default function QERPage() {
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
               <Link href="/lung-cancer" className="feat-card" style={{ textDecoration: 'none', display: 'block' }}>
-                <span className="qer-tag" style={{ color: C.violet, background: 'rgba(124,92,252,.15)' }}>LDCT · Oncology</span>
+                <span className="qer-tag">LDCT · Oncology</span>
                 <h3>qCT Lung Cancer</h3>
                 <p>3D nodule segmentation & 6-year Sybil cancer risk prediction.</p>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: C.teal, fontSize: 13, fontWeight: 600 }}>
@@ -1165,7 +880,7 @@ export default function QERPage() {
               </Link>
 
               <Link href="/cardiac" className="feat-card" style={{ textDecoration: 'none', display: 'block' }}>
-                <span className="qer-tag" style={{ color: '#FF5A78', background: 'rgba(255,90,120,.15)' }}>Cine MRI · Cardiology</span>
+                <span className="qer-tag">Cine MRI · Cardiology</span>
                 <h3>qCardiac Heart AI</h3>
                 <p>ACDC U-Net biventricular volumes & 17-segment AHA wall motion.</p>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: C.teal, fontSize: 13, fontWeight: 600 }}>
@@ -1174,7 +889,7 @@ export default function QERPage() {
               </Link>
 
               <Link href="/brain-tumor" className="feat-card" style={{ textDecoration: 'none', display: 'block' }}>
-                <span className="qer-tag" style={{ color: '#A855F7', background: 'rgba(168,85,247,.15)' }}>Multi-Seq MRI · Neuro</span>
+                <span className="qer-tag">Multi-Seq MRI · Neuro</span>
                 <h3>qBrain Tumor AI</h3>
                 <p>BraTS SegResNet multi-compartment glioma & WHO grading.</p>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: C.teal, fontSize: 13, fontWeight: 600 }}>

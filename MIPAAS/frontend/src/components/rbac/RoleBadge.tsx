@@ -10,6 +10,7 @@ import {
   Cpu,
   FileCheck2,
   ChevronDown,
+  Cloud,
 } from 'lucide-react';
 
 interface RoleBadgeProps {
@@ -23,7 +24,7 @@ export default function RoleBadge({
   showPersona = true,
   className = '',
 }: RoleBadgeProps) {
-  const { currentUser, setRBACModalOpen } = useRBAC();
+  const { currentUser, setRBACModalOpen, isIamAuthenticated, iamUser } = useRBAC();
   const meta = ROLE_DEFINITIONS[currentUser.role];
 
   const getIcon = () => {
@@ -60,6 +61,15 @@ export default function RoleBadge({
       <span className="font-semibold tracking-wide" style={{ color: meta.badgeColor }}>
         {meta.title}
       </span>
+      {isIamAuthenticated && (
+        <span
+          className="inline-flex items-center gap-1 rounded bg-[#FF9900]/20 px-1.5 py-0.5 text-[10px] font-bold text-[#FF9900] border border-[#FF9900]/40"
+          title={`Authenticated via AWS IAM: ${iamUser?.accountName || 'AWS Cloud'}`}
+        >
+          <Cloud className="w-2.5 h-2.5" />
+          {iamUser?.isRoot ? 'ROOT' : iamUser?.accountAlias || iamUser?.accountId?.slice(-4) || 'IAM'}
+        </span>
+      )}
       {showPersona && !compact && (
         <>
           <span className="opacity-40">|</span>

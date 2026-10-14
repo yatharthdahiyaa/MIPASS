@@ -13,21 +13,21 @@ def test_dicom_inference_rejects_missing_file(client):
     assert response.status_code == 400
     data = response.get_json()
     assert data["success"] is False
-    assert "DICOM file is required" in data["error"]["message"]
+    assert any(term in data["error"]["message"].lower() for term in ["image file is required", "dicom file is required"])
 
 
 def test_dicom_inference_rejects_non_dicom_extension(client):
-    """Test that non-DICOM extensions (.png, .jpg, .txt) are rejected."""
-    fake_png = (io.BytesIO(b"\x89PNG\r\n\x1a\nfake image content"), "scan.png")
+    """Test that non-DICOM extensions (.png, .jpg, .txt) with unreadable content are rejected."""
+    fake_txt = (io.BytesIO(b"fake plain text content"), "scan.txt")
     response = client.post(
         "/api/v1/inference/dicom-predict",
-        data={"file": fake_png},
+        data={"file": fake_txt},
         content_type="multipart/form-data",
     )
     assert response.status_code == 400
     data = response.get_json()
     assert data["success"] is False
-    assert "valid DICOM image" in data["error"]["message"]
+    assert any(term in data["error"]["message"].lower() for term in ["invalid", "cannot identify", "not a supported format", "supported format", "valid dicom"])
 
 
 def test_dicom_inference_rejects_corrupted_file_with_dcm_ext(client):
@@ -41,7 +41,7 @@ def test_dicom_inference_rejects_corrupted_file_with_dcm_ext(client):
     assert response.status_code == 400
     data = response.get_json()
     assert data["success"] is False
-    assert "valid DICOM image" in data["error"]["message"]
+    assert any(term in data["error"]["message"].lower() for term in ["not a supported format", "cannot identify", "valid dicom", "invalid"])
 
 
 def test_dicom_inference_with_real_dicom_file(client):

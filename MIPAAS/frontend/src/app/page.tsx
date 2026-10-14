@@ -1,4 +1,3 @@
-import AnnouncementBar from "@/components/AnnouncementBar";
 import Navbar from "@/components/Navbar";
 import HeroSection from "@/components/HeroSection";
 import PartnersSection from "@/components/PartnersSection";
@@ -11,30 +10,17 @@ import Footer from "@/components/Footer";
 export default function Home() {
   return (
     <div className="relative">
-      {/* Sticky header */}
+      <a href="#main-content" className="skip-link">Skip to content</a>
       <div className="sticky top-0 z-50 w-full">
-        <AnnouncementBar />
         <Navbar />
       </div>
 
-      {/* Main content */}
-      <main>
-        {/* 1. Hero */}
+      <main id="main-content" tabIndex={-1}>
         <HeroSection />
-
-        {/* 2. Partners / Logo ticker + Compliance */}
         <PartnersSection />
-
-        {/* 4. Transforming Healthcare Pathways */}
         <PathwaysSection />
-
-        {/* 5. Global Impact */}
         <ImpactSection />
-
-        {/* 6. Latest Developments (Evidence + Blog) */}
         <DevelopmentsSection />
-
-        {/* 7. Testimonials */}
         <TestimonialsSection />
       </main>
 

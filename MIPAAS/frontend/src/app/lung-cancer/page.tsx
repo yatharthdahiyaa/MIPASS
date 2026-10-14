@@ -15,6 +15,12 @@ export const metadata: Metadata = {
   },
 };
 
+import ServiceGuard from '@/components/common/ServiceGuard';
+
 export default function LungCancerPage() {
-  return <LungCancerEnhanced />;
+  return (
+    <ServiceGuard serviceId="lung-cancer">
+      <LungCancerEnhanced />
+    </ServiceGuard>
+  );
 }

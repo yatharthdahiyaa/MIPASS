@@ -1,5 +1,7 @@
 'use client';
+
 import { useState } from 'react';
+import Image from 'next/image';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 const testimonials = [
@@ -31,67 +33,89 @@ const testimonials = [
 
 export default function TestimonialsSection() {
   const [current, setCurrent] = useState(0);
+  const [failedImages, setFailedImages] = useState<string[]>([]);
 
   const prev = () => setCurrent((c) => (c - 1 + testimonials.length) % testimonials.length);
   const next = () => setCurrent((c) => (c + 1) % testimonials.length);
 
   const t = testimonials[current];
+  const initials = t.author.replace(/^Dr\.\s*/, '').split(' ').map((name) => name[0]).slice(0, 2).join('');
+  const controlClassName = 'flex h-11 w-11 cursor-pointer items-center justify-center rounded-md border border-slate-300 bg-white text-[#0F2332] transition-colors hover:border-[#008280] hover:bg-[#F1F7F6] hover:text-[#006B69] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#008280]';
 
   return (
-    <section id="clients" className="bg-gray-100 py-16 md:py-24 overflow-hidden scroll-mt-28">
-      <div className="mx-auto max-w-[81rem] px-6 md:px-8 xl:px-0">
-        <div className="max-w-4xl mx-auto bg-white rounded-3xl p-8 sm:p-14 shadow-xl border border-gray-200/60 relative">
-          {/* Quote decorative mark */}
-          <div className="text-6xl font-serif text-[#833766]/20 leading-none select-none mb-2">
-            &ldquo;
-          </div>
-
-          <div className="min-h-[160px] flex items-center">
-            <p className="text-gray-800 text-lg sm:text-xl lg:text-2xl font-light leading-relaxed">
-              {t.quote}
+    <section id="clients" aria-labelledby="testimonials-heading" className="scroll-mt-28 bg-[#F7F9FA] py-16 text-[#0F2332] md:py-24">
+      <div className="site-container">
+        <div className="grid items-start gap-8 lg:grid-cols-[1fr_2fr] lg:gap-12">
+          <header>
+            <p className="eyebrow mb-4 !text-[#006B69]">Client perspectives</p>
+            <h2 id="testimonials-heading" className="section-heading">Voices from healthcare</h2>
+            <p className="section-description mt-5 !text-slate-600">
+              Demonstration testimonials. Quotes, attributions, partnerships and outcome claims have not been verified and do not establish endorsements.
             </p>
-          </div>
+            <p id="testimonial-instructions" className="mt-6 text-xs leading-relaxed text-slate-600">
+              Focus the quote panel and use the left and right arrow keys, or use the previous and next buttons.
+            </p>
+          </header>
 
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 pt-8 mt-8 border-t border-gray-100">
-            <div className="flex items-center gap-4">
-              <div className="h-14 w-14 rounded-full overflow-hidden bg-gray-200 border-2 border-[#833766]/30 flex-shrink-0">
-                <img
-                  src={t.image}
-                  alt={t.author}
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    (e.currentTarget as HTMLElement).style.display = 'none';
-                  }}
-                />
-              </div>
-              <div>
-                <h4 className="text-gray-900 font-bold text-base sm:text-lg">
-                  {t.author}
-                </h4>
-                <p className="text-gray-500 text-xs sm:text-sm">
-                  {t.role} • <span className="text-[#008280] font-medium">{t.organization}</span>
-                </p>
+          <div
+            role="region"
+            aria-roledescription="carousel"
+            aria-label="Demonstration testimonials"
+            aria-describedby="testimonial-instructions"
+            tabIndex={0}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowLeft') {
+                event.preventDefault();
+                prev();
+              } else if (event.key === 'ArrowRight') {
+                event.preventDefault();
+                next();
+              }
+            }}
+            className="min-w-0 rounded-xl border border-slate-200 bg-white p-6 shadow-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#008280] sm:p-10"
+          >
+            <div id="testimonial-slide" aria-live="polite" aria-atomic="true">
+              <div role="group" aria-roledescription="slide" aria-label={`${current + 1} of ${testimonials.length}`}>
+                <p className="mb-5 text-xs font-semibold uppercase tracking-[0.14em] text-[#006B69]">Demonstration quote · {current + 1} of {testimonials.length}</p>
+                <blockquote className="min-h-56 text-lg font-medium leading-relaxed tracking-tight text-[#0F2332] sm:text-xl lg:text-2xl">
+                  <p>“{t.quote}”</p>
+                </blockquote>
+                <div className="mt-8 flex items-center gap-4 border-t border-slate-200 pt-6">
+                  <div aria-hidden="true" className="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full border border-[#008280]/20 bg-[#E7F1F0] text-base font-semibold text-[#006B69]">
+                    <span>{initials}</span>
+                    {!failedImages.includes(t.image) && (
+                      <Image
+                        key={t.image}
+                        src={t.image}
+                        alt=""
+                        fill
+                        sizes="56px"
+                        loading="lazy"
+                        className="object-cover"
+                        onError={() => setFailedImages((images) => images.includes(t.image) ? images : [...images, t.image])}
+                      />
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-base font-semibold text-[#0F2332]">{t.author}</p>
+                    <p className="mt-1 text-xs leading-relaxed text-slate-600 sm:text-sm">
+                      {t.role} · <span className="font-medium text-[#006B69]">{t.organization}</span>
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
 
-            {/* Navigation buttons */}
-            <div className="flex items-center gap-3 self-end sm:self-center">
-              <button
-                type="button"
-                onClick={prev}
-                aria-label="Previous testimonial"
-                className="h-10 w-10 rounded-full border border-gray-300 hover:border-[#008280] hover:text-[#008280] flex items-center justify-center transition-colors cursor-pointer"
-              >
-                <ChevronLeft className="h-5 w-5" />
-              </button>
-              <button
-                type="button"
-                onClick={next}
-                aria-label="Next testimonial"
-                className="h-10 w-10 rounded-full border border-gray-300 hover:border-[#008280] hover:text-[#008280] flex items-center justify-center transition-colors cursor-pointer"
-              >
-                <ChevronRight className="h-5 w-5" />
-              </button>
+            <div className="mt-6 flex items-center justify-between gap-4 border-t border-slate-200 pt-6">
+              <p className="text-sm tabular-nums text-slate-600" aria-hidden="true">{String(current + 1).padStart(2, '0')} / {String(testimonials.length).padStart(2, '0')}</p>
+              <div className="flex items-center gap-3">
+                <button type="button" onClick={prev} aria-label="Previous testimonial" aria-controls="testimonial-slide" className={controlClassName}>
+                  <ChevronLeft aria-hidden="true" className="h-5 w-5" />
+                </button>
+                <button type="button" onClick={next} aria-label="Next testimonial" aria-controls="testimonial-slide" className={controlClassName}>
+                  <ChevronRight aria-hidden="true" className="h-5 w-5" />
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -1,0 +1,629 @@
+{
+  "info": {
+    "_postman_id": "a9840293-1b94-4d43-85bb-iam-rbac-api",
+    "name": "AWS IAM & RBAC Authentication API",
+    "description": "Postman Collection for AWS-style IAM & RBAC Authentication System.\nFeatures: Two-Step Login, MFA TOTP, Refresh Token Rotation, Granular Policy Evaluator (Explicit Deny > Allow > Default Deny), User & Role Management, Audit Logs.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000/api",
+      "type": "string"
+    },
+    {
+      "key": "mfaSessionToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "userId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "roleId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "policyId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "groupId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Authentication Flows",
+      "item": [
+        {
+          "name": "Sign-up (Create AWS Account & Root User)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@cloudcompany.com\",\n  \"password\": \"SecurePass#2026!\",\n  \"confirmPassword\": \"SecurePass#2026!\",\n  \"accountName\": \"CloudCompany Production\",\n  \"accountAlias\": \"cloud-prod\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/signup",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "signup"]
+            },
+            "description": "Registers a new 12-digit AWS Account with the first user as 'Root User'. Generates a 64-character verification token."
+          }
+        },
+        {
+          "name": "Verify Email",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"PASTE_EMAIL_VERIFICATION_TOKEN_HERE\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/verify-email",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "verify-email"]
+            },
+            "description": "Validates the time-limited verification token before first sign-in."
+          }
+        },
+        {
+          "name": "Sign-in Step 1: Root User Identifier",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userType\": \"root\",\n  \"email\": \"root@aws-example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/signin/step1",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "signin", "step1"]
+            },
+            "description": "Step 1 of AWS sign-in. Validates Root email identifier without disclosing non-existent accounts."
+          }
+        },
+        {
+          "name": "Sign-in Step 1: IAM User Identifier",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userType\": \"iam\",\n  \"accountIdOrAlias\": \"aws-demo\",\n  \"username\": \"alice.dev\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/signin/step1",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "signin", "step1"]
+            },
+            "description": "Step 1 for IAM user using 12-digit Account ID or Account Alias + IAM username."
+          }
+        },
+        {
+          "name": "Sign-in Step 2: Password Authentication",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userType\": \"root\",\n  \"email\": \"root@aws-example.com\",\n  \"password\": \"SuperSecret#Root2026!\",\n  \"rememberDevice\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/signin/step2",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "signin", "step2"]
+            },
+            "description": "Authenticates password. Enforces 5-attempt / 15-minute lockout. If MFA is active, returns requiresMfa: true with mfaSessionToken."
+          }
+        },
+        {
+          "name": "MFA Setup (Generate TOTP QR & Backup Codes)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/mfa/setup",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "mfa", "setup"]
+            },
+            "description": "Generates TOTP secret, otpauth:// URI, data:image/png QR code, and 8 one-time backup codes."
+          }
+        },
+        {
+          "name": "MFA Enable (Confirm Initial TOTP Code)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"123456\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/mfa/enable",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "mfa", "enable"]
+            },
+            "description": "Confirms the code from Google Authenticator to permanently activate MFA on the account."
+          }
+        },
+        {
+          "name": "MFA Verify (During Sign-in)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mfaSessionToken\": \"{{mfaSessionToken}}\",\n  \"code\": \"123456\",\n  \"isBackupCode\": false\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/mfa/verify",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "mfa", "verify"]
+            },
+            "description": "Verifies 6-digit TOTP code or 8-character backup code, then sets JWT access and refresh cookies."
+          }
+        },
+        {
+          "name": "Refresh Access Token",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/refresh",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "refresh"]
+            },
+            "description": "Rotates refresh token in httpOnly cookie and issues fresh 15-minute access token."
+          }
+        },
+        {
+          "name": "Get Authenticated Profile & Resolved RBAC (/me)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "me"]
+            },
+            "description": "Returns signed-in user identity, attached roles, groups, and pre-resolved RBAC permissions."
+          }
+        },
+        {
+          "name": "Forgot Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"root@aws-example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/forgot-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "forgot-password"]
+            },
+            "description": "Dispatches 1-hour password reset token. Generic response prevents account enumeration."
+          }
+        },
+        {
+          "name": "Reset Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"PASTE_RESET_TOKEN_HERE\",\n  \"newPassword\": \"NewSecurePass#2026!\",\n  \"confirmPassword\": \"NewSecurePass#2026!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/reset-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "reset-password"]
+            },
+            "description": "Updates password and invalidates active refresh tokens."
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "logout"]
+            },
+            "description": "Revokes current refresh token from PostgreSQL and clears httpOnly auth cookies."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. IAM Users Management",
+      "item": [
+        {
+          "name": "List Users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["users"]
+            },
+            "description": "Requires 'users:read'. Lists all IAM users and root user in the account."
+          }
+        },
+        {
+          "name": "Create IAM User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"bob.developer\",\n  \"email\": \"bob@example.com\",\n  \"password\": \"DevPassword#2026!\",\n  \"roleIds\": [\"{{roleId}}\"],\n  \"groupIds\": [\"{{groupId}}\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["users"]
+            },
+            "description": "Requires 'users:create'. Provisions IAM user with initial password and role/group assignments."
+          }
+        },
+        {
+          "name": "Update User (Suspend / Assign Roles)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isSuspended\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}"]
+            },
+            "description": "Requires 'users:update'. Suspends user or modifies attached roles/groups."
+          }
+        },
+        {
+          "name": "Reset User Password (Admin Override)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newPassword\": \"ResetPass#2026!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/reset-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}", "reset-password"]
+            },
+            "description": "Requires 'users:update'. Sets new password for target user."
+          }
+        },
+        {
+          "name": "Delete User",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}"]
+            },
+            "description": "Requires 'users:delete'. Root user is protected from deletion."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. IAM Roles Management",
+      "item": [
+        {
+          "name": "List Roles",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/roles",
+              "host": ["{{baseUrl}}"],
+              "path": ["roles"]
+            },
+            "description": "Requires 'roles:read'. Returns system roles and custom created roles."
+          }
+        },
+        {
+          "name": "Create Custom Role",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"DevOpsEngineer\",\n  \"description\": \"Manages deployments and monitoring resources\",\n  \"policyIds\": [\"{{policyId}}\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/roles",
+              "host": ["{{baseUrl}}"],
+              "path": ["roles"]
+            },
+            "description": "Requires 'roles:create'."
+          }
+        },
+        {
+          "name": "Update Role (Attach/Detach Policies)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Updated description\",\n  \"policyIds\": [\"{{policyId}}\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/roles/{{roleId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["roles", "{{roleId}}"]
+            },
+            "description": "Requires 'roles:update'."
+          }
+        },
+        {
+          "name": "Delete Role",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/roles/{{roleId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["roles", "{{roleId}}"]
+            },
+            "description": "Requires 'roles:delete'. System roles (Root, Admin, etc.) cannot be deleted."
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. IAM Policies Management",
+      "item": [
+        {
+          "name": "List Policies",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/policies",
+              "host": ["{{baseUrl}}"],
+              "path": ["policies"]
+            },
+            "description": "Requires 'policies:read'."
+          }
+        },
+        {
+          "name": "Create JSON Policy",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"S3BucketOperator\",\n  \"description\": \"Grants full read/write to S3 objects with explicit deny on delete\",\n  \"document\": {\n    \"Version\": \"2026-10-17\",\n    \"Statement\": [\n      {\n        \"Effect\": \"Allow\",\n        \"Action\": [\"s3:GetObject\", \"s3:PutObject\", \"s3:ListBucket\"],\n        \"Resource\": [\"arn:aws:s3:::prod-bucket/*\"]\n      },\n      {\n        \"Effect\": \"Deny\",\n        \"Action\": [\"s3:DeleteObject\"],\n        \"Resource\": [\"*\"]\n      }\n    ]\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/policies",
+              "host": ["{{baseUrl}}"],
+              "path": ["policies"]
+            },
+            "description": "Requires 'policies:create'. Validates standard AWS JSON Statement syntax."
+          }
+        },
+        {
+          "name": "Delete Policy",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/policies/{{policyId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["policies", "{{policyId}}"]
+            },
+            "description": "Requires 'policies:delete'. AWS Managed policies cannot be deleted."
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. IAM Groups Management",
+      "item": [
+        {
+          "name": "List Groups",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/groups",
+              "host": ["{{baseUrl}}"],
+              "path": ["groups"]
+            },
+            "description": "Requires 'groups:read'."
+          }
+        },
+        {
+          "name": "Create Group",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"DataEngineering\",\n  \"description\": \"Group for ETL pipeline authors\",\n  \"roleIds\": [\"{{roleId}}\"],\n  \"userIds\": [\"{{userId}}\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/groups",
+              "host": ["{{baseUrl}}"],
+              "path": ["groups"]
+            },
+            "description": "Requires 'groups:create'."
+          }
+        },
+        {
+          "name": "Update Group Membership",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userIds\": [\"{{userId}}\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/groups/{{groupId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["groups", "{{groupId}}"]
+            },
+            "description": "Requires 'groups:update'."
+          }
+        },
+        {
+          "name": "Delete Group",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/groups/{{groupId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["groups", "{{groupId}}"]
+            },
+            "description": "Requires 'groups:delete'."
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. CloudTrail & Audit Logs",
+      "item": [
+        {
+          "name": "Query Audit Logs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/audit-logs?page=1&limit=20&effect=ALLOW",
+              "host": ["{{baseUrl}}"],
+              "path": ["audit-logs"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "effect",
+                  "value": "ALLOW"
+                }
+              ]
+            },
+            "description": "Requires 'audit:read'. Returns log of sign-ins, authorization failures, and administrative actions."
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import AnatomyViewer from '@/components/common/AnatomyViewer';
 import { useRBAC } from '@/context/RBACContext';
 import { ROLE_DEFINITIONS } from '@/types/rbac';
 import {
@@ -29,8 +30,8 @@ const C = {
   bg2:  '#0A1823',
   bg3:  '#0E273A',
   ink:  '#EAF2F6',
-  mute: '#7B8FA0',
-  teal: '#00DCCE',
+  mute: '#A3B4C2',
+  teal: '#78B9B3',
   tealDim: '#008280',
   coral:'#FF7869',
   lav:  '#98AED9',
@@ -61,14 +62,12 @@ const FEATURES = [
 type UploadPhase = 'idle' | 'uploading' | 'processing' | 'done';
 
 export default function BrainTumorEnhanced() {
-  const stageRef = useRef<HTMLDivElement>(null);
   const stepsRef = useRef<HTMLDivElement>(null);
-  const gridRef  = useRef<HTMLDivElement>(null);
   const fileRef  = useRef<HTMLInputElement>(null);
 
-  const { currentUser, hasPermission, setRBACModalOpen } = useRBAC();
+  const { currentUser, isIamAuthenticated } = useRBAC();
   const router = useRouter();
-  const isAuthenticated = hasPermission('jobs:create') || hasPermission('jobs:read');
+  const isAuthenticated = isIamAuthenticated;
 
   const redirectToLogin = useCallback(() => {
     router.push('/login?redirect=/brain-tumor');
@@ -95,180 +94,6 @@ export default function BrainTumorEnhanced() {
   const COUNTER_SUFFIXES = ['%', '%', 's', '%'];
   const COUNTER_LABELS  = ['Whole Tumor Dice', 'WHO Grade Accuracy', 'Inference Latency', 'BraTS Benchmark Validated'];
 
-  /* ── Three.js 3D Brain & Tumor Visualization ── */
-  useEffect(() => {
-    const el = stageRef.current;
-    if (!el) return;
-
-    let cleanup = false;
-
-    const loadThree = async () => {
-      const threeModule = await import('three').catch(() => null);
-      if (!threeModule || cleanup) return;
-      const THREE = threeModule;
-
-      const W = () => el.clientWidth;
-      const H = () => el.clientHeight;
-
-      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-      renderer.setSize(W(), H());
-      el.prepend(renderer.domElement);
-      renderer.domElement.style.borderRadius = '28px';
-
-      const scene = new THREE.Scene();
-      const cam = new THREE.PerspectiveCamera(45, W() / H(), 0.1, 100);
-      cam.position.set(0, 0, 7.5);
-
-      const root = new THREE.Group();
-      scene.add(root);
-
-      /* Brain Hemispheres Point Cloud */
-      const N = 5600;
-      const pos = new Float32Array(N * 3);
-      const col = new Float32Array(N * 3);
-      const cA = new THREE.Color(0x7c5cfc); // violet
-      const cB = new THREE.Color(0x98aed9); // lavender
-
-      for (let i = 0; i < N; i++) {
-        let x: number, y: number, z: number;
-        do {
-          x = Math.random() * 2 - 1;
-          y = Math.random() * 2 - 1;
-          z = Math.random() * 2 - 1;
-        } while (x * x + y * y + z * z > 1);
-
-        // Deform into cerebral ellipsoid with longitudinal fissure groove
-        const side = x < 0 ? -1 : 1;
-        const fissure = Math.abs(x) < 0.12 ? 0.8 : 1;
-
-        pos[i * 3]     = x * 1.35 * fissure;
-        pos[i * 3 + 1] = y * 1.1 + 0.1;
-        pos[i * 3 + 2] = z * 1.5;
-
-        const mixed = cA.clone().lerp(cB, Math.random());
-        col[i * 3] = mixed.r;
-        col[i * 3 + 1] = mixed.g;
-        col[i * 3 + 2] = mixed.b;
-      }
-
-      const pointGeo = new THREE.BufferGeometry();
-      pointGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-      pointGeo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-      const brainPoints = new THREE.Points(
-        pointGeo,
-        new THREE.PointsMaterial({
-          size: 0.03,
-          vertexColors: true,
-          transparent: true,
-          opacity: 0.75,
-          depthWrite: false,
-        })
-      );
-      root.add(brainPoints);
-
-      /* Multi-compartment Tumor Model */
-      // 1. Necrotic Core (center dark gold)
-      const necrotic = new THREE.Mesh(
-        new THREE.SphereGeometry(0.25, 20, 20),
-        new THREE.MeshBasicMaterial({ color: 0xf5a623 })
-      );
-      necrotic.position.set(0.65, 0.45, 0.35);
-      root.add(necrotic);
-
-      // 2. Enhancing Tumor Rim (crimson)
-      const enhancing = new THREE.Mesh(
-        new THREE.SphereGeometry(0.48, 24, 24),
-        new THREE.MeshBasicMaterial({ color: 0xff4154, transparent: true, opacity: 0.65 })
-      );
-      enhancing.position.copy(necrotic.position);
-      root.add(enhancing);
-
-      // 3. Peritumoral Edema Halo (teal/lavender)
-      const edema = new THREE.Mesh(
-        new THREE.SphereGeometry(0.75, 24, 24),
-        new THREE.MeshBasicMaterial({ color: 0x00dcce, transparent: true, opacity: 0.22 })
-      );
-      edema.position.copy(necrotic.position);
-      root.add(edema);
-
-      // Axial Slice Plane
-      const planeGeo = new THREE.PlaneGeometry(3.8, 3.4);
-      const scanPlane = new THREE.Mesh(
-        planeGeo,
-        new THREE.MeshBasicMaterial({
-          color: 0x7c5cfc,
-          transparent: true,
-          opacity: 0.12,
-          side: THREE.DoubleSide,
-        })
-      );
-      scanPlane.rotation.x = Math.PI / 2;
-      root.add(scanPlane);
-
-      const scanEdge = new THREE.LineSegments(
-        new THREE.EdgesGeometry(planeGeo),
-        new THREE.LineBasicMaterial({ color: 0x7c5cfc })
-      );
-      scanEdge.rotation.x = Math.PI / 2;
-      root.add(scanEdge);
-
-      /* Mouse interaction */
-      let drag = false, px = 0, ry = 0;
-      const vy = 0.0035;
-      el.addEventListener('pointerdown', (e) => { drag = true; px = e.clientX; el.style.cursor = 'grabbing'; });
-      window.addEventListener('pointerup', () => { drag = false; el.style.cursor = 'grab'; });
-      window.addEventListener('pointermove', (e) => {
-        if (drag) { ry += (e.clientX - px) * 0.01; px = e.clientX; }
-      });
-
-      let visible = true;
-      const visObs = new IntersectionObserver(([e]) => { visible = e.isIntersecting; });
-      visObs.observe(el);
-
-      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-      function loop(t: number) {
-        if (cleanup) return;
-        requestAnimationFrame(loop);
-        if (!visible) return;
-
-        if (!drag && !reducedMotion) ry += vy;
-        root.rotation.y = ry;
-        root.rotation.x = Math.sin(t / 3000) * 0.08;
-
-        const k = (Math.sin(t / 1800) + 1) / 2;
-        scanPlane.position.y = scanEdge.position.y = -1.2 + k * 2.4;
-
-        enhancing.scale.setScalar(1 + 0.06 * Math.sin(t / 400));
-        edema.scale.setScalar(1 + 0.04 * Math.cos(t / 400));
-
-        renderer.render(scene, cam);
-      }
-      requestAnimationFrame(loop);
-
-      const onResize = () => {
-        renderer.setSize(W(), H());
-        cam.aspect = W() / H();
-        cam.updateProjectionMatrix();
-      };
-      window.addEventListener('resize', onResize);
-
-      return () => {
-        cleanup = true;
-        window.removeEventListener('resize', onResize);
-        visObs.disconnect();
-        renderer.dispose();
-      };
-    };
-
-    const disposePromise = loadThree();
-    return () => {
-      cleanup = true;
-      disposePromise.then((d) => d?.());
-    };
-  }, []);
-
   /* ── pipeline reveal ── */
   useEffect(() => {
     const el = stepsRef.current;
@@ -284,24 +109,6 @@ export default function BrainTumorEnhanced() {
     }, { threshold: 0.3 });
     obs.observe(el);
     return () => obs.disconnect();
-  }, []);
-
-  /* ── 3D tilt ── */
-  useEffect(() => {
-    const el = gridRef.current;
-    if (!el || !window.matchMedia('(hover: hover)').matches) return;
-    const cards = el.querySelectorAll<HTMLElement>('.feat-card');
-    cards.forEach((c) => {
-      const move = (e: PointerEvent) => {
-        const b = c.getBoundingClientRect();
-        const x = (e.clientX - b.left) / b.width - 0.5;
-        const y = (e.clientY - b.top) / b.height - 0.5;
-        c.style.transform = `perspective(800px) rotateY(${x * 12}deg) rotateX(${-y * 12}deg) translateZ(8px)`;
-      };
-      const leave = () => { c.style.transform = ''; };
-      c.addEventListener('pointermove', move as EventListener);
-      c.addEventListener('pointerleave', leave);
-    });
   }, []);
 
   /* ── animated counters ── */
@@ -376,9 +183,9 @@ export default function BrainTumorEnhanced() {
       setTimeout(() => {
         router.push('/doctor');
       }, 500);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Upload failed:', err);
-      setUploadError(err.message || 'Error processing DICOM image');
+      setUploadError(err instanceof Error && err.message ? err.message : 'Error processing DICOM image');
       setUploadPhase('idle');
     }
   };
@@ -409,75 +216,53 @@ export default function BrainTumorEnhanced() {
         .lc-sub { color: ${C.mute}; max-width: 54ch; margin: 0 0 52px; font-size: 17px; line-height: 1.7; }
         .lc-h2 { font-size: clamp(28px, 4vw, 44px); margin-bottom: 14px; }
         .lc-btn {
-          display: inline-flex; align-items: center; gap: 8px; border-radius: 999px;
-          padding: 14px 28px; font-weight: 600; font-size: 15px; border: 1px solid ${C.line};
+          display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 8px;
+          min-height: 44px; padding: 12px 22px; font-weight: 600; font-size: 15px; border: 1px solid ${C.line};
           background: rgba(255,255,255,.05); color: ${C.ink}; cursor: pointer;
-          transition: transform .2s, box-shadow .3s; text-decoration: none;
+          transition: background .2s, border-color .2s; text-decoration: none;
         }
-        .lc-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 30px -8px rgba(124,92,252,.35); }
-        .lc-btn-p {
-          background: linear-gradient(135deg, ${C.violet}, #5d38f0);
-          border: 0; color: #fff; box-shadow: 0 12px 36px -10px ${C.violet};
-        }
-        .lc-btn-p:hover { box-shadow: 0 16px 44px -8px ${C.violet}; }
-        .lc-tag {
-          font-size: 12px; padding: 5px 12px; border-radius: 99px;
-          background: rgba(124,92,252,.15); color: ${C.violet}; font-weight: 500; letter-spacing: .02em;
-        }
-        .orb { position: absolute; border-radius: 50%; pointer-events: none; filter: blur(100px); opacity: .12; }
+        .lc-btn:hover { background: #173240; border-color: ${C.teal}; }
+        .lc-btn:focus-visible, .lc-nav a:focus-visible { outline: 2px solid ${C.teal}; outline-offset: 4px; }
+        .lc-btn-p { background: ${C.coral}; border: 1px solid ${C.coral}; color: #17232E; }
+        .lc-btn-p:hover { background: #FF9385; border-color: #FF9385; }
+        .lc-tag { font-size: 12px; padding: 5px 10px; border-radius: 6px; background: rgba(120,185,179,.12); color: ${C.teal}; font-weight: 500; letter-spacing: .02em; }
 
         .lc-header {
           position: fixed; top: 0; left: 0; right: 0; z-index: 50;
           backdrop-filter: blur(16px) saturate(1.4); background: rgba(6,11,17,.8);
           border-bottom: 1px solid ${C.line};
         }
-        .lc-header-inner { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+        .lc-header-inner { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 72px; padding-top: 12px; padding-bottom: 12px; flex-wrap: wrap; }
+        .lc-header-inner > div, .lc-header-inner > div > div { flex-wrap: wrap; }
+        .lc-header-inner .lc-btn { white-space: nowrap; }
         .lc-brand { font: 700 20px Sora; display: flex; gap: 10px; align-items: center; text-decoration: none; color: #fff; }
-        .lc-brand-icon { width: 24px; height: 24px; border-radius: 8px; background: linear-gradient(135deg, ${C.violet}, ${C.coral}); }
-        .lc-nav { display: flex; gap: 28px; color: ${C.mute}; font-size: 14px; }
+        .lc-brand-icon { width: 24px; height: 24px; border-radius: 6px; background: ${C.tealDim}; }
+        .lc-nav { display: flex; gap: 22px; color: ${C.teal}; font-size: 14px; }
         .lc-nav a { text-decoration: none; color: inherit; transition: color .2s; }
         .lc-nav a:hover { color: #fff; }
-        @media(max-width:900px){ .lc-nav { display: none; } }
+        @media(max-width:1100px){ .lc-nav { display: none; } }
 
         .lc-hero { position: relative; min-height: 100vh; display: flex; align-items: center; padding: 120px 0 80px; overflow: hidden; }
         .lc-hero-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: center; width: 100%; }
         .lc-hero h1 { font-size: clamp(38px, 5.2vw, 62px); }
-        .lc-hero h1 em {
-          font-style: normal;
-          background: linear-gradient(135deg, ${C.violet}, ${C.teal});
-          -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        }
+        .lc-hero h1 em { font-style: normal; color: ${C.teal}; }
         .lc-hero-p { color: ${C.mute}; max-width: 48ch; margin: 22px 0 36px; font-size: 17px; line-height: 1.7; }
         .lc-acts { display: flex; gap: 14px; flex-wrap: wrap; }
         .lc-strip { display: flex; gap: 36px; margin-top: 44px; }
         .lc-strip-n { font: 700 30px Sora; font-variant-numeric: tabular-nums; }
         .lc-strip span { color: ${C.mute}; font-size: 13px; display: block; margin-top: 2px; }
 
-        .lc-stage {
-          position: relative; height: 520px; border-radius: 28px;
-          background: radial-gradient(circle at 50% 45%, rgba(124,92,252,.12), transparent 65%);
-          border: 1px solid rgba(255,255,255,.08); cursor: grab; touch-action: pan-y; overflow: hidden;
-        }
-        .lc-stage canvas { display: block; width: 100%; height: 100%; }
-        .lc-chip {
-          position: absolute; padding: 11px 16px; border-radius: 16px;
-          background: rgba(6,11,17,.75); backdrop-filter: blur(14px);
-          border: 1px solid rgba(255,255,255,.1); font-size: 13px; pointer-events: none;
-        }
-        .lc-chip b { display: block; font: 600 14px Sora; margin-bottom: 2px; }
-        .lc-chip-violet b { color: ${C.violet}; }
-        .lc-chip-coral b { color: ${C.coral}; }
-        .lc-hint { position: absolute; bottom: 14px; left: 0; right: 0; text-align: center; font-size: 12px; color: ${C.mute}; pointer-events: none; }
+        .lc-stage { position: relative; height: 540px; min-width: 0; border-radius: 14px; background: ${C.bg2}; border: 1px solid #2A3C4B; overflow: hidden; box-shadow: 0 16px 40px rgba(0,0,0,.2); }
 
         .lc-drop {
-          border: 2px dashed rgba(124,92,252,.35); border-radius: 24px; padding: 56px 24px;
+          border: 2px dashed rgba(124,92,252,.35); border-radius: 12px; padding: 56px 24px;
           text-align: center; background: rgba(255,255,255,.015); transition: all .25s;
           min-height: 280px; display: flex; flex-direction: column; align-items: center; justify-content: center;
           gap: 16px; cursor: pointer;
         }
         .lc-drop:hover, .lc-drop.over { border-color: ${C.violet}; background: rgba(124,92,252,.04); transform: scale(1.005); }
         .lc-bar { width: min(440px, 100%); height: 8px; background: rgba(255,255,255,.08); border-radius: 9px; overflow: hidden; }
-        .lc-bar-fill { height: 100%; background: linear-gradient(90deg, ${C.violet}, ${C.teal}); border-radius: 9px; transition: width .15s; }
+        .lc-bar-fill { height: 100%; background: ${C.teal}; border-radius: 9px; transition: width .15s; }
         .lc-spin { width: 56px; height: 56px; border-radius: 50%; border: 3px solid rgba(255,255,255,.1); border-top-color: ${C.violet}; animation: lc-sp 1s linear infinite; }
         @keyframes lc-sp { to { transform: rotate(360deg); } }
         .lc-meta { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; width: 100%; margin-top: 10px; }
@@ -485,15 +270,15 @@ export default function BrainTumorEnhanced() {
         .lc-meta b { display: block; color: #fff; font-size: 14px; margin-top: 2px; }
 
         .lc-steps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; }
-        .lc-step { padding: 24px 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,.06); opacity: .3; transform: translateY(18px); transition: all .6s cubic-bezier(.16,1,.3,1); background: rgba(255,255,255,.02); }
-        .lc-step.on { opacity: 1; transform: none; border-color: rgba(124,92,252,.4); background: rgba(124,92,252,.04); box-shadow: 0 0 30px -10px rgba(124,92,252,.2); }
+        .lc-step { padding: 24px 20px; border-radius: 12px; border: 1px solid rgba(255,255,255,.06); opacity: .3; transform: translateY(18px); transition: all .6s cubic-bezier(.16,1,.3,1); background: rgba(255,255,255,.02); }
+        .lc-step.on { opacity: 1; transform: none; border-color: ${C.tealDim}; background: rgba(120,185,179,.04); }
         .lc-step-num { font: 700 13px Sora; margin-bottom: 12px; }
         .lc-step h3 { font-size: 18px; margin: 0 0 8px; }
         .lc-step p { margin: 0; font-size: 13px; color: ${C.mute}; line-height: 1.5; }
 
-        .lc-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; perspective: 1000px; }
-        .feat-card { padding: 30px; border-radius: 22px; background: linear-gradient(160deg, rgba(255,255,255,.06), rgba(255,255,255,.015)); border: 1px solid rgba(255,255,255,.07); transition: transform .2s, box-shadow .35s; will-change: transform; }
-        .feat-card:hover { box-shadow: 0 30px 70px -25px rgba(124,92,252,.35), 0 0 0 1px rgba(124,92,252,.2); }
+        .lc-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+        .lc-page .feat-card { padding: 26px; border-radius: 12px; background: ${C.bg2}; border: 1px solid #2A3C4B; transition: border-color .2s; }
+        .lc-page .feat-card:hover { border-color: ${C.tealDim}; }
         .feat-card h3 { font-size: 19px; margin-top: 14px; }
         .feat-card p { color: ${C.mute}; font-size: 14px; margin: 10px 0 18px; line-height: 1.6; }
         .feat-card small { font: 600 13px Sora; color: ${C.violet}; }
@@ -508,7 +293,10 @@ export default function BrainTumorEnhanced() {
           .lc-grid { grid-template-columns: 1fr; }
           .lc-stats { grid-template-columns: repeat(2, 1fr); }
           .lc-meta { grid-template-columns: repeat(2, 1fr); }
+          .lc-stage { height: 460px; }
         }
+        @media(max-width:600px){ .lc-wrap { padding-left: 18px; padding-right: 18px; } .lc-hero { padding-top: 180px; } .lc-strip { gap: 18px; flex-wrap: wrap; } .lc-stage { height: 420px; } .lc-section { padding: 64px 0; } }
+        @media(prefers-reduced-motion: reduce){ .lc-page *, .lc-page *::before, .lc-page *::after { animation-duration: 0s !important; transition-duration: 0s !important; } .lc-page .lc-step { opacity: 1; transform: none; } }
       `}</style>
 
       {/* ━━━━━ HEADER ━━━━━ */}
@@ -545,14 +333,6 @@ export default function BrainTumorEnhanced() {
                   <Unlock style={{ width: 12, height: 12 }} />
                   <span>{currentUser.name.split(',')[0]}</span>
                 </div>
-                <button
-                  onClick={() => setRBACModalOpen(true)}
-                  className="lc-btn"
-                  style={{ padding: '8px 16px', fontSize: 13 }}
-                >
-                  <Sliders style={{ width: 14, height: 14, color: C.violet }} />
-                  <span>RBAC Matrix</span>
-                </button>
               </div>
             ) : (
               <button
@@ -570,9 +350,6 @@ export default function BrainTumorEnhanced() {
 
       {/* ━━━━━ HERO ━━━━━ */}
       <section className="lc-hero">
-        <div className="orb" style={{ width: 600, height: 600, top: -150, left: -200, background: C.violet }} />
-        <div className="orb" style={{ width: 500, height: 500, bottom: -100, right: -150, background: C.teal }} />
-
         <div className="lc-wrap">
           <div className="lc-hero-grid">
             <div>
@@ -606,17 +383,8 @@ export default function BrainTumorEnhanced() {
               </div>
             </div>
 
-            {/* 3D Brain Stage */}
-            <div className="lc-stage" ref={stageRef}>
-              <div className="lc-chip lc-chip-violet" style={{ top: 24, left: 24 }}>
-                <b>Glioblastoma (HGG)</b>
-                WHO Grade IV · IDH-Wildtype
-              </div>
-              <div className="lc-chip lc-chip-coral" style={{ bottom: 38, right: 24 }}>
-                <b>Tumor Volume</b>
-                Core: 28.4 cc · Edema: 42.1 cc
-              </div>
-              <div className="lc-hint">Drag to rotate 3D cerebral cortex · Multi-compartment glioma model</div>
+            <div className="lc-stage">
+              <AnatomyViewer kind="brain" />
             </div>
           </div>
         </div>
@@ -730,11 +498,10 @@ export default function BrainTumorEnhanced() {
 
       {/* ━━━━━ FEATURES ━━━━━ */}
       <section id="features" className="lc-section lc-alt">
-        <div className="orb" style={{ width: 450, height: 450, bottom: -120, left: '20%', background: C.violet }} />
         <div className="lc-wrap">
           <h2 className="lc-h2">Neuro-Oncology AI & Deep Learning Stack</h2>
           <p className="lc-sub">Sub-voxel segmentation validated on international BraTS benchmarks.</p>
-          <div className="lc-grid" ref={gridRef}>
+          <div className="lc-grid">
             {FEATURES.map((f, i) => (
               <div key={i} className="feat-card">
                 <span className="lc-tag">{f.tag}</span>
@@ -809,7 +576,7 @@ export default function BrainTumorEnhanced() {
           {/* Workstation Console Card */}
           <div
             style={{
-              borderRadius: 28,
+              borderRadius: 14,
               border: '1px solid rgba(255, 255, 255, 0.1)',
               background: '#091927',
               padding: '32px',
@@ -879,7 +646,7 @@ export default function BrainTumorEnhanced() {
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'minmax(320px, 1fr) minmax(320px, 1fr)',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))',
                 gap: 24,
                 marginTop: 24,
               }}

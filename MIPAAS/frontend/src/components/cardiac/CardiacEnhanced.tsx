@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import AnatomyViewer from '@/components/common/AnatomyViewer';
 import { useRBAC } from '@/context/RBACContext';
 import { ROLE_DEFINITIONS } from '@/types/rbac';
 import {
@@ -30,8 +31,8 @@ const C = {
   bg2:  '#0A1823',
   bg3:  '#0E273A',
   ink:  '#EAF2F6',
-  mute: '#7B8FA0',
-  teal: '#00DCCE',
+  mute: '#A3B4C2',
+  teal: '#78B9B3',
   tealDim: '#008280',
   coral:'#FF7869',
   lav:  '#98AED9',
@@ -62,14 +63,12 @@ const FEATURES = [
 type UploadPhase = 'idle' | 'uploading' | 'processing' | 'done';
 
 export default function CardiacEnhanced() {
-  const stageRef = useRef<HTMLDivElement>(null);
   const stepsRef = useRef<HTMLDivElement>(null);
-  const gridRef  = useRef<HTMLDivElement>(null);
   const fileRef  = useRef<HTMLInputElement>(null);
 
-  const { currentUser, hasPermission, setRBACModalOpen, addAuditLog } = useRBAC();
+  const { currentUser, isIamAuthenticated, addAuditLog } = useRBAC();
   const router = useRouter();
-  const isAuthenticated = hasPermission('jobs:create') || hasPermission('jobs:read');
+  const isAuthenticated = isIamAuthenticated;
 
   const redirectToLogin = useCallback(() => {
     router.push('/login?redirect=/cardiac');
@@ -96,189 +95,6 @@ export default function CardiacEnhanced() {
   const COUNTER_SUFFIXES = ['%', '%', 's', '%'];
   const COUNTER_LABELS  = ['LV Dice accuracy', 'LVEF calculated', 'Inference latency', 'Radiologist consensus'];
 
-  /* ── Three.js 3D beating heart visualization ── */
-  useEffect(() => {
-    const el = stageRef.current;
-    if (!el) return;
-
-    let cleanup = false;
-
-    const loadThree = async () => {
-      const threeModule = await import('three').catch(() => null);
-      if (!threeModule || cleanup) return;
-      const THREE = threeModule;
-
-      const W = () => el.clientWidth;
-      const H = () => el.clientHeight;
-
-      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-      renderer.setSize(W(), H());
-      el.prepend(renderer.domElement);
-      renderer.domElement.style.borderRadius = '28px';
-
-      const scene = new THREE.Scene();
-      const cam = new THREE.PerspectiveCamera(45, W() / H(), 0.1, 100);
-      cam.position.set(0, 0, 7.5);
-
-      const root = new THREE.Group();
-      scene.add(root);
-
-      /* Anatomical Heart Mesh & Point Cloud */
-      // Left & Right Ventricles
-      const ventricleGeo = new THREE.SphereGeometry(1.3, 32, 32);
-      ventricleGeo.scale(0.85, 1.35, 0.75);
-
-      const myoMat = new THREE.MeshBasicMaterial({
-        color: 0xff4154,
-        wireframe: true,
-        transparent: true,
-        opacity: 0.35,
-      });
-      const heartMesh = new THREE.Mesh(ventricleGeo, myoMat);
-      root.add(heartMesh);
-
-      // Inner myocardial fiber particle cloud
-      const N = 4800;
-      const pos = new Float32Array(N * 3);
-      const col = new Float32Array(N * 3);
-      const cA = new THREE.Color(0xff4154);
-      const cB = new THREE.Color(0x00dcce);
-
-      for (let i = 0; i < N; i++) {
-        let x: number, y: number, z: number;
-        do {
-          x = Math.random() * 2 - 1;
-          y = Math.random() * 2 - 1;
-          z = Math.random() * 2 - 1;
-        } while (x * x + y * y + z * z > 1);
-
-        const apexScale = 1 - (y + 1) * 0.25;
-        pos[i * 3]     = x * 1.1 * apexScale;
-        pos[i * 3 + 1] = y * 1.5 - 0.2;
-        pos[i * 3 + 2] = z * 0.9 * apexScale;
-
-        const mixed = cA.clone().lerp(cB, (y + 1) / 2);
-        col[i * 3] = mixed.r;
-        col[i * 3 + 1] = mixed.g;
-        col[i * 3 + 2] = mixed.b;
-      }
-
-      const pointGeo = new THREE.BufferGeometry();
-      pointGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-      pointGeo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-      const points = new THREE.Points(
-        pointGeo,
-        new THREE.PointsMaterial({
-          size: 0.032,
-          vertexColors: true,
-          transparent: true,
-          opacity: 0.85,
-          depthWrite: false,
-        })
-      );
-      root.add(points);
-
-      // Great Vessels (Aorta & Pulmonary Artery Arches)
-      const aortaMat = new THREE.MeshBasicMaterial({
-        color: 0x98aed9,
-        wireframe: true,
-        transparent: true,
-        opacity: 0.4,
-      });
-
-      const aorta = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.16, 12, 24, Math.PI), aortaMat);
-      aorta.position.set(0.1, 1.4, 0);
-      aorta.rotation.z = -Math.PI / 4;
-      root.add(aorta);
-
-      const pulmonary = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 1.1, 12, 4), aortaMat);
-      pulmonary.position.set(-0.45, 1.25, 0.2);
-      pulmonary.rotation.z = Math.PI / 5;
-      root.add(pulmonary);
-
-      // Short-Axis Cine MRI Scanning Plane
-      const planeGeo = new THREE.PlaneGeometry(3.6, 2.6);
-      const scanPlane = new THREE.Mesh(
-        planeGeo,
-        new THREE.MeshBasicMaterial({
-          color: 0x00dcce,
-          transparent: true,
-          opacity: 0.12,
-          side: THREE.DoubleSide,
-        })
-      );
-      scanPlane.rotation.x = Math.PI / 2.3;
-      root.add(scanPlane);
-
-      const scanEdge = new THREE.LineSegments(
-        new THREE.EdgesGeometry(planeGeo),
-        new THREE.LineBasicMaterial({ color: 0x00dcce })
-      );
-      scanEdge.rotation.x = Math.PI / 2.3;
-      root.add(scanEdge);
-
-      /* Mouse interaction */
-      let drag = false, px = 0, ry = 0;
-      const vy = 0.004;
-      el.addEventListener('pointerdown', (e) => { drag = true; px = e.clientX; el.style.cursor = 'grabbing'; });
-      window.addEventListener('pointerup', () => { drag = false; el.style.cursor = 'grab'; });
-      window.addEventListener('pointermove', (e) => {
-        if (drag) { ry += (e.clientX - px) * 0.01; px = e.clientX; }
-      });
-
-      let visible = true;
-      const visObs = new IntersectionObserver(([e]) => { visible = e.isIntersecting; });
-      visObs.observe(el);
-
-      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-      function loop(t: number) {
-        if (cleanup) return;
-        requestAnimationFrame(loop);
-        if (!visible) return;
-
-        if (!drag && !reducedMotion) ry += vy;
-        root.rotation.y = ry;
-        root.rotation.x = Math.sin(t / 2800) * 0.07;
-
-        // Beating cardiac cycle simulation (Systole & Diastole contraction)
-        const beatCycle = Math.sin(t / 220);
-        const contraction = Math.max(0, beatCycle);
-        const scaleVal = 1 - contraction * 0.09;
-        heartMesh.scale.set(scaleVal * 0.85, (1 + contraction * 0.04) * 1.35, scaleVal * 0.75);
-        points.scale.set(scaleVal, 1 + contraction * 0.03, scaleVal);
-
-        // Sweeping Short-Axis MRI slice plane
-        const planeK = (Math.sin(t / 1600) + 1) / 2;
-        scanPlane.position.y = scanEdge.position.y = -1.4 + planeK * 2.8;
-
-        renderer.render(scene, cam);
-      }
-      requestAnimationFrame(loop);
-
-      const onResize = () => {
-        renderer.setSize(W(), H());
-        cam.aspect = W() / H();
-        cam.updateProjectionMatrix();
-      };
-      window.addEventListener('resize', onResize);
-
-      return () => {
-        cleanup = true;
-        window.removeEventListener('resize', onResize);
-        visObs.disconnect();
-        renderer.dispose();
-      };
-    };
-
-    const disposePromise = loadThree();
-    return () => {
-      cleanup = true;
-      disposePromise.then((d) => d?.());
-    };
-  }, []);
-
   /* ── Cine player loop ── */
   useEffect(() => {
     if (!isPlaying) return;
@@ -303,24 +119,6 @@ export default function CardiacEnhanced() {
     }, { threshold: 0.3 });
     obs.observe(el);
     return () => obs.disconnect();
-  }, []);
-
-  /* ── 3D tilt on feature cards ── */
-  useEffect(() => {
-    const el = gridRef.current;
-    if (!el || !window.matchMedia('(hover: hover)').matches) return;
-    const cards = el.querySelectorAll<HTMLElement>('.feat-card');
-    cards.forEach((c) => {
-      const move = (e: PointerEvent) => {
-        const b = c.getBoundingClientRect();
-        const x = (e.clientX - b.left) / b.width - 0.5;
-        const y = (e.clientY - b.top) / b.height - 0.5;
-        c.style.transform = `perspective(800px) rotateY(${x * 12}deg) rotateX(${-y * 12}deg) translateZ(8px)`;
-      };
-      const leave = () => { c.style.transform = ''; };
-      c.addEventListener('pointermove', move as EventListener);
-      c.addEventListener('pointerleave', leave);
-    });
   }, []);
 
   /* ── animated counters ── */
@@ -396,9 +194,9 @@ export default function CardiacEnhanced() {
       setTimeout(() => {
         router.push('/doctor');
       }, 500);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Upload failed:', err);
-      setUploadError(err.message || 'Error processing DICOM image');
+      setUploadError(err instanceof Error && err.message ? err.message : 'Error processing DICOM image');
       setUploadPhase('idle');
     }
   };
@@ -430,22 +228,16 @@ export default function CardiacEnhanced() {
         .lc-sub { color: ${C.mute}; max-width: 54ch; margin: 0 0 52px; font-size: 17px; line-height: 1.7; }
         .lc-h2 { font-size: clamp(28px, 4vw, 44px); margin-bottom: 14px; }
         .lc-btn {
-          display: inline-flex; align-items: center; gap: 8px; border-radius: 999px;
-          padding: 14px 28px; font-weight: 600; font-size: 15px; border: 1px solid ${C.line};
+          display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 8px;
+          min-height: 44px; padding: 12px 22px; font-weight: 600; font-size: 15px; border: 1px solid ${C.line};
           background: rgba(255,255,255,.05); color: ${C.ink}; cursor: pointer;
-          transition: transform .2s, box-shadow .3s; text-decoration: none;
+          transition: background .2s, border-color .2s; text-decoration: none;
         }
-        .lc-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 30px -8px rgba(255,65,84,.3); }
-        .lc-btn-p {
-          background: linear-gradient(135deg, ${C.crimson}, #ff2233);
-          border: 0; color: #fff; box-shadow: 0 12px 36px -10px ${C.crimson};
-        }
-        .lc-btn-p:hover { box-shadow: 0 16px 44px -8px ${C.crimson}; }
-        .lc-tag {
-          font-size: 12px; padding: 5px 12px; border-radius: 99px;
-          background: rgba(255,65,84,.15); color: ${C.crimson}; font-weight: 500; letter-spacing: .02em;
-        }
-        .orb { position: absolute; border-radius: 50%; pointer-events: none; filter: blur(100px); opacity: .12; }
+        .lc-btn:hover { background: #173240; border-color: ${C.teal}; }
+        .lc-btn:focus-visible, .lc-nav a:focus-visible { outline: 2px solid ${C.teal}; outline-offset: 4px; }
+        .lc-btn-p { background: ${C.coral}; border: 1px solid ${C.coral}; color: #17232E; }
+        .lc-btn-p:hover { background: #FF9385; border-color: #FF9385; }
+        .lc-tag { font-size: 12px; padding: 5px 10px; border-radius: 6px; background: rgba(120,185,179,.12); color: ${C.teal}; font-weight: 500; letter-spacing: .02em; }
 
         /* header */
         .lc-header {
@@ -453,56 +245,40 @@ export default function CardiacEnhanced() {
           backdrop-filter: blur(16px) saturate(1.4); background: rgba(6,11,17,.8);
           border-bottom: 1px solid ${C.line};
         }
-        .lc-header-inner { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+        .lc-header-inner { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 72px; padding-top: 12px; padding-bottom: 12px; flex-wrap: wrap; }
+        .lc-header-inner > div, .lc-header-inner > div > div { flex-wrap: wrap; }
+        .lc-header-inner .lc-btn { white-space: nowrap; }
         .lc-brand { font: 700 20px Sora; display: flex; gap: 10px; align-items: center; text-decoration: none; color: #fff; }
-        .lc-brand-icon { width: 24px; height: 24px; border-radius: 8px; background: linear-gradient(135deg, ${C.crimson}, ${C.teal}); }
-        .lc-nav { display: flex; gap: 28px; color: ${C.mute}; font-size: 14px; }
+        .lc-brand-icon { width: 24px; height: 24px; border-radius: 6px; background: ${C.tealDim}; }
+        .lc-nav { display: flex; gap: 22px; color: ${C.teal}; font-size: 14px; }
         .lc-nav a { text-decoration: none; color: inherit; transition: color .2s; }
         .lc-nav a:hover { color: #fff; }
-        @media(max-width:900px){ .lc-nav { display: none; } }
+        @media(max-width:1100px){ .lc-nav { display: none; } }
 
         /* hero */
         .lc-hero { position: relative; min-height: 100vh; display: flex; align-items: center; padding: 120px 0 80px; overflow: hidden; }
         .lc-hero-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: center; width: 100%; }
         .lc-hero h1 { font-size: clamp(38px, 5.2vw, 62px); }
-        .lc-hero h1 em {
-          font-style: normal;
-          background: linear-gradient(135deg, ${C.crimson}, ${C.coral});
-          -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        }
+        .lc-hero h1 em { font-style: normal; color: ${C.teal}; }
         .lc-hero-p { color: ${C.mute}; max-width: 48ch; margin: 22px 0 36px; font-size: 17px; line-height: 1.7; }
         .lc-acts { display: flex; gap: 14px; flex-wrap: wrap; }
         .lc-strip { display: flex; gap: 36px; margin-top: 44px; }
         .lc-strip-n { font: 700 30px Sora; font-variant-numeric: tabular-nums; }
         .lc-strip span { color: ${C.mute}; font-size: 13px; display: block; margin-top: 2px; }
 
-        /* 3D stage */
-        .lc-stage {
-          position: relative; height: 520px; border-radius: 28px;
-          background: radial-gradient(circle at 50% 45%, rgba(255,65,84,.12), transparent 65%);
-          border: 1px solid rgba(255,255,255,.08); cursor: grab; touch-action: pan-y; overflow: hidden;
-        }
-        .lc-stage canvas { display: block; width: 100%; height: 100%; }
-        .lc-chip {
-          position: absolute; padding: 11px 16px; border-radius: 16px;
-          background: rgba(6,11,17,.75); backdrop-filter: blur(14px);
-          border: 1px solid rgba(255,255,255,.1); font-size: 13px; pointer-events: none;
-        }
-        .lc-chip b { display: block; font: 600 14px Sora; margin-bottom: 2px; }
-        .lc-chip-red b { color: ${C.crimson}; }
-        .lc-chip-teal b { color: ${C.teal}; }
-        .lc-hint { position: absolute; bottom: 14px; left: 0; right: 0; text-align: center; font-size: 12px; color: ${C.mute}; pointer-events: none; }
+        /* illustrative anatomy stage */
+        .lc-stage { position: relative; height: 540px; min-width: 0; border-radius: 14px; background: ${C.bg2}; border: 1px solid #2A3C4B; overflow: hidden; box-shadow: 0 16px 40px rgba(0,0,0,.2); }
 
         /* upload */
         .lc-drop {
-          border: 2px dashed rgba(255,65,84,.3); border-radius: 24px; padding: 56px 24px;
+          border: 2px dashed rgba(255,65,84,.3); border-radius: 12px; padding: 56px 24px;
           text-align: center; background: rgba(255,255,255,.015); transition: all .25s;
           min-height: 280px; display: flex; flex-direction: column; align-items: center; justify-content: center;
           gap: 16px; cursor: pointer;
         }
         .lc-drop:hover, .lc-drop.over { border-color: ${C.crimson}; background: rgba(255,65,84,.04); transform: scale(1.005); }
         .lc-bar { width: min(440px, 100%); height: 8px; background: rgba(255,255,255,.08); border-radius: 9px; overflow: hidden; }
-        .lc-bar-fill { height: 100%; background: linear-gradient(90deg, ${C.crimson}, ${C.coral}); border-radius: 9px; transition: width .15s; }
+        .lc-bar-fill { height: 100%; background: ${C.teal}; border-radius: 9px; transition: width .15s; }
         .lc-spin { width: 56px; height: 56px; border-radius: 50%; border: 3px solid rgba(255,255,255,.1); border-top-color: ${C.crimson}; animation: lc-sp 1s linear infinite; }
         @keyframes lc-sp { to { transform: rotate(360deg); } }
         .lc-meta { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; width: 100%; margin-top: 10px; }
@@ -511,16 +287,16 @@ export default function CardiacEnhanced() {
 
         /* pipeline */
         .lc-steps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; }
-        .lc-step { padding: 24px 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,.06); opacity: .3; transform: translateY(18px); transition: all .6s cubic-bezier(.16,1,.3,1); background: rgba(255,255,255,.02); }
-        .lc-step.on { opacity: 1; transform: none; border-color: rgba(255,65,84,.4); background: rgba(255,65,84,.04); box-shadow: 0 0 30px -10px rgba(255,65,84,.2); }
+        .lc-step { padding: 24px 20px; border-radius: 12px; border: 1px solid rgba(255,255,255,.06); opacity: .3; transform: translateY(18px); transition: all .6s cubic-bezier(.16,1,.3,1); background: rgba(255,255,255,.02); }
+        .lc-step.on { opacity: 1; transform: none; border-color: ${C.tealDim}; background: rgba(120,185,179,.04); }
         .lc-step-num { font: 700 13px Sora; margin-bottom: 12px; }
         .lc-step h3 { font-size: 18px; margin: 0 0 8px; }
         .lc-step p { margin: 0; font-size: 13px; color: ${C.mute}; line-height: 1.5; }
 
         /* features grid */
-        .lc-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; perspective: 1000px; }
-        .feat-card { padding: 30px; border-radius: 22px; background: linear-gradient(160deg, rgba(255,255,255,.06), rgba(255,255,255,.015)); border: 1px solid rgba(255,255,255,.07); transition: transform .2s, box-shadow .35s; will-change: transform; }
-        .feat-card:hover { box-shadow: 0 30px 70px -25px rgba(255,65,84,.3), 0 0 0 1px rgba(255,65,84,.2); }
+        .lc-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+        .lc-page .feat-card { padding: 26px; border-radius: 12px; background: ${C.bg2}; border: 1px solid #2A3C4B; transition: border-color .2s; }
+        .lc-page .feat-card:hover { border-color: ${C.tealDim}; }
         .feat-card h3 { font-size: 19px; margin-top: 14px; }
         .feat-card p { color: ${C.mute}; font-size: 14px; margin: 10px 0 18px; line-height: 1.6; }
         .feat-card small { font: 600 13px Sora; color: ${C.crimson}; }
@@ -536,7 +312,10 @@ export default function CardiacEnhanced() {
           .lc-grid { grid-template-columns: 1fr; }
           .lc-stats { grid-template-columns: repeat(2, 1fr); }
           .lc-meta { grid-template-columns: repeat(2, 1fr); }
+          .lc-stage { height: 460px; }
         }
+        @media(max-width:600px){ .lc-wrap { padding-left: 18px; padding-right: 18px; } .lc-hero { padding-top: 180px; } .lc-strip { gap: 18px; flex-wrap: wrap; } .lc-stage { height: 420px; } .lc-section { padding: 64px 0; } }
+        @media(prefers-reduced-motion: reduce){ .lc-page *, .lc-page *::before, .lc-page *::after { animation-duration: 0s !important; transition-duration: 0s !important; } .lc-page .lc-step { opacity: 1; transform: none; } }
       `}</style>
 
       {/* ━━━━━ HEADER ━━━━━ */}
@@ -573,14 +352,6 @@ export default function CardiacEnhanced() {
                   <Unlock style={{ width: 12, height: 12 }} />
                   <span>{currentUser.name.split(',')[0]}</span>
                 </div>
-                <button
-                  onClick={() => setRBACModalOpen(true)}
-                  className="lc-btn"
-                  style={{ padding: '8px 16px', fontSize: 13 }}
-                >
-                  <Sliders style={{ width: 14, height: 14, color: C.crimson }} />
-                  <span>RBAC Matrix</span>
-                </button>
               </div>
             ) : (
               <button
@@ -598,9 +369,6 @@ export default function CardiacEnhanced() {
 
       {/* ━━━━━ HERO ━━━━━ */}
       <section className="lc-hero">
-        <div className="orb" style={{ width: 600, height: 600, top: -150, left: -200, background: C.crimson }} />
-        <div className="orb" style={{ width: 500, height: 500, bottom: -100, right: -150, background: C.teal }} />
-
         <div className="lc-wrap">
           <div className="lc-hero-grid">
             <div>
@@ -634,17 +402,8 @@ export default function CardiacEnhanced() {
               </div>
             </div>
 
-            {/* 3D Heart Canvas */}
-            <div className="lc-stage" ref={stageRef}>
-              <div className="lc-chip lc-chip-red" style={{ top: 24, left: 24 }}>
-                <b>Left Ventricle</b>
-                LVEF: 62.8% (Normal)
-              </div>
-              <div className="lc-chip lc-chip-teal" style={{ bottom: 38, right: 24 }}>
-                <b>Myocardial Strain</b>
-                GLS: -18.5%
-              </div>
-              <div className="lc-hint">Drag to rotate 3D heart · Beating dynamic simulation</div>
+            <div className="lc-stage">
+              <AnatomyViewer kind="heart" />
             </div>
           </div>
         </div>
@@ -758,11 +517,10 @@ export default function CardiacEnhanced() {
 
       {/* ━━━━━ FEATURES ━━━━━ */}
       <section id="features" className="lc-section lc-alt">
-        <div className="orb" style={{ width: 450, height: 450, bottom: -120, left: '20%', background: C.crimson }} />
         <div className="lc-wrap">
           <h2 className="lc-h2">Cardiovascular AI & Deep Learning Stack</h2>
           <p className="lc-sub">High-precision ventricular volumetrics validated against gold-standard manual radiologist contours.</p>
-          <div className="lc-grid" ref={gridRef}>
+          <div className="lc-grid">
             {FEATURES.map((f, i) => (
               <div key={i} className="feat-card">
                 <span className="lc-tag">{f.tag}</span>
@@ -837,7 +595,7 @@ export default function CardiacEnhanced() {
           {/* Workstation Console Card */}
           <div
             style={{
-              borderRadius: 28,
+              borderRadius: 14,
               border: '1px solid rgba(255, 255, 255, 0.1)',
               background: '#091927',
               padding: '32px',
@@ -912,7 +670,7 @@ export default function CardiacEnhanced() {
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'minmax(320px, 1fr) minmax(320px, 1fr)',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))',
                 gap: 24,
                 marginTop: 24,
               }}

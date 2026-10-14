@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import AnatomyViewer from '@/components/common/AnatomyViewer';
 import { useRBAC } from '@/context/RBACContext';
 import { ROLE_DEFINITIONS } from '@/types/rbac';
 import {
@@ -24,8 +26,8 @@ const C = {
   bg2:  '#0A1823',
   bg3:  '#0E273A',
   ink:  '#EAF2F6',
-  mute: '#7B8FA0',
-  teal: '#00DCCE',
+  mute: '#A3B4C2',
+  teal: '#78B9B3',
   tealDim: '#008280',
   coral:'#FF7869',
   lav:  '#98AED9',
@@ -61,9 +63,7 @@ type UploadPhase = 'idle' | 'uploading' | 'processing' | 'done';
    ═══════════════════════════════════════════════════════════════ */
 export default function LungCancerEnhanced() {
   /* ── refs ── */
-  const stageRef     = useRef<HTMLDivElement>(null);
   const stepsRef     = useRef<HTMLDivElement>(null);
-  const gridRef      = useRef<HTMLDivElement>(null);
   const dropRef      = useRef<HTMLDivElement>(null);
   const fileRef      = useRef<HTMLInputElement>(null);
 
@@ -75,12 +75,13 @@ export default function LungCancerEnhanced() {
     addAuditLog,
     setRBACModalOpen,
     auditLogs,
+    isIamAuthenticated,
   } = useRBAC();
 
   /* ── router for login redirect ── */
   const router = useRouter();
 
-  const isAuthenticated = hasPermission('jobs:create') || hasPermission('jobs:read');
+  const isAuthenticated = isIamAuthenticated;
 
   const redirectToLogin = useCallback(() => {
     router.push('/login?redirect=/lung-cancer');
@@ -105,137 +106,6 @@ export default function LungCancerEnhanced() {
   const COUNTER_SUFFIXES = ['%', '%', '-year', 's'];
   const COUNTER_LABELS  = ['AUC score', 'Sensitivity', 'Risk window', 'Inference latency'];
 
-  /* ── Three.js 3D lung visualisation ── */
-  useEffect(() => {
-    const el = stageRef.current;
-    if (!el) return;
-
-    let cleanup = false;
-
-    const loadThree = async () => {
-      const threeModule = await import('three').catch(() => null);
-      if (!threeModule || cleanup) return;
-      const THREE = threeModule;
-
-      const W = () => el.clientWidth;
-      const H = () => el.clientHeight;
-
-      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-      renderer.setSize(W(), H());
-      el.prepend(renderer.domElement);
-      renderer.domElement.style.borderRadius = '28px';
-
-      const scene = new THREE.Scene();
-      const cam   = new THREE.PerspectiveCamera(45, W() / H(), 0.1, 100);
-      cam.position.set(0, 0, 7);
-
-      const root = new THREE.Group();
-      scene.add(root);
-
-      /* point cloud lobe */
-      function lobe(side: number) {
-        const N = 5200;
-        const pos = new Float32Array(N * 3);
-        const col = new Float32Array(N * 3);
-        const a = new THREE.Color(0x00dcce);
-        const b = new THREE.Color(0x98aed9);
-        for (let i = 0; i < N; i++) {
-          let x: number, y: number, z: number;
-          do { x = Math.random() * 2 - 1; y = Math.random() * 2 - 1; z = Math.random() * 2 - 1; } while (x * x + y * y + z * z > 1);
-          const t = (y + 1) / 2;
-          const wx = 0.75 - 0.25 * (1 - t) * (1 - t) + (y > 0 ? 0 : 0.15);
-          pos[i * 3]     = side * (0.95 + x * wx * (1 - 0.25 * (1 - t)));
-          pos[i * 3 + 1] = y * 1.6;
-          pos[i * 3 + 2] = z * 0.7 * (1 - 0.3 * (1 - t));
-          const m = a.clone().lerp(b, Math.random());
-          col[i * 3] = m.r; col[i * 3 + 1] = m.g; col[i * 3 + 2] = m.b;
-        }
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-        geo.setAttribute('color',    new THREE.BufferAttribute(col, 3));
-        return new THREE.Points(geo, new THREE.PointsMaterial({ size: 0.028, vertexColors: true, transparent: true, opacity: 0.85, depthWrite: false }));
-      }
-      root.add(lobe(-1), lobe(1));
-
-      /* trachea & bronchi */
-      const wireMat = new THREE.MeshBasicMaterial({ color: 0x98aed9, wireframe: true, transparent: true, opacity: 0.35 });
-      const trachea = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 1.5, 10, 6), wireMat);
-      trachea.position.y = 1.7;
-      root.add(trachea);
-      [-1, 1].forEach((k) => {
-        const br = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 1.3, 8, 5), wireMat);
-        br.position.set(k * 0.35, 0.75, 0);
-        br.rotation.z = k * 0.55;
-        root.add(br);
-      });
-
-      /* nodule */
-      const nodule = new THREE.Mesh(new THREE.SphereGeometry(0.12, 24, 24), new THREE.MeshBasicMaterial({ color: 0xff7869 }));
-      nodule.position.set(1.05, 0.85, 0.15);
-      root.add(nodule);
-      const halo = new THREE.Mesh(new THREE.SphereGeometry(0.2, 24, 24), new THREE.MeshBasicMaterial({ color: 0xff7869, transparent: true, opacity: 0.25 }));
-      halo.position.copy(nodule.position);
-      root.add(halo);
-
-      /* scan plane */
-      const planeGeo = new THREE.PlaneGeometry(3.6, 1.6);
-      const scanPlane = new THREE.Mesh(planeGeo, new THREE.MeshBasicMaterial({ color: 0x00dcce, transparent: true, opacity: 0.12, side: THREE.DoubleSide }));
-      scanPlane.rotation.x = Math.PI / 2;
-      root.add(scanPlane);
-      const scanEdge = new THREE.LineSegments(new THREE.EdgesGeometry(planeGeo), new THREE.LineBasicMaterial({ color: 0x00dcce }));
-      scanEdge.rotation.x = Math.PI / 2;
-      root.add(scanEdge);
-
-      /* interaction */
-      let drag = false, px = 0, ry = 0;
-      const vy = 0.004;
-      el.addEventListener('pointerdown', (e) => { drag = true; px = e.clientX; el.style.cursor = 'grabbing'; });
-      window.addEventListener('pointerup', () => { drag = false; el.style.cursor = 'grab'; });
-      window.addEventListener('pointermove', (e) => { if (drag) { ry += (e.clientX - px) * 0.01; px = e.clientX; } });
-
-      let visible = true;
-      const visObs = new IntersectionObserver(([e]) => { visible = e.isIntersecting; });
-      visObs.observe(el);
-
-      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-      function loop(t: number) {
-        if (cleanup) return;
-        requestAnimationFrame(loop);
-        if (!visible) return;
-        if (!drag && !reducedMotion) ry += vy;
-        root.rotation.y = ry;
-        root.rotation.x = Math.sin(t / 3000) * 0.08;
-        const k = (Math.sin(t / 1800) + 1) / 2;
-        scanPlane.position.y = scanEdge.position.y = -1.6 + k * 3.6;
-        halo.scale.setScalar(1 + 0.35 * Math.sin(t / 300));
-        renderer.render(scene, cam);
-      }
-      requestAnimationFrame(loop);
-
-      const onResize = () => {
-        renderer.setSize(W(), H());
-        cam.aspect = W() / H();
-        cam.updateProjectionMatrix();
-      };
-      window.addEventListener('resize', onResize);
-
-      return () => {
-        cleanup = true;
-        window.removeEventListener('resize', onResize);
-        visObs.disconnect();
-        renderer.dispose();
-      };
-    };
-
-    const disposePromise = loadThree();
-    return () => {
-      cleanup = true;
-      disposePromise.then((dispose) => dispose?.());
-    };
-  }, []);
-
   /* ── pipeline step reveal ── */
   useEffect(() => {
     const el = stepsRef.current;
@@ -251,24 +121,6 @@ export default function LungCancerEnhanced() {
     }, { threshold: 0.3 });
     obs.observe(el);
     return () => obs.disconnect();
-  }, []);
-
-  /* ── 3D tilt on feature cards ── */
-  useEffect(() => {
-    const el = gridRef.current;
-    if (!el || !window.matchMedia('(hover: hover)').matches) return;
-    const cards = el.querySelectorAll<HTMLElement>('.feat-card');
-    cards.forEach((c) => {
-      const move = (e: PointerEvent) => {
-        const b = c.getBoundingClientRect();
-        const x = (e.clientX - b.left) / b.width - 0.5;
-        const y = (e.clientY - b.top) / b.height - 0.5;
-        c.style.transform = `perspective(800px) rotateY(${x * 12}deg) rotateX(${-y * 12}deg) translateZ(8px)`;
-      };
-      const leave = () => { c.style.transform = ''; };
-      c.addEventListener('pointermove', move as EventListener);
-      c.addEventListener('pointerleave', leave);
-    });
   }, []);
 
   /* ── animated counters ── */
@@ -349,9 +201,9 @@ export default function LungCancerEnhanced() {
       setTimeout(() => {
         router.push('/doctor');
       }, 500);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Upload failed:', err);
-      setUploadErr(err.message || 'Error processing DICOM image');
+      setUploadErr(err instanceof Error && err.message ? err.message : 'Error processing DICOM image');
       setUploadPhase('idle');
     }
   }, [router]);
@@ -391,51 +243,45 @@ export default function LungCancerEnhanced() {
         .lc-alt { background: ${C.bg3}; }
         .lc-sub { color: ${C.mute}; max-width: 54ch; margin: 0 0 52px; font-size: 17px; line-height: 1.7; }
         .lc-h2 { font-size: clamp(28px, 4vw, 44px); margin-bottom: 14px; }
-        .lc-btn { display: inline-flex; align-items: center; gap: 8px; border-radius: 999px; padding: 14px 28px; font-weight: 600; font-size: 15px; border: 1px solid ${C.line}; background: rgba(255,255,255,.05); color: ${C.ink}; cursor: pointer; transition: transform .2s, box-shadow .3s; text-decoration: none; }
-        .lc-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 30px -8px rgba(0,220,206,.25); }
-        .lc-btn-p { background: linear-gradient(135deg, ${C.coral}, #ff5040); border: 0; color: #fff; box-shadow: 0 12px 36px -10px ${C.coral}; }
-        .lc-btn-p:hover { box-shadow: 0 16px 44px -8px ${C.coral}; }
-        .lc-tag { font-size: 12px; padding: 5px 12px; border-radius: 99px; background: rgba(124,92,252,.15); color: ${C.violet}; font-weight: 500; letter-spacing: .02em; }
+        .lc-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 8px; min-height: 44px; padding: 12px 22px; font-weight: 600; font-size: 15px; border: 1px solid ${C.line}; background: rgba(255,255,255,.05); color: ${C.ink}; cursor: pointer; transition: background .2s, border-color .2s; text-decoration: none; }
+        .lc-btn:hover { background: #173240; border-color: ${C.teal}; }
+        .lc-btn:focus-visible, .lc-nav a:focus-visible { outline: 2px solid ${C.teal}; outline-offset: 4px; }
+        .lc-btn-p { background: ${C.coral}; border: 1px solid ${C.coral}; color: #17232E; }
+        .lc-btn-p:hover { background: #FF9385; border-color: #FF9385; }
+        .lc-tag { font-size: 12px; padding: 5px 10px; border-radius: 6px; background: rgba(120,185,179,.12); color: ${C.teal}; font-weight: 500; letter-spacing: .02em; }
         .lc-line { height: 1px; background: ${C.line}; }
-
-        /* ── ambient orbs ── */
-        .orb { position: absolute; border-radius: 50%; pointer-events: none; filter: blur(100px); opacity: .12; }
 
         /* ── header ── */
         .lc-header { position: fixed; top: 0; left: 0; right: 0; z-index: 50; backdrop-filter: blur(16px) saturate(1.4); background: rgba(6,11,17,.72); border-bottom: 1px solid ${C.line}; }
-        .lc-header-inner { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+        .lc-header-inner { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 72px; padding-top: 12px; padding-bottom: 12px; flex-wrap: wrap; }
+        .lc-header-inner > div, .lc-header-inner > div > div { flex-wrap: wrap; }
+        .lc-header-inner .lc-btn { white-space: nowrap; }
         .lc-brand { font: 700 20px Sora; display: flex; gap: 10px; align-items: center; }
-        .lc-brand-icon { width: 24px; height: 24px; border-radius: 8px; background: linear-gradient(135deg, ${C.teal}, ${C.lav}); }
-        .lc-nav { display: flex; gap: 28px; color: ${C.mute}; font-size: 14px; }
+        .lc-brand-icon { width: 24px; height: 24px; border-radius: 6px; background: ${C.tealDim}; }
+        .lc-nav { display: flex; gap: 22px; color: ${C.teal}; font-size: 14px; }
         .lc-nav a:hover { color: #fff; }
-        @media(max-width:900px){ .lc-nav { display: none; } }
+        @media(max-width:1100px){ .lc-nav { display: none; } }
 
         /* ── hero ── */
         .lc-hero { position: relative; min-height: 100vh; display: flex; align-items: center; padding: 120px 0 80px; overflow: hidden; }
         .lc-hero-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: center; width: 100%; }
         .lc-hero h1 { font-size: clamp(40px, 5.5vw, 64px); }
-        .lc-hero h1 em { font-style: normal; background: linear-gradient(135deg, ${C.teal}, ${C.violet}); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .lc-hero h1 em { font-style: normal; color: ${C.teal}; }
         .lc-hero-p { color: ${C.mute}; max-width: 46ch; margin: 22px 0 36px; font-size: 17px; line-height: 1.7; }
         .lc-acts { display: flex; gap: 14px; flex-wrap: wrap; }
         .lc-strip { display: flex; gap: 36px; margin-top: 44px; }
         .lc-strip-n { font: 700 30px Sora; font-variant-numeric: tabular-nums; }
         .lc-strip span { color: ${C.mute}; font-size: 13px; display: block; margin-top: 2px; }
 
-        /* ── 3D stage ── */
-        .lc-stage { position: relative; height: 520px; border-radius: 28px; background: radial-gradient(circle at 50% 45%, rgba(0,220,206,.1), transparent 65%); border: 1px solid rgba(255,255,255,.06); cursor: grab; touch-action: pan-y; overflow: hidden; }
-        .lc-stage canvas { display: block; width: 100%; height: 100%; }
-        .lc-chip { position: absolute; padding: 11px 16px; border-radius: 16px; background: rgba(6,11,17,.72); backdrop-filter: blur(14px); border: 1px solid rgba(255,255,255,.1); font-size: 13px; pointer-events: none; }
-        .lc-chip b { display: block; font: 600 14px Sora; margin-bottom: 2px; }
-        .lc-chip-teal b { color: ${C.teal}; }
-        .lc-chip-coral b { color: ${C.coral}; }
-        .lc-hint { position: absolute; bottom: 14px; left: 0; right: 0; text-align: center; font-size: 12px; color: ${C.mute}; pointer-events: none; }
+        /* ── illustrative anatomy stage ── */
+        .lc-stage { position: relative; height: 540px; min-width: 0; border-radius: 14px; background: ${C.bg2}; border: 1px solid #2A3C4B; overflow: hidden; box-shadow: 0 16px 40px rgba(0,0,0,.2); }
 
         /* ── upload ── */
-        .lc-drop { border: 2px dashed rgba(0,220,206,.3); border-radius: 24px; padding: 56px 24px; text-align: center; background: rgba(255,255,255,.015); transition: all .25s; min-height: 280px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; cursor: pointer; }
+        .lc-drop { border: 2px dashed rgba(0,220,206,.3); border-radius: 12px; padding: 56px 24px; text-align: center; background: rgba(255,255,255,.015); transition: all .25s; min-height: 280px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; cursor: pointer; }
         .lc-drop:hover, .lc-drop.over { border-color: ${C.teal}; background: rgba(0,220,206,.04); transform: scale(1.005); }
         .lc-drop.over { border-color: ${C.coral}; background: rgba(255,120,105,.05); }
         .lc-bar { width: min(440px, 100%); height: 8px; background: rgba(255,255,255,.08); border-radius: 9px; overflow: hidden; }
-        .lc-bar-fill { height: 100%; background: linear-gradient(90deg, ${C.teal}, ${C.violet}); border-radius: 9px; transition: width .15s; }
+        .lc-bar-fill { height: 100%; background: ${C.teal}; border-radius: 9px; transition: width .15s; }
         .lc-spin { width: 56px; height: 56px; border-radius: 50%; border: 3px solid rgba(255,255,255,.1); border-top-color: ${C.teal}; animation: lc-sp 1s linear infinite; }
         @keyframes lc-sp { to { transform: rotate(360deg); } }
         .lc-meta { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; width: 100%; margin-top: 10px; }
@@ -444,31 +290,31 @@ export default function LungCancerEnhanced() {
 
         /* ── pipeline steps ── */
         .lc-steps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; }
-        .lc-step { padding: 24px 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,.06); opacity: .3; transform: translateY(18px); transition: all .6s cubic-bezier(.16,1,.3,1); background: rgba(255,255,255,.02); }
-        .lc-step.on { opacity: 1; transform: none; border-color: rgba(0,220,206,.4); background: rgba(0,220,206,.04); box-shadow: 0 0 30px -10px rgba(0,220,206,.2); }
+        .lc-step { padding: 24px 20px; border-radius: 12px; border: 1px solid rgba(255,255,255,.06); opacity: .3; transform: translateY(18px); transition: all .6s cubic-bezier(.16,1,.3,1); background: rgba(255,255,255,.02); }
+        .lc-step.on { opacity: 1; transform: none; border-color: ${C.tealDim}; background: rgba(120,185,179,.04); }
         .lc-step-num { font: 700 13px Sora; margin-bottom: 12px; }
         .lc-step h3 { font-size: 18px; margin: 0 0 8px; }
         .lc-step p { margin: 0; font-size: 13px; color: ${C.mute}; line-height: 1.5; }
 
         /* ── feature cards ── */
-        .lc-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; perspective: 1000px; }
-        .feat-card { padding: 30px; border-radius: 22px; background: linear-gradient(160deg, rgba(255,255,255,.06), rgba(255,255,255,.015)); border: 1px solid rgba(255,255,255,.07); transition: transform .2s, box-shadow .35s; will-change: transform; }
-        .feat-card:hover { box-shadow: 0 30px 70px -25px rgba(0,220,206,.3), 0 0 0 1px rgba(0,220,206,.15); }
+        .lc-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+        .lc-page .feat-card { padding: 26px; border-radius: 12px; background: ${C.bg2}; border: 1px solid #2A3C4B; transition: border-color .2s; }
+        .lc-page .feat-card:hover { border-color: ${C.tealDim}; }
         .feat-card h3 { font-size: 19px; margin-top: 14px; }
         .feat-card p { color: ${C.mute}; font-size: 14px; margin: 10px 0 18px; line-height: 1.6; }
         .feat-card small { display: block; margin-top: 14px; color: ${C.teal}; font-weight: 600; font-size: 13px; }
 
         /* ── stats ── */
         .lc-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; text-align: center; }
-        .lc-stat-n { font: 700 clamp(38px, 5vw, 58px) Sora; font-variant-numeric: tabular-nums; background: linear-gradient(135deg, #fff, ${C.teal}); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .lc-stat-n { font: 700 clamp(38px, 5vw, 58px) Sora; font-variant-numeric: tabular-nums; color: ${C.ink}; }
         .lc-stat-l { color: ${C.mute}; font-size: 14px; margin-top: 4px; }
 
         /* ── model registry ── */
         .lc-tabs { display: flex; gap: 10px; margin-bottom: 28px; flex-wrap: wrap; }
         .lc-tab { font: inherit; color: ${C.mute}; background: none; border: 1px solid rgba(255,255,255,.08); border-radius: 99px; padding: 11px 22px; cursor: pointer; font-size: 14px; transition: all .25s; }
         .lc-tab:hover { color: #fff; border-color: rgba(255,255,255,.18); }
-        .lc-tab[data-active="true"] { color: #fff; background: rgba(0,220,206,.1); border-color: ${C.teal}; box-shadow: 0 0 20px -8px rgba(0,220,206,.3); }
-        .lc-spec { border: 1px solid rgba(255,255,255,.08); border-radius: 24px; padding: 36px; display: grid; grid-template-columns: 1fr 1fr; gap: 28px; background: rgba(255,255,255,.02); }
+        .lc-tab[data-active="true"] { color: #fff; background: rgba(120,185,179,.1); border-color: ${C.teal}; }
+        .lc-spec { border: 1px solid rgba(255,255,255,.08); border-radius: 12px; padding: 36px; display: grid; grid-template-columns: 1fr 1fr; gap: 28px; background: rgba(255,255,255,.02); }
         .lc-spec dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 10px 24px; font-size: 14px; }
         .lc-spec dt { color: ${C.mute}; }
         .lc-spec dd { margin: 0; color: ${C.ink}; }
@@ -488,18 +334,18 @@ export default function LungCancerEnhanced() {
 
         /* ── responsive ── */
         @media(max-width:960px){ .lc-hero-grid, .lc-spec { grid-template-columns: 1fr; } .lc-steps, .lc-grid, .lc-stats { grid-template-columns: 1fr 1fr; } .lc-stage { height: 380px; } .lc-meta { grid-template-columns: 1fr 1fr; } }
-        @media(max-width:600px){ .lc-steps, .lc-grid { grid-template-columns: 1fr; } .lc-stats { grid-template-columns: 1fr 1fr; } .lc-strip { gap: 20px; } }
-        @media(prefers-reduced-motion: reduce){ *, *::before, *::after { animation-duration: 0s !important; transition-duration: 0s !important; } }
+        @media(max-width:600px){ .lc-wrap { padding-left: 18px; padding-right: 18px; } .lc-hero { padding-top: 180px; } .lc-steps, .lc-grid { grid-template-columns: 1fr; } .lc-stats { grid-template-columns: 1fr 1fr; } .lc-strip { gap: 18px; flex-wrap: wrap; } .lc-stage { height: 420px; } .lc-section { padding: 64px 0; } }
+        @media(prefers-reduced-motion: reduce){ .lc-page *, .lc-page *::before, .lc-page *::after { animation-duration: 0s !important; transition-duration: 0s !important; } .lc-page .lc-step { opacity: 1; transform: none; } }
       `}</style>
 
       <div className="lc-page">
         {/* ━━━━━ HEADER ━━━━━ */}
         <header className="lc-header">
           <div className="lc-wrap lc-header-inner">
-            <a className="lc-brand" href="/">
+            <Link className="lc-brand" href="/">
               <span className="lc-brand-icon" />
               MiPAAS
-            </a>
+            </Link>
             <nav className="lc-nav">
               <a href="#upload">Upload</a>
               <a href="#pipeline">Pipeline</a>
@@ -527,15 +373,6 @@ export default function LungCancerEnhanced() {
                     <Unlock style={{ width: 12, height: 12 }} />
                     <span>{currentUser.name.split(',')[0].split(' ').slice(0, 2).join(' ')}</span>
                   </div>
-                  <button
-                    onClick={() => setRBACModalOpen(true)}
-                    className="lc-btn"
-                    style={{ padding: '8px 16px', fontSize: 13 }}
-                    title="Open RBAC security & permission matrix"
-                  >
-                    <Sliders style={{ width: 14, height: 14, color: C.teal }} />
-                    <span>RBAC Matrix</span>
-                  </button>
                 </div>
               ) : (
                 <button
@@ -553,11 +390,6 @@ export default function LungCancerEnhanced() {
 
         {/* ━━━━━ HERO ━━━━━ */}
         <section className="lc-hero" id="top">
-          {/* ambient orbs */}
-          <div className="orb" style={{ width: 600, height: 600, top: -200, left: -200, background: C.tealDim }} />
-          <div className="orb" style={{ width: 500, height: 500, bottom: -150, right: -150, background: C.violet }} />
-          <div className="orb" style={{ width: 400, height: 400, top: '40%', left: '50%', background: C.coral, opacity: .06 }} />
-
           <div className="lc-wrap lc-hero-grid">
             <div>
               <h1>
@@ -601,24 +433,14 @@ export default function LungCancerEnhanced() {
               </div>
             </div>
 
-            {/* Three.js 3D viewport */}
-            <div ref={stageRef} className="lc-stage" aria-label="Interactive 3D lung model — drag to rotate" role="img">
-              <div className="lc-chip lc-chip-coral" style={{ top: 18, right: 18 }}>
-                <b>Nodule detected</b>
-                Right upper lobe · 8 mm
-              </div>
-              <div className="lc-chip lc-chip-teal" style={{ bottom: 44, left: 18 }}>
-                <b>6-year risk 12.4%</b>
-                Moderate
-              </div>
-              <div className="lc-hint">Drag to rotate</div>
+            <div className="lc-stage">
+              <AnatomyViewer kind="lungs" />
             </div>
           </div>
         </section>
 
         {/* ━━━━━ UPLOAD ━━━━━ */}
         <section id="upload" className="lc-section lc-alt">
-          <div className="orb" style={{ width: 500, height: 500, top: -100, right: -100, background: C.teal }} />
           <div className="lc-wrap">
             <h2 className="lc-h2">Upload your CT scan</h2>
             <p className="lc-sub">
@@ -811,11 +633,10 @@ export default function LungCancerEnhanced() {
 
         {/* ━━━━━ FEATURES ━━━━━ */}
         <section id="features" className="lc-section lc-alt">
-          <div className="orb" style={{ width: 450, height: 450, bottom: -120, left: '20%', background: C.violet }} />
           <div className="lc-wrap">
             <h2 className="lc-h2">Full AI and explainability stack</h2>
             <p className="lc-sub">Every prediction ships with the evidence behind it.</p>
-            <div className="lc-grid" ref={gridRef}>
+            <div className="lc-grid">
               {FEATURES.map((f, i) => (
                 <div key={i} className="feat-card">
                   <span className="lc-tag">{f.tag}</span>
@@ -853,7 +674,6 @@ export default function LungCancerEnhanced() {
 
         {/* ━━━━━ CLINICAL WORKSTATION & RBAC SIGN-OFF ━━━━━ */}
         <section id="clinical-station" className="lc-section lc-alt">
-          <div className="orb" style={{ width: 500, height: 500, top: -100, right: -100, background: C.violet, opacity: 0.12 }} />
           <div className="lc-wrap">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 12 }}>
               <div>
@@ -900,7 +720,7 @@ export default function LungCancerEnhanced() {
             {/* Workstation Console Card */}
             <div
               style={{
-                borderRadius: 28,
+                borderRadius: 14,
                 border: '1px solid rgba(255, 255, 255, 0.1)',
                 background: '#091927',
                 padding: '32px',
@@ -979,7 +799,7 @@ export default function LungCancerEnhanced() {
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))',
                   gap: 28,
                   marginTop: 24,
                 }}
@@ -1218,7 +1038,6 @@ export default function LungCancerEnhanced() {
 
         {/* ━━━━━ CTA ━━━━━ */}
         <section id="cta" className="lc-section lc-cta-bg">
-          <div className="orb" style={{ width: 500, height: 500, top: '10%', left: '50%', transform: 'translateX(-50%)', background: C.violet, opacity: .08 }} />
           <div className="lc-wrap">
             <h2 className="lc-cta-h">Ready to upgrade your lung screening program?</h2>
             <div className="lc-acts" style={{ justifyContent: 'center' }}>
@@ -1255,14 +1074,10 @@ export default function LungCancerEnhanced() {
               </div>
               <p style={{ margin: 0 }}>AI-assisted imaging, built for clinicians.</p>
             </div>
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              const form = e.currentTarget;
-              form.innerHTML = '<span style="color:#00DCCE">Subscribed. Thank you.</span>';
-            }}>
-              <input type="email" required placeholder="Work email" aria-label="Work email" />
-              <button className="lc-btn lc-btn-p" type="submit" style={{ padding: '10px 20px' }}>Subscribe</button>
-            </form>
+            <div className="lc-acts" style={{ margin: 0, flexWrap: 'wrap' }}>
+              <a className="lc-btn" href="/staff">Staff upload hub</a>
+              <a className="lc-btn lc-btn-p" href="/doctor">Open workstation →</a>
+            </div>
           </div>
         </footer>
       </div>

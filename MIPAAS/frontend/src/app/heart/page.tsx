@@ -7,6 +7,12 @@ export const metadata: Metadata = {
     'Automated cardiac MRI ventricle and myocardium segmentation with LVEF calculation.',
 };
 
+import ServiceGuard from '@/components/common/ServiceGuard';
+
 export default function Page() {
-  return <CardiacEnhanced />;
+  return (
+    <ServiceGuard serviceId="cardiac">
+      <CardiacEnhanced />
+    </ServiceGuard>
+  );
 }

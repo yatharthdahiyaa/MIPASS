@@ -64,6 +64,9 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.routes.diseases import diseases_bp
     from app.routes.auth_rbac import rbac_bp
     from app.routes.inference import inference_bp
+    from app.routes.agents_and_workflows import workflows_bp
+    from app.routes.openemr import openemr_bp
+    from app.routes.eka_portal import eka_bp
 
     app.register_blueprint(health_bp)
     app.register_blueprint(upload_bp, url_prefix="/api/v1")
@@ -72,6 +75,9 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(diseases_bp, url_prefix="/api/v1")
     app.register_blueprint(rbac_bp, url_prefix="/api/v1")
     app.register_blueprint(inference_bp, url_prefix="/api/v1")
+    app.register_blueprint(workflows_bp, url_prefix="/api/v1")
+    app.register_blueprint(openemr_bp, url_prefix="/api/v1")
+    app.register_blueprint(eka_bp, url_prefix="/api/v1")
 
     logger.info(
         "app_initialized",

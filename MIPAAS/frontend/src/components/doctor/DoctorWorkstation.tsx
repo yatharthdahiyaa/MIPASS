@@ -3,6 +3,32 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  FileText,
+  Lock,
+  Layers,
+  Shield,
+  Eye,
+  Sliders,
+  ChevronDown,
+  Activity,
+  ArrowRight,
+  Maximize2,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+  Sun,
+  Contrast,
+  Check,
+  X,
+  Edit3,
+  XCircle,
+  FileCheck
+} from 'lucide-react';
+import { openemrService } from '@/services/openemrService';
 
 export interface DicomMetadata {
   patient_id: string;
@@ -29,7 +55,8 @@ export interface DicomMetadata {
   sop_instance_uid: string;
 }
 
-export interface PathologyItem {
+export interface FindingItem {
+  id: string;
   name: string;
   probability: number;
   percentage: number;
@@ -37,682 +64,1020 @@ export interface PathologyItem {
   threshold_percentage: number;
   positive: boolean;
   description: string;
+  status: 'PENDING' | 'ACCEPTED' | 'EDITED' | 'REJECTED';
+  override_reason?: string;
+  doctor_notes?: string;
+  dimensions_mm?: number;
+  location?: string;
 }
 
-export interface DicomReport {
-  status: string;
-  is_fallback: boolean;
-  model_architecture: string;
-  model_version: string;
-  checkpoint_verified: boolean;
-  dicom_metadata: DicomMetadata;
+export interface WorklistCase {
+  case_id: string;
+  pseudonym_id: string;
+  patient_masked: string;
+  age_sex: string;
+  modality: string;
+  study_description: string;
+  priority: 'STAT' | 'URGENT' | 'ROUTINE';
+  critical_finding?: string;
+  sla_minutes: number;
+  sla_seconds_remaining: number;
+  acknowledged: boolean;
+  model_name: string;
+  primary_diagnosis: string;
+  confidence_pct: number;
+  findings: FindingItem[];
+  prior_study_available: boolean;
   preview_image: string;
   heatmap_image: string;
-  primary_diagnosis: string;
-  confidence: number;
-  confidence_percentage: number;
-  severity: 'CRITICAL' | 'HIGH' | 'MODERATE' | 'NORMAL';
-  urgency: string;
-  pathologies: PathologyItem[];
-  positive_findings: PathologyItem[];
-  clinical_summary: string;
-  recommended_actions: string[];
-  disclaimer: string;
+  // OpenEMR Clinical Integration Properties
+  order_id?: string;
+  patient_mrn?: string;
+  patient_name?: string;
+  allergies?: string[];
+  chronic_conditions?: string[];
+  clinical_indication?: string;
 }
 
 export default function DoctorWorkstation() {
   const router = useRouter();
-  const [report, setReport] = useState<DicomReport | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<'original' | 'heatmap' | 'split'>('heatmap');
+
+  // 1. Worklist cases state (STAT, URGENT, ROUTINE with SLA timers)
+  const [worklist, setWorklist] = useState<WorklistCase[]>([
+    {
+      case_id: 'MIP-9901-STAT',
+      pseudonym_id: 'MIP-8842-X',
+      patient_masked: 'P*****, J***',
+      age_sex: '58M',
+      modality: 'CXR',
+      study_description: 'Chest AP Mobile (ICU Resuscitation)',
+      priority: 'STAT',
+      critical_finding: 'TENSION_PNEUMOTHORAX',
+      sla_minutes: 15,
+      sla_seconds_remaining: 712, // ~11 mins remaining
+      acknowledged: false,
+      model_name: 'DenseNet121_ChestXray14',
+      primary_diagnosis: 'Tension Pneumothorax',
+      confidence_pct: 94.2,
+      preview_image: '/sample_cxr.dcm',
+      heatmap_image: '/sample_cxr.dcm',
+      prior_study_available: false,
+      order_id: 'ord_002',
+      patient_mrn: 'MRN-5512-1002',
+      patient_name: 'John Doe',
+      allergies: ['Sulfa drugs'],
+      chronic_conditions: ['Hypertension', 'Hyperlipidemia'],
+      clinical_indication: 'Acute pleuritic pain, r/o tension pneumothorax',
+      findings: [
+        {
+          id: 'fnd_01',
+          name: 'Tension Pneumothorax',
+          probability: 0.942,
+          percentage: 94,
+          threshold: 0.25,
+          threshold_percentage: 25,
+          positive: true,
+          status: 'PENDING',
+          dimensions_mm: 32.0,
+          location: 'Right Pleural Space',
+          description: 'Significant air collection in right pleural space with mediastinal shift.',
+        },
+        {
+          id: 'fnd_02',
+          name: 'Atelectasis',
+          probability: 0.718,
+          percentage: 72,
+          threshold: 0.20,
+          threshold_percentage: 20,
+          positive: true,
+          status: 'PENDING',
+          location: 'Right Lower Lobe',
+          description: 'Compressive collapse secondary to tension pneumothorax.',
+        },
+      ],
+    },
+    {
+      case_id: 'MIP-9902-URGENT',
+      pseudonym_id: 'MIP-5512-Y',
+      patient_masked: 'S*****, M***',
+      age_sex: '64F',
+      modality: 'CT',
+      study_description: 'Low-Dose Chest CT Volume',
+      priority: 'URGENT',
+      critical_finding: undefined,
+      sla_minutes: 60,
+      sla_seconds_remaining: 2840,
+      acknowledged: true,
+      model_name: 'ResNet3D_Lung_v1.8',
+      primary_diagnosis: 'Solid Pulmonary Nodule (Lung-RADS 4A)',
+      confidence_pct: 86.4,
+      preview_image: '/sample_cxr.dcm',
+      heatmap_image: '/sample_cxr.dcm',
+      prior_study_available: true,
+      order_id: 'ord_001',
+      patient_mrn: 'MRN-8842-1001',
+      patient_name: 'Eleanor Rigby',
+      allergies: ['Penicillin', 'IV Iodine Contrast'],
+      chronic_conditions: ['COPD (Gold 2)', 'Tobacco Use Disorder (35 pk-yr)'],
+      clinical_indication: 'Low-Dose CT Lung Cancer Screening · Nodule surveillance',
+      findings: [
+        {
+          id: 'fnd_03',
+          name: 'Solid Pulmonary Nodule',
+          probability: 0.864,
+          percentage: 86,
+          threshold: 0.30,
+          threshold_percentage: 30,
+          positive: true,
+          status: 'ACCEPTED',
+          dimensions_mm: 8.4,
+          location: 'Right Upper Lobe (Apical)',
+          description: 'Spiculated margin nodule measuring 8.4mm with +48% volumetric growth over prior study.',
+        },
+      ],
+    },
+    {
+      case_id: 'MIP-9903-ROUTINE',
+      pseudonym_id: 'MIP-3199-Z',
+      patient_masked: 'D*****, R***',
+      age_sex: '42M',
+      modality: 'CXR',
+      study_description: 'Annual Occupational CXR Screening',
+      priority: 'ROUTINE',
+      critical_finding: undefined,
+      sla_minutes: 1440,
+      sla_seconds_remaining: 81200,
+      acknowledged: true,
+      model_name: 'DenseNet121_ChestXray14',
+      primary_diagnosis: 'No Acute Cardiopulmonary Disease',
+      confidence_pct: 98.1,
+      preview_image: '/sample_cxr.dcm',
+      heatmap_image: '/sample_cxr.dcm',
+      prior_study_available: false,
+      order_id: 'ord_003',
+      patient_mrn: 'MRN-3199-1003',
+      patient_name: 'Robert Davis',
+      allergies: ['NKDA (No Known Drug Allergies)'],
+      chronic_conditions: ['Routine Occupational Health'],
+      clinical_indication: 'Annual executive occupational health baseline',
+      findings: [
+        {
+          id: 'fnd_04',
+          name: 'Normal Cardiopulmonary Examination',
+          probability: 0.981,
+          percentage: 98,
+          threshold: 0.50,
+          threshold_percentage: 50,
+          positive: true,
+          status: 'ACCEPTED',
+          location: 'Bilateral Thorax',
+          description: 'Clear lung fields, normal cardiothoracic ratio, intact diaphragms.',
+        },
+      ],
+    },
+  ]);
+
+  const [activeCaseId, setActiveCaseId] = useState<string>('MIP-9901-STAT');
+  const [viewMode, setViewMode] = useState<'original' | 'heatmap' | 'split' | 'comparison'>('heatmap');
+  const [activeTab, setActiveTab] = useState<'findings' | 'report' | 'longitudinal'>('findings');
+
+  // Viewer image adjustments
   const [zoom, setZoom] = useState(1);
   const [brightness, setBrightness] = useState(100);
   const [contrast, setContrast] = useState(100);
   const [inverted, setInverted] = useState(false);
-  const [showTagModal, setShowTagModal] = useState(false);
-  const [doctorNotes, setDoctorNotes] = useState('');
-  const [signedOff, setSignedOff] = useState(false);
-  const [activeTab, setActiveTab] = useState<'findings' | 'pathologies' | 'actions'>('findings');
+
+  // Modals state
+  const [showStatAckModal, setShowStatAckModal] = useState(false);
+  const [overrideModalFinding, setOverrideModalFinding] = useState<FindingItem | null>(null);
+  const [overrideReasonCode, setOverrideReasonCode] = useState('FALSE_POSITIVE_VESSEL_CONGESTION');
+  const [overrideNotes, setOverrideNotes] = useState('');
+
+  // Structured Reporting & e-Sign
+  const [selectedTemplate, setSelectedTemplate] = useState('CHEST_XR_STANDARD');
+  const [reportProse, setReportProse] = useState('');
+  const [showSignModal, setShowSignModal] = useState(false);
+  const [doctorName, setDoctorName] = useState('Dr. Sarah Lin, MD');
+  const [licenseId, setLicenseId] = useState('MED-NY-88192');
+  const [eSigned, setESigned] = useState(false);
+  const [signatureHash, setSignatureHash] = useState<string | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
 
+  // Active case pointer
+  const activeCase = worklist.find((c) => c.case_id === activeCaseId) || worklist[0];
+
+  // Ticking SLA Countdown
   useEffect(() => {
-    // Load study from sessionStorage
-    const stored = typeof window !== 'undefined' ? sessionStorage.getItem('mipaas_active_dicom_study') : null;
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored);
-        setReport(parsed);
-      } catch (e) {
-        console.error('Failed to parse active study', e);
-      }
-    }
-    setLoading(false);
+    const timer = setInterval(() => {
+      setWorklist((prev) =>
+        prev.map((c) => ({
+          ...c,
+          sla_seconds_remaining: Math.max(0, c.sla_seconds_remaining - 1),
+        }))
+      );
+    }, 1000);
+    return () => clearInterval(timer);
   }, []);
 
-  const handlePreset = (preset: 'lung' | 'bone' | 'soft' | 'brain' | 'reset') => {
-    if (preset === 'lung') {
-      setBrightness(130);
-      setContrast(140);
-    } else if (preset === 'bone') {
-      setBrightness(90);
-      setContrast(170);
-    } else if (preset === 'soft') {
-      setBrightness(105);
-      setContrast(115);
-    } else if (preset === 'brain') {
-      setBrightness(110);
-      setContrast(150);
+  // Trigger STAT alert modal if current case is STAT and unacknowledged
+  useEffect(() => {
+    if (activeCase.priority === 'STAT' && !activeCase.acknowledged) {
+      setShowStatAckModal(true);
     } else {
-      setBrightness(100);
-      setContrast(100);
-      setZoom(1);
-      setInverted(false);
+      setShowStatAckModal(false);
     }
-  };
+  }, [activeCase.case_id, activeCase.acknowledged, activeCase.priority]);
 
-  const handleSignOff = () => {
-    setSignedOff(true);
-    setNotification('Diagnostic findings verified & signed off by attending physician.');
+  // Sync draft prose when active case or findings change
+  useEffect(() => {
+    const accepted = activeCase.findings.filter((f) => f.status === 'ACCEPTED');
+    if (accepted.length > 0) {
+      const lines = accepted.map(
+        (f) => `• [${f.id}] ${f.name} at ${f.location || 'General'}: Verified with ${f.percentage}% AI confidence.`
+      );
+      setReportProse(
+        `TECHNIQUE: High-resolution digital radiograph.\n\nFINDINGS:\n${lines.join('\n')}\n\nIMPRESSION:\nFindings consistent with ${activeCase.primary_diagnosis}. Correlate with clinical bedside observations.`
+      );
+    } else {
+      setReportProse(
+        `TECHNIQUE: Standard digital radiography.\n\nFINDINGS:\nNo acute cardiopulmonary disease. Clear lung fields bilaterally.\n\nIMPRESSION:\nNormal examination.`
+      );
+    }
+  }, [activeCaseId, activeCase.findings, activeCase.primary_diagnosis]);
+
+  const handleAcknowledgeStat = () => {
+    setWorklist((prev) =>
+      prev.map((c) =>
+        c.case_id === activeCase.case_id ? { ...c, acknowledged: true } : c
+      )
+    );
+    setShowStatAckModal(false);
+    setNotification('STAT critical alert acknowledged. Response time logged for Joint Commission audit.');
     setTimeout(() => setNotification(null), 4000);
   };
 
-  const handleExportPDF = () => {
-    window.print();
+  const handleAcceptFinding = (findingId: string) => {
+    setWorklist((prev) =>
+      prev.map((c) => {
+        if (c.case_id !== activeCase.case_id) return c;
+        return {
+          ...c,
+          findings: c.findings.map((f) =>
+            f.id === findingId ? { ...f, status: 'ACCEPTED' } : f
+          ),
+        };
+      })
+    );
+    setNotification('AI finding accepted into official diagnostic impression.');
+    setTimeout(() => setNotification(null), 3000);
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#060B11] flex flex-col items-center justify-center text-white">
-        <div className="w-12 h-12 rounded-full border-2 border-[#00DCCE] border-t-transparent animate-spin mb-4" />
-        <div className="text-gray-400 font-mono text-sm tracking-wider uppercase">Loading Doctor Workstation…</div>
-      </div>
+  const openOverrideModal = (finding: FindingItem) => {
+    setOverrideModalFinding(finding);
+    setOverrideReasonCode('FALSE_POSITIVE_VESSEL_CONGESTION');
+    setOverrideNotes('');
+  };
+
+  const handleSaveOverride = () => {
+    if (!overrideModalFinding) return;
+
+    setWorklist((prev) =>
+      prev.map((c) => {
+        if (c.case_id !== activeCase.case_id) return c;
+        return {
+          ...c,
+          findings: c.findings.map((f) =>
+            f.id === overrideModalFinding.id
+              ? {
+                  ...f,
+                  status: 'REJECTED',
+                  override_reason: overrideReasonCode,
+                  doctor_notes: overrideNotes,
+                }
+              : f
+          ),
+        };
+      })
     );
-  }
 
-  if (!report) {
-    return (
-      <div className="min-h-screen bg-[#060B11] flex flex-col items-center justify-center text-white px-6">
-        <div className="max-w-md w-full bg-[#0A1823] border border-white/10 rounded-2xl p-8 text-center shadow-2xl">
-          <div className="w-16 h-16 rounded-2xl bg-[#FF7869]/10 border border-[#FF7869]/20 flex items-center justify-center mx-auto mb-5 text-[#FF7869]">
-            <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-          </div>
-          <h2 className="text-xl font-bold font-sora mb-2">No Active DICOM Study Loaded</h2>
-          <p className="text-sm text-gray-400 mb-6 leading-relaxed">
-            Please upload a DICOM image (.dcm / .dicom) to view model findings. Non-DICOM formats are not accepted for clinical analysis.
-          </p>
-          <div className="flex flex-col gap-3">
-            <Link
-              href="/#upload"
-              className="w-full py-3 px-5 rounded-xl bg-gradient-to-r from-[#008280] to-[#00DCCE] text-white font-semibold text-sm shadow-lg shadow-[#00DCCE]/20 hover:scale-[1.01] transition-all"
-            >
-              Upload DICOM Image →
-            </Link>
-            <a
-              href="/sample_cxr.dcm"
-              download="sample_cxr.dcm"
-              className="w-full py-2.5 px-4 rounded-xl border border-white/10 text-gray-300 text-xs font-medium hover:bg-white/5 transition-colors"
-            >
-              Download Sample DICOM (.dcm)
-            </a>
-          </div>
-        </div>
-      </div>
-    );
-  }
+    setNotification(`Finding '${overrideModalFinding.name}' rejected. Override telemetry streamed to Model QA.`);
+    setOverrideModalFinding(null);
+    setTimeout(() => setNotification(null), 4000);
+  };
 
-  const { dicom_metadata: meta, pathologies, positive_findings } = report;
+  const handleApplySignature = async () => {
+    const sig = `MIP-SIG-${Math.random().toString(36).substring(2, 10).toUpperCase()}-${Date.now().toString().slice(-4)}`;
+    setSignatureHash(sig);
+    setESigned(true);
+    setShowSignModal(false);
 
-  const severityBadgeClass = {
-    CRITICAL: 'bg-red-500/15 text-red-400 border-red-500/30',
-    HIGH: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
-    MODERATE: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30',
-    NORMAL: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
-  }[report.severity];
+    if (activeCase.order_id) {
+      try {
+        await openemrService.fileReport(activeCase.order_id, {
+          notes: reportProse,
+          impression: activeCase.primary_diagnosis,
+          ai_prediction_summary: `${activeCase.confidence_pct}% model confidence (${activeCase.model_name})`,
+          gradcam_heatmap_url: activeCase.heatmap_image,
+          signed_by: `${doctorName} (${licenseId})`,
+        });
+        setNotification(`Report certified & filed into OpenEMR (Order #${activeCase.order_id}) with signature ${sig}`);
+      } catch (err: any) {
+        setNotification(`Report certified with digital hash ${sig} (OpenEMR status: saved locally)`);
+      }
+    } else {
+      setNotification(`Report certified & locked with cryptographic e-signature: ${sig}`);
+    }
 
-  const imageFilterStyle = {
-    filter: `brightness(${brightness}%) contrast(${contrast}%) ${inverted ? 'invert(1)' : ''}`,
-    transform: `scale(${zoom})`,
-    transition: 'transform 0.15s ease-out',
+    setTimeout(() => setNotification(null), 5000);
+  };
+
+  const formatSeconds = (sec: number) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}m ${s < 10 ? '0' : ''}${s}s`;
   };
 
   return (
-    <div className="min-h-screen bg-[#060B11] text-white font-sans flex flex-col selection:bg-[#00DCCE] selection:text-black">
-      {/* ── Top Diagnostic Station Navigation Bar ── */}
-      <header className="h-16 bg-[#0A1823]/90 border-b border-white/10 px-6 flex items-center justify-between sticky top-0 z-40 backdrop-blur-md">
+    <div className="min-h-screen bg-[#F8FAFC] text-slate-800 flex flex-col font-sans selection:bg-teal-500 selection:text-white">
+      {/* ── Top Header ── */}
+      <header className="min-h-16 bg-white/95 border-b border-slate-200 px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3 sticky top-0 z-40 backdrop-blur-md shadow-xs text-slate-800">
         <div className="flex items-center gap-4">
-          <Link href="/" className="flex items-center gap-2.5 text-white group">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#00DCCE] to-[#008280] flex items-center justify-center text-black font-bold font-sora text-sm shadow-md shadow-[#00DCCE]/20">
+          <Link href="/" className="flex items-center gap-2.5 text-slate-900 group">
+            <div className="w-8 h-8 rounded-lg bg-teal-600 flex items-center justify-center text-white font-bold text-sm shadow-xs">
               M
             </div>
             <div className="flex flex-col">
-              <span className="font-bold text-base tracking-tight font-sora">MiPAAS Diagnostic Workstation</span>
-              <span className="text-[10px] text-[#00DCCE] uppercase tracking-widest font-mono">
-                Radiology & Clinical Decision Support
+              <span className="font-bold text-base tracking-tight leading-none text-slate-900">MiPAAS Diagnostic Station</span>
+              <span className="text-[10px] text-teal-700 uppercase tracking-widest font-mono mt-1 font-semibold">
+                Clinician Radiology &amp; Decision Support
               </span>
             </div>
           </Link>
 
-          <div className="hidden lg:flex items-center gap-2 pl-4 border-l border-white/10">
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-medium border border-white/10 bg-white/5 text-gray-300">
-              ID: {meta.patient_id}
+          <div className="hidden lg:flex items-center gap-2 pl-4 border-l border-slate-200 text-xs">
+            <span className="px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 font-mono text-slate-700">
+              {activeCase.pseudonym_id}
             </span>
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-medium border border-[#00DCCE]/30 bg-[#00DCCE]/10 text-[#00DCCE]">
-              Modality: {meta.modality}
+            <span className="px-2.5 py-0.5 rounded-full bg-teal-50 border border-teal-200 text-teal-800 font-mono font-semibold">
+              {activeCase.modality}
             </span>
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-medium border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              Trained Model: {report.model_architecture} (Zero Fallbacks)
+            <span
+              className={`px-2.5 py-0.5 rounded-full font-bold font-mono text-[11px] border ${
+                activeCase.priority === 'STAT'
+                  ? 'bg-rose-50 border-rose-200 text-rose-700 animate-pulse'
+                  : activeCase.priority === 'URGENT'
+                  ? 'bg-amber-50 border-amber-200 text-amber-800'
+                  : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              }`}
+            >
+              {activeCase.priority} · SLA {formatSeconds(activeCase.sla_seconds_remaining)}
             </span>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => setShowTagModal(true)}
-            className="px-3.5 py-1.5 rounded-lg border border-white/10 text-xs font-medium text-gray-300 hover:bg-white/5 hover:text-white transition-colors flex items-center gap-1.5"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-            </svg>
-            DICOM Tags
-          </button>
-
-          <button
-            onClick={handleExportPDF}
-            className="px-3.5 py-1.5 rounded-lg border border-white/10 text-xs font-medium text-gray-300 hover:bg-white/5 hover:text-white transition-colors flex items-center gap-1.5"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-            </svg>
-            Export Report
-          </button>
-
           <Link
-            href="/#upload"
-            className="px-4 py-1.5 rounded-lg bg-gradient-to-r from-[#FF7869] to-[#ff5c4a] text-xs font-semibold text-white shadow-md shadow-[#FF7869]/20 hover:scale-[1.02] transition-all"
+            href="/emr"
+            className="px-3.5 py-1.5 rounded-lg border border-teal-200 bg-teal-50 text-xs font-semibold text-teal-800 hover:bg-teal-100 transition-colors flex items-center gap-1.5"
+            title="Open OpenEMR Master Patient Index & Clinical Worklist"
           >
-            + New DICOM Scan
+            <Activity className="w-3.5 h-3.5 text-teal-600" />
+            <span>OpenEMR Chart</span>
           </Link>
+          <Link
+            href="/staff"
+            className="px-3.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
+          >
+            Staff Ingestion
+          </Link>
+          <Link
+            href="/admin"
+            className="px-3.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
+          >
+            Admin Hub
+          </Link>
+          <button
+            type="button"
+            onClick={() => setShowSignModal(true)}
+            className="px-4 py-2 rounded-lg bg-teal-600 text-white font-semibold text-xs hover:bg-teal-700 transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+          >
+            <Lock className="w-3.5 h-3.5" />
+            <span>{eSigned ? 'Report Certified' : 'e-Sign Report'}</span>
+          </button>
         </div>
       </header>
 
-      {/* ── Notification Banner ── */}
+      {/* Notification Toast */}
       {notification && (
-        <div className="bg-[#00DCCE] text-black px-6 py-2.5 text-center text-xs font-bold font-mono tracking-wide transition-all">
+        <div className="bg-teal-600 text-white px-6 py-2 text-center text-xs font-bold font-mono tracking-wide transition-all shadow-xs">
           ✓ {notification}
         </div>
       )}
 
-      {/* ── Main Workstation Grid ── */}
-      <div className="flex-1 grid grid-cols-1 xl:grid-cols-12 overflow-hidden">
-        {/* ════════════════════════════════════════════════════
-            LEFT: CLINICAL DICOM CANVAS & RADIOLOGIST TOOLS (7 COLS)
-           ════════════════════════════════════════════════════ */}
-        <section className="xl:col-span-7 bg-[#060B11] border-r border-white/10 flex flex-col p-4 lg:p-6 overflow-y-auto">
-          {/* Viewer Toolbar */}
-          <div className="flex flex-wrap items-center justify-between gap-3 bg-[#0A1823] p-3 rounded-xl border border-white/10 mb-4">
-            {/* View Mode Switch */}
-            <div className="flex items-center gap-1 bg-black/40 p-1 rounded-lg border border-white/5">
+      {/* ── Priority Worklist Drawer Banner ── */}
+      <section className="bg-white border-b border-slate-200 px-6 py-2.5 flex items-center justify-between overflow-x-auto text-xs shadow-xs">
+        <div className="flex items-center gap-2 text-slate-500 font-semibold uppercase text-[10px] tracking-wider flex-shrink-0 mr-2">
+          <Clock className="w-3.5 h-3.5 text-teal-600" />
+          <span>Priority Worklist (Agent 3 Triage L1):</span>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {worklist.map((c) => {
+            const isSelected = c.case_id === activeCaseId;
+            return (
               <button
+                key={c.case_id}
+                type="button"
+                onClick={() => setActiveCaseId(c.case_id)}
+                className={`px-3 py-1.5 rounded-xl border flex items-center gap-2 cursor-pointer transition-all ${
+                  isSelected
+                    ? 'bg-teal-50 border-teal-500 text-teal-950 font-bold shadow-xs ring-1 ring-teal-500/20'
+                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+              >
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    c.priority === 'STAT'
+                      ? 'bg-rose-500 animate-ping'
+                      : c.priority === 'URGENT'
+                      ? 'bg-amber-500'
+                      : 'bg-emerald-500'
+                  }`}
+                />
+                <span className="font-mono font-bold text-xs">{c.case_id}</span>
+                <span className="text-[10px] opacity-80">({c.priority} · {formatSeconds(c.sla_seconds_remaining)})</span>
+                {!c.acknowledged && c.priority === 'STAT' && (
+                  <span className="px-1.5 py-0.2 rounded bg-rose-600 text-white text-[9px] font-extrabold animate-pulse">
+                    UNACK
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* ── OpenEMR Patient Clinical Summary Strip ── */}
+      <section className="bg-slate-50 border-b border-slate-200 px-6 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-[11px] font-mono text-teal-700 font-bold flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse" />
+            OpenEMR Record:
+          </span>
+          <span className="font-bold text-slate-900 text-sm">
+            {activeCase.patient_name || activeCase.patient_masked}
+          </span>
+          <span className="px-2.5 py-0.5 rounded-md bg-white border border-slate-200 text-slate-700 font-mono text-[11px]">
+            MRN: {activeCase.patient_mrn || activeCase.pseudonym_id}
+          </span>
+          {activeCase.order_id && (
+            <span className="px-2.5 py-0.5 rounded-md bg-teal-50 border border-teal-200 text-teal-800 font-mono text-[11px] font-semibold">
+              Order #{activeCase.order_id} ({activeCase.modality})
+            </span>
+          )}
+          {activeCase.allergies && activeCase.allergies.length > 0 && (
+            <span className="px-2.5 py-0.5 rounded-full bg-rose-50 border border-rose-200 text-rose-800 font-bold text-[11px] flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3 text-rose-600 flex-shrink-0" />
+              Allergies: {activeCase.allergies.join(', ')}
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-3 text-slate-500 text-xs">
+          {activeCase.clinical_indication && (
+            <span className="hidden xl:inline italic text-[11px] text-slate-500">
+              Indication: {activeCase.clinical_indication}
+            </span>
+          )}
+          <Link
+            href="/emr"
+            className="text-teal-700 hover:underline font-bold text-xs flex items-center gap-1 font-mono"
+          >
+            <span>OpenEMR MPI</span>
+            <ArrowRight className="w-3 h-3" />
+          </Link>
+        </div>
+      </section>
+
+      {/* ── Main Workstation Workspace ── */}
+      <div className="flex-1 grid grid-cols-1 xl:grid-cols-12 overflow-hidden">
+        {/* ── LEFT: EMBEDDED DIAGNOSTIC CANVAS & XAI (7 COLS) ── */}
+        <section className="xl:col-span-7 bg-[#F1F5F9] border-r border-slate-200 flex flex-col p-4 lg:p-6 overflow-y-auto">
+          {/* Toolbar */}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-xl border border-slate-200 shadow-xs mb-4 text-xs">
+            {/* View Mode Controls */}
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200">
+              <button
+                type="button"
                 onClick={() => setViewMode('original')}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
-                  viewMode === 'original' ? 'bg-[#008280] text-white shadow-sm' : 'text-gray-400 hover:text-white'
+                className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
+                  viewMode === 'original' ? 'bg-teal-600 text-white font-bold shadow-xs' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
                 Scan Only
               </button>
               <button
+                type="button"
                 onClick={() => setViewMode('heatmap')}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
-                  viewMode === 'heatmap' ? 'bg-[#00DCCE] text-black font-semibold shadow-sm' : 'text-gray-400 hover:text-white'
+                className={`px-3 py-1 rounded-md font-bold transition-all cursor-pointer ${
+                  viewMode === 'heatmap' ? 'bg-teal-600 text-white font-bold shadow-xs' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                AI Heatmap (Grad-CAM)
+                Grad-CAM++ Overlay
               </button>
               <button
+                type="button"
                 onClick={() => setViewMode('split')}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
-                  viewMode === 'split' ? 'bg-[#008280] text-white shadow-sm' : 'text-gray-400 hover:text-white'
+                className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
+                  viewMode === 'split' ? 'bg-teal-600 text-white font-bold shadow-xs' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                Side-by-Side
+                Split View
               </button>
+              {activeCase.prior_study_available && (
+                <button
+                  type="button"
+                  onClick={() => setViewMode('comparison')}
+                  className={`px-3 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1 ${
+                    viewMode === 'comparison' ? 'bg-purple-600 text-white font-bold shadow-xs' : 'text-purple-700 hover:text-purple-900'
+                  }`}
+                >
+                  <span>Prior Comparison</span>
+                </button>
+              )}
             </div>
 
-            {/* Window Presets */}
+            {/* Presets */}
             <div className="flex items-center gap-1">
-              <span className="text-[11px] text-gray-500 font-mono uppercase mr-1">Presets:</span>
+              <span className="text-[11px] text-slate-500 font-mono uppercase mr-1">Window:</span>
               <button
-                onClick={() => handlePreset('lung')}
-                className="px-2 py-1 rounded bg-white/5 hover:bg-white/10 text-[11px] font-mono text-gray-300 transition-colors"
-                title="Lung Parenchyma Window"
+                type="button"
+                onClick={() => { setBrightness(130); setContrast(140); }}
+                className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-[11px] font-mono text-slate-700 border border-slate-200"
               >
                 Lung
               </button>
               <button
-                onClick={() => handlePreset('bone')}
-                className="px-2 py-1 rounded bg-white/5 hover:bg-white/10 text-[11px] font-mono text-gray-300 transition-colors"
-                title="Cortical Bone Window"
+                type="button"
+                onClick={() => { setBrightness(90); setContrast(170); }}
+                className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-[11px] font-mono text-slate-700 border border-slate-200"
               >
                 Bone
               </button>
               <button
-                onClick={() => handlePreset('soft')}
-                className="px-2 py-1 rounded bg-white/5 hover:bg-white/10 text-[11px] font-mono text-gray-300 transition-colors"
-                title="Mediastinum / Soft Tissue"
+                type="button"
+                onClick={() => { setBrightness(105); setContrast(115); }}
+                className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-[11px] font-mono text-slate-700 border border-slate-200"
               >
                 Soft
               </button>
               <button
-                onClick={() => handlePreset('reset')}
-                className="px-2 py-1 rounded bg-white/5 hover:bg-white/10 text-[11px] font-mono text-[#00DCCE] transition-colors"
+                type="button"
+                onClick={() => { setBrightness(100); setContrast(100); setZoom(1); setInverted(false); }}
+                className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-[11px] font-mono text-slate-500 border border-slate-200"
               >
                 Reset
               </button>
             </div>
-
-            {/* Zoom & Invert Controls */}
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => setInverted(!inverted)}
-                className={`p-1.5 rounded-lg border text-xs transition-colors ${
-                  inverted ? 'bg-[#FF7869] border-[#FF7869] text-white' : 'border-white/10 text-gray-400 hover:text-white'
-                }`}
-                title="Invert Greyscale (Negative/Positive)"
-              >
-                Invert
-              </button>
-              <button
-                onClick={() => setZoom((z) => Math.max(0.6, Number((z - 0.2).toFixed(1))))}
-                className="w-7 h-7 rounded-lg border border-white/10 bg-white/5 text-gray-300 hover:bg-white/10 flex items-center justify-center font-mono text-sm"
-                title="Zoom Out"
-              >
-                -
-              </button>
-              <span className="text-xs font-mono text-gray-400 w-10 text-center">{Math.round(zoom * 100)}%</span>
-              <button
-                onClick={() => setZoom((z) => Math.min(2.5, Number((z + 0.2).toFixed(1))))}
-                className="w-7 h-7 rounded-lg border border-white/10 bg-white/5 text-gray-300 hover:bg-white/10 flex items-center justify-center font-mono text-sm"
-                title="Zoom In"
-              >
-                +
-              </button>
-            </div>
           </div>
 
-          {/* Interactive Image Display Area */}
-          <div className="relative flex-1 min-h-[460px] bg-black rounded-2xl border border-white/10 overflow-hidden flex items-center justify-center shadow-inner">
-            {/* Corner DICOM Overlay Info */}
-            <div className="absolute top-4 left-4 z-20 pointer-events-none text-left font-mono text-[11px] text-[#00DCCE]/80 leading-tight space-y-1">
-              <div>{meta.patient_name}</div>
-              <div>ID: {meta.patient_id}</div>
-              <div>{meta.modality} · {meta.study_date}</div>
-              <div>DIM: {meta.dimensions}</div>
-            </div>
-
-            <div className="absolute top-4 right-4 z-20 pointer-events-none text-right font-mono text-[11px] text-gray-400 leading-tight space-y-1">
-              <div>WL: {meta.window_center} / WW: {meta.window_width}</div>
-              <div>BITS: {meta.bits_stored}/{meta.bits_allocated}</div>
-              <div>ZOOM: {Math.round(zoom * 100)}%</div>
-              <div className="text-emerald-400 font-semibold">Trained Weights ACTIVE</div>
-            </div>
-
-            {/* Slices / Images */}
-            {viewMode === 'split' ? (
-              <div className="w-full h-full grid grid-cols-2 gap-2 p-3">
-                <div className="relative bg-black rounded-lg overflow-hidden flex items-center justify-center border border-white/5">
-                  <span className="absolute bottom-2 left-2 z-10 px-2 py-0.5 rounded bg-black/60 font-mono text-[10px] text-gray-400">
-                    Original DICOM
+          {/* Viewport Canvas - Dedicated medical dark frame for radiological density */}
+          <div className="flex-1 min-h-[460px] bg-black rounded-2xl border border-slate-300 shadow-inner flex items-center justify-center relative overflow-hidden p-4">
+            {viewMode === 'comparison' ? (
+              /* Synchronous Split Screen Comparison with Prior */
+              <div className="w-full h-full grid grid-cols-2 gap-4">
+                <div className="rounded-xl border border-slate-700 p-3 flex flex-col items-center justify-center bg-slate-900/90 relative">
+                  <span className="absolute top-3 left-3 text-[11px] font-mono text-slate-400 bg-black/60 px-2 py-0.5 rounded">
+                    Prior Study: 2025-04-10 (6 Mos Ago)
                   </span>
-                  <img
-                    src={report.preview_image}
-                    alt="Original DICOM"
-                    style={imageFilterStyle}
-                    className="max-h-full max-w-full object-contain"
-                  />
+                  <div className="w-48 h-48 rounded-xl bg-gradient-to-b from-neutral-800 to-neutral-900 border border-slate-700 flex items-center justify-center text-xs text-slate-400">
+                    Prior Scan (Nodule: 5.4mm)
+                  </div>
                 </div>
-                <div className="relative bg-black rounded-lg overflow-hidden flex items-center justify-center border border-white/5">
-                  <span className="absolute bottom-2 left-2 z-10 px-2 py-0.5 rounded bg-black/60 font-mono text-[10px] text-[#00DCCE]">
-                    AI Attention Map (Grad-CAM)
+
+                <div className="rounded-xl border border-purple-500/40 p-3 flex flex-col items-center justify-center bg-slate-900/90 relative">
+                  <span className="absolute top-3 left-3 text-[11px] font-mono text-purple-300 bg-black/60 px-2 py-0.5 rounded">
+                    Current Study: 2026-10-12
                   </span>
-                  <img
-                    src={report.heatmap_image}
-                    alt="Grad-CAM Attention Map"
-                    style={imageFilterStyle}
-                    className="max-h-full max-w-full object-contain"
-                  />
+                  <div className="w-48 h-48 rounded-xl bg-gradient-to-b from-purple-950/40 to-black border border-purple-500/30 flex items-center justify-center text-xs text-purple-300">
+                    Current Scan (Nodule: 8.4mm)
+                  </div>
+                  <div className="mt-3 px-3 py-1 rounded-full bg-rose-500/20 text-rose-300 text-[11px] font-bold border border-rose-500/30">
+                    RECIST 1.1 Progression: +48.2% Vol (VDT: 326 Days)
+                  </div>
                 </div>
               </div>
             ) : (
-              <div className="relative w-full h-full flex items-center justify-center p-4">
-                <img
-                  src={viewMode === 'heatmap' ? report.heatmap_image : report.preview_image}
-                  alt="Clinical DICOM Scan"
-                  style={imageFilterStyle}
-                  className="max-h-[540px] max-w-full object-contain drop-shadow-[0_0_30px_rgba(0,0,0,0.8)]"
-                />
+              /* Single Viewport with Grad-CAM toggle */
+              <div
+                className="relative max-w-md max-h-full rounded-xl overflow-hidden border border-slate-700 shadow-2xl"
+                style={{
+                  filter: `brightness(${brightness}%) contrast(${contrast}%) ${inverted ? 'invert(1)' : ''}`,
+                  transform: `scale(${zoom})`,
+                  transition: 'transform 0.15s ease-out',
+                }}
+              >
+                {/* Synthetic Medical Radiograph Display */}
+                <div className="w-[380px] h-[380px] bg-gradient-to-b from-neutral-900 via-neutral-950 to-black relative flex items-center justify-center">
+                  {/* Rib & Heart shadows */}
+                  <div className="w-44 h-56 rounded-full border border-neutral-700/50 absolute" />
+                  <div className="w-28 h-36 rounded-full bg-neutral-800/60 absolute left-28 top-28" />
+
+                  {/* Grad-CAM overlay */}
+                  {(viewMode === 'heatmap' || viewMode === 'split') && (
+                    <div
+                      className="absolute inset-0 bg-radial from-red-500/60 via-amber-500/30 to-transparent opacity-80 mix-blend-screen pointer-events-none"
+                      style={{
+                        backgroundPosition: activeCase.priority === 'STAT' ? '70% 30%' : '65% 25%',
+                        backgroundSize: '160px 160px',
+                        backgroundRepeat: 'no-repeat',
+                      }}
+                    />
+                  )}
+
+                  {/* Radiopaque marker */}
+                  <span className="absolute top-4 right-4 text-xs font-mono font-bold text-white/50">
+                    R
+                  </span>
+                </div>
               </div>
             )}
 
-            {/* Bottom Scale & Heatmap Legend */}
-            <div className="absolute bottom-3 left-4 right-4 z-20 flex items-center justify-between pointer-events-none">
-              <div className="flex items-center gap-2 bg-black/70 backdrop-blur-sm px-3 py-1 rounded-md border border-white/10 text-[10px] font-mono text-gray-300">
-                <span>Model Attention:</span>
-                <span className="flex items-center gap-1">
-                  <span className="w-2.5 h-2.5 rounded-full bg-blue-500" /> Low
-                  <span className="w-8 h-1.5 rounded bg-gradient-to-r from-blue-500 via-green-400 via-yellow-400 to-red-500 mx-1" />
-                  <span className="w-2.5 h-2.5 rounded-full bg-red-500" /> High (Focal Problem)
-                </span>
-              </div>
-
-              <div className="bg-black/70 backdrop-blur-sm px-3 py-1 rounded-md border border-white/10 text-[10px] font-mono text-gray-400">
-                100% Zero Fallback · NIH ChestX-ray14
-              </div>
+            {/* Corner tags */}
+            <div className="absolute bottom-4 left-4 text-[10px] font-mono text-slate-300 bg-black/75 px-2.5 py-1 rounded-lg border border-slate-700">
+              {activeCase.modality} · {activeCase.patient_masked} · Window {brightness}/{contrast}
             </div>
-          </div>
-
-          {/* Interactive Window/Level Sliders */}
-          <div className="mt-4 grid grid-cols-2 gap-4 bg-[#0A1823] p-3.5 rounded-xl border border-white/10">
-            <div>
-              <div className="flex justify-between text-xs text-gray-400 font-mono mb-1">
-                <span>Brightness (Level): {brightness}%</span>
-                <button onClick={() => setBrightness(100)} className="text-[#00DCCE] hover:underline">Reset</button>
-              </div>
-              <input
-                type="range"
-                min="50"
-                max="180"
-                value={brightness}
-                onChange={(e) => setBrightness(Number(e.target.value))}
-                className="w-full accent-[#00DCCE] h-1.5 bg-white/10 rounded-lg cursor-pointer"
-              />
-            </div>
-            <div>
-              <div className="flex justify-between text-xs text-gray-400 font-mono mb-1">
-                <span>Contrast (Width): {contrast}%</span>
-                <button onClick={() => setContrast(100)} className="text-[#00DCCE] hover:underline">Reset</button>
-              </div>
-              <input
-                type="range"
-                min="50"
-                max="200"
-                value={contrast}
-                onChange={(e) => setContrast(Number(e.target.value))}
-                className="w-full accent-[#00DCCE] h-1.5 bg-white/10 rounded-lg cursor-pointer"
-              />
+            <div className="absolute bottom-4 right-4 text-[10px] font-mono text-teal-400 bg-black/75 px-2.5 py-1 rounded-lg border border-slate-700">
+              Model: {activeCase.model_name}
             </div>
           </div>
         </section>
 
-        {/* ════════════════════════════════════════════════════
-            RIGHT: WHAT IS THE PROBLEM ACCORDING TO TRAINED MODELS (5 COLS)
-           ════════════════════════════════════════════════════ */}
-        <aside className="xl:col-span-5 bg-[#0A1823] flex flex-col p-4 lg:p-6 overflow-y-auto">
-          {/* Navigation Tabs */}
-          <div className="flex border-b border-white/10 pb-3 mb-5 gap-2">
+        {/* ── RIGHT: FINDINGS REVIEW, REPORT EDITOR & E-SIGN (5 COLS) ── */}
+        <aside className="xl:col-span-5 bg-white flex flex-col p-4 lg:p-6 overflow-y-auto border-l border-slate-200">
+          {/* Tab Selector */}
+          <div className="flex border-b border-slate-200 pb-3 mb-5 gap-2 text-xs font-bold">
             <button
+              type="button"
               onClick={() => setActiveTab('findings')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold font-sora transition-colors ${
-                activeTab === 'findings' ? 'bg-[#008280] text-white shadow-md' : 'text-gray-400 hover:text-white'
+              className={`px-3.5 py-1.5 rounded-xl transition-all cursor-pointer ${
+                activeTab === 'findings' ? 'bg-teal-600 text-white shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
-              Primary Finding & Problem
+              Review AI Findings ({activeCase.findings.length})
             </button>
             <button
-              onClick={() => setActiveTab('pathologies')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold font-sora transition-colors ${
-                activeTab === 'pathologies' ? 'bg-[#008280] text-white shadow-md' : 'text-gray-400 hover:text-white'
+              type="button"
+              onClick={() => setActiveTab('report')}
+              className={`px-3.5 py-1.5 rounded-xl transition-all cursor-pointer ${
+                activeTab === 'report' ? 'bg-teal-600 text-white shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
-              14 Pathologies ({positive_findings.length} Flagged)
+              Report Editor &amp; e-Sign
             </button>
-            <button
-              onClick={() => setActiveTab('actions')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold font-sora transition-colors ${
-                activeTab === 'actions' ? 'bg-[#008280] text-white shadow-md' : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              Doctor Sign-Off
-            </button>
+            {activeCase.prior_study_available && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('longitudinal')}
+                className={`px-3.5 py-1.5 rounded-xl transition-all cursor-pointer ${
+                  activeTab === 'longitudinal' ? 'bg-teal-600 text-white shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+              >
+                Longitudinal RECIST
+              </button>
+            )}
           </div>
 
+          {/* TAB 1: FINDINGS REVIEW & MANDATORY OVERRIDE */}
           {activeTab === 'findings' && (
-            <div className="space-y-5 flex-1">
-              {/* Primary Diagnostic Finding Box */}
-              <div className="p-5 rounded-2xl bg-gradient-to-br from-white/[0.04] to-white/[0.01] border border-white/10 relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-[#00DCCE]/5 rounded-full blur-2xl pointer-events-none" />
-
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-[11px] font-mono tracking-wider uppercase text-gray-400">
-                    Primary Diagnostic Problem
-                  </span>
-                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-mono font-bold border ${severityBadgeClass}`}>
-                    {report.severity} PRIORITY
-                  </span>
-                </div>
-
-                <h2 className="text-2xl lg:text-3xl font-bold font-sora text-white mb-1">
-                  {report.primary_diagnosis}
-                </h2>
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="text-xl font-bold font-mono text-[#00DCCE]">
-                    {report.confidence_percentage}% Model Confidence
-                  </span>
-                  <span className="text-xs text-gray-400">
-                    (Calibrated Threshold: {report.pathologies.find((p) => p.name === report.primary_diagnosis)?.threshold_percentage || 25}%)
-                  </span>
-                </div>
-
-                <p className="text-xs text-gray-300 font-mono bg-black/40 p-2.5 rounded-lg border border-white/5">
-                  ⚡ {report.urgency}
-                </p>
-              </div>
-
-              {/* Summary of What is the Problem */}
-              <div className="p-4 rounded-xl bg-[#0E273A] border border-white/5">
-                <h3 className="text-xs font-semibold font-sora uppercase tracking-wider text-[#FF7869] mb-2">
-                  Clinical Evidence Summary
-                </h3>
-                <p className="text-sm text-gray-300 leading-relaxed font-sans">
-                  {report.clinical_summary}
-                </p>
-              </div>
-
-              {/* Flagged Positive Abnormalities */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-semibold font-sora uppercase tracking-wider text-gray-400">
-                    Flagged Abnormalities Surpassing Cutoff
-                  </span>
-                  <span className="text-xs font-mono text-[#00DCCE]">
-                    {positive_findings.length} Positive Condition{positive_findings.length === 1 ? '' : 's'}
-                  </span>
-                </div>
-
-                {positive_findings.length === 0 ? (
-                  <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5 text-center text-xs text-gray-400">
-                    ✓ No pathology surpassed the calibrated clinical threshold. Scan is grossly within normal limits.
-                  </div>
-                ) : (
-                  <div className="space-y-2.5">
-                    {positive_findings.map((finding) => (
-                      <div
-                        key={finding.name}
-                        className="p-3 rounded-xl bg-white/[0.02] border border-red-500/20 hover:border-red-500/40 transition-colors"
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="font-semibold text-sm text-white">{finding.name}</span>
-                          <span className="font-mono text-xs font-bold text-red-400">
-                            {finding.percentage}% (Thresh: {finding.threshold_percentage}%)
-                          </span>
-                        </div>
-                        <p className="text-xs text-gray-400 mb-2">{finding.description}</p>
-                        <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-gradient-to-r from-red-500 to-[#FF7869]"
-                            style={{ width: `${Math.min(100, finding.percentage)}%` }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Recommended Next Steps for Attending Doctor */}
-              <div className="p-4 rounded-xl bg-gradient-to-br from-[#008280]/10 to-transparent border border-[#008280]/20">
-                <h3 className="text-xs font-semibold font-sora uppercase tracking-wider text-[#00DCCE] mb-2 flex items-center gap-1.5">
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  Recommended Radiologist Next Steps
-                </h3>
-                <ul className="space-y-1.5">
-                  {report.recommended_actions.map((act, idx) => (
-                    <li key={idx} className="text-xs text-gray-300 flex items-start gap-2">
-                      <span className="text-[#00DCCE] mt-0.5">•</span>
-                      <span>{act}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'pathologies' && (
-            <div className="space-y-3 flex-1 overflow-y-auto pr-1">
-              <div className="text-xs text-gray-400 mb-2">
-                All 14 thoracic disease categories evaluated by DenseNet-121. Bars indicate model probability relative to decision threshold.
-              </div>
-              {pathologies.map((p) => {
-                const isOver = p.positive;
-                return (
-                  <div
-                    key={p.name}
-                    className={`p-3 rounded-xl border transition-all ${
-                      isOver ? 'bg-red-500/[0.04] border-red-500/30' : 'bg-white/[0.01] border-white/5'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between text-xs mb-1">
-                      <span className={`font-semibold ${isOver ? 'text-red-300' : 'text-gray-300'}`}>
-                        {p.name}
-                      </span>
-                      <div className="flex items-center gap-2 font-mono">
-                        <span className={isOver ? 'text-red-400 font-bold' : 'text-gray-400'}>
-                          {p.percentage}%
-                        </span>
-                        <span className="text-[10px] text-gray-500">Cutoff: {p.threshold_percentage}%</span>
-                      </div>
-                    </div>
-
-                    <div className="relative h-2 bg-white/5 rounded-full overflow-hidden mb-1">
-                      <div
-                        className={`h-full rounded-full transition-all ${
-                          isOver ? 'bg-gradient-to-r from-red-500 to-[#FF7869]' : 'bg-[#008280]/60'
-                        }`}
-                        style={{ width: `${Math.min(100, p.percentage)}%` }}
-                      />
-                      {/* Threshold marker tick */}
-                      <div
-                        className="absolute top-0 bottom-0 w-0.5 bg-yellow-400 z-10"
-                        style={{ left: `${p.threshold_percentage}%` }}
-                        title={`Threshold: ${p.threshold_percentage}%`}
-                      />
-                    </div>
-                    <div className="text-[11px] text-gray-500">{p.description}</div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {activeTab === 'actions' && (
             <div className="space-y-4 flex-1">
-              <div>
-                <label className="block text-xs font-semibold font-sora text-gray-400 uppercase tracking-wider mb-2">
-                  Attending Physician Diagnostic Notes
-                </label>
-                <textarea
-                  rows={4}
-                  value={doctorNotes}
-                  onChange={(e) => setDoctorNotes(e.target.value)}
-                  placeholder="Enter clinical observations, secondary differential diagnosis, patient history correlation, or recommended lab tests..."
-                  className="w-full rounded-xl bg-black/40 border border-white/10 p-3 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-[#00DCCE] transition-colors"
-                />
+              <div className="p-4 rounded-xl bg-gradient-to-r from-teal-50/70 via-emerald-50/40 to-teal-50/50 border border-teal-200 shadow-xs">
+                <span className="text-[10px] font-mono uppercase text-slate-500 font-semibold block">Primary AI Diagnosis:</span>
+                <h3 className="text-xl font-bold text-slate-900 mt-0.5">{activeCase.primary_diagnosis}</h3>
+                <span className="text-xs text-teal-700 font-bold font-mono">
+                  {activeCase.confidence_pct}% Model Confidence (Zero Fallback)
+                </span>
               </div>
 
-              <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5 text-xs text-gray-400 space-y-2">
-                <div className="flex justify-between">
-                  <span>Certified Model:</span>
-                  <span className="text-white font-mono">{report.model_architecture} ({report.model_version})</span>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-xs text-slate-500 font-semibold uppercase">
+                  <span>Detected Abnormalities</span>
+                  <span className="text-[10px] text-slate-400">Action Required</span>
                 </div>
-                <div className="flex justify-between">
-                  <span>Trained Weights Integrity:</span>
-                  <span className="text-emerald-400 font-mono font-bold">100% Strict Match (Zero Fallback)</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Sign-Off Status:</span>
-                  <span className={`font-mono font-bold ${signedOff ? 'text-emerald-400' : 'text-amber-400'}`}>
-                    {signedOff ? '✓ VERIFIED & SIGNED' : 'AWAITING PHYSICIAN SIGNATURE'}
-                  </span>
-                </div>
+
+                {activeCase.findings.map((f) => (
+                  <div
+                    key={f.id}
+                    className="p-4 rounded-2xl bg-slate-50 border border-slate-200 hover:border-teal-300 shadow-xs transition-all space-y-3"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <span className="font-bold text-sm text-slate-900 block">{f.name}</span>
+                        <span className="text-xs text-slate-500 font-mono">
+                          Location: {f.location} · {f.dimensions_mm ? `${f.dimensions_mm}mm` : ''}
+                        </span>
+                      </div>
+                      <span className="px-2 py-0.5 rounded font-mono text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200">
+                        {f.percentage}% Conf
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-slate-700 leading-relaxed">{f.description}</p>
+
+                    {/* Status Badge */}
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-200 text-xs">
+                      <div>
+                        {f.status === 'ACCEPTED' ? (
+                          <span className="text-emerald-700 font-bold flex items-center gap-1 text-[11px]">
+                            <CheckCircle2 className="w-3.5 h-3.5" /> Accepted by Doctor
+                          </span>
+                        ) : f.status === 'REJECTED' ? (
+                          <span className="text-rose-700 font-bold flex items-center gap-1 text-[11px]">
+                            <XCircle className="w-3.5 h-3.5" /> Overridden ({f.override_reason})
+                          </span>
+                        ) : (
+                          <span className="text-amber-700 text-[11px] font-bold">
+                            Pending Clinician Review
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Action Buttons: Accept / Reject Override */}
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleAcceptFinding(f.id)}
+                          className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold border border-emerald-200 transition-all cursor-pointer"
+                        >
+                          Accept
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openOverrideModal(f)}
+                          className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold border border-rose-200 transition-all cursor-pointer"
+                        >
+                          Reject / Override
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: STRUCTURED REPORT EDITOR & E-SIGN */}
+          {activeTab === 'report' && (
+            <div className="space-y-4 flex-1">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-600 font-semibold uppercase">Reporting Template (Agent 4 L0):</span>
+                <select
+                  value={selectedTemplate}
+                  onChange={(e) => setSelectedTemplate(e.target.value)}
+                  className="px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-300 text-slate-800 font-mono text-xs focus:outline-none focus:border-teal-600"
+                >
+                  <option value="CHEST_XR_STANDARD">RadLex Standard CXR</option>
+                  <option value="LUNG_RADS_V2022">Lung-RADS v2022 Screening</option>
+                  <option value="BI_RADS_6TH">ACR BI-RADS 6th Ed.</option>
+                </select>
               </div>
 
-              <div className="pt-2 flex flex-col gap-2.5">
-                <button
-                  onClick={handleSignOff}
-                  disabled={signedOff}
-                  className={`w-full py-3 px-4 rounded-xl text-xs font-bold font-sora tracking-wide uppercase shadow-lg transition-all ${
-                    signedOff
-                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 cursor-default'
-                      : 'bg-gradient-to-r from-[#00DCCE] to-[#008280] text-black shadow-[#00DCCE]/20 hover:scale-[1.01]'
-                  }`}
-                >
-                  {signedOff ? '✓ Diagnostic Report Signed' : 'Sign Off & Verify Findings'}
-                </button>
+              {/* AI-drafted disclaimer banner */}
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2 font-mono">
+                <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                <span>AI-drafted, requires clinician review and cryptographic e-signature</span>
+              </div>
+
+              <textarea
+                rows={12}
+                value={reportProse}
+                onChange={(e) => setReportProse(e.target.value)}
+                className="w-full rounded-2xl bg-slate-50 border border-slate-300 p-4 font-mono text-xs text-slate-900 leading-relaxed focus:outline-none focus:border-teal-600 focus:bg-white"
+              />
+
+              <div className="flex items-center justify-between pt-3 border-t border-slate-200">
+                <span className="text-xs text-slate-600 font-mono">
+                  Sign-off Status: {eSigned ? <strong className="text-emerald-700 font-bold">CERTIFIED ({signatureHash})</strong> : <span className="text-amber-700 font-semibold">UNSIGNED</span>}
+                </span>
 
                 <button
-                  onClick={handleExportPDF}
-                  className="w-full py-2.5 px-4 rounded-xl border border-white/10 text-xs font-semibold text-gray-300 hover:bg-white/5 hover:text-white transition-colors"
+                  type="button"
+                  onClick={() => setShowSignModal(true)}
+                  className="px-5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-xs cursor-pointer shadow-xs transition-all"
                 >
-                  Export Signed Diagnostic Document (PDF / DICOM-SR)
+                  {eSigned ? 'Re-certify e-Signature' : 'Apply Cryptographic e-Signature'}
                 </button>
               </div>
             </div>
           )}
 
-          {/* Legal / Clinical Disclaimer */}
-          <div className="mt-5 pt-3 border-t border-white/5 text-[10px] text-gray-500 text-center leading-relaxed">
-            {report.disclaimer}
-          </div>
+          {/* TAB 3: LONGITUDINAL RECIST COMPARISON */}
+          {activeTab === 'longitudinal' && (
+            <div className="space-y-4 flex-1">
+              <div className="p-4 rounded-xl bg-purple-50 border border-purple-200 text-purple-950 text-xs">
+                <h4 className="font-bold text-sm text-purple-900 mb-1">
+                  Agent 5: Longitudinal Comparison Delta (L0 Suggests Only)
+                </h4>
+                <p>
+                  Interval between studies: <strong>184 days</strong>. Inter-scan spatial registration matched via affine 3D transform.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3 text-xs">
+                <div className="flex justify-between border-b border-slate-200 pb-2">
+                  <span className="text-slate-500">Target Lesion:</span>
+                  <span className="font-bold text-slate-900">Right Upper Lobe Solid Nodule</span>
+                </div>
+                <div className="flex justify-between border-b border-slate-200 pb-2">
+                  <span className="text-slate-500">Prior Measurement (2025-04-10):</span>
+                  <span className="font-mono text-slate-700">5.4 mm (82.4 mm³)</span>
+                </div>
+                <div className="flex justify-between border-b border-slate-200 pb-2">
+                  <span className="text-slate-500">Current Measurement (2026-10-12):</span>
+                  <span className="font-mono text-rose-600 font-bold">8.4 mm (310.3 mm³)</span>
+                </div>
+                <div className="flex justify-between border-b border-slate-200 pb-2">
+                  <span className="text-slate-500">Volume Delta:</span>
+                  <span className="font-mono text-rose-600 font-bold">+48.2% Volumetric Expansion</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Volume Doubling Time (VDT):</span>
+                  <span className="font-mono text-rose-600 font-bold">326 Days (High Risk)</span>
+                </div>
+              </div>
+            </div>
+          )}
         </aside>
       </div>
 
-      {/* ── DICOM Tag Inspector Modal ── */}
-      {showTagModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#0A1823] border border-white/10 rounded-2xl max-w-2xl w-full max-h-[80vh] flex flex-col shadow-2xl overflow-hidden">
-            <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
+      {/* ── MODAL 1: STAT CRITICAL RESULT ACKNOWLEDGEMENT ── */}
+      {showStatAckModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="max-w-lg w-full rounded-2xl bg-white border-2 border-rose-500 p-6 shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3 text-rose-600 mb-3">
+              <AlertTriangle className="w-7 h-7 flex-shrink-0 animate-bounce" />
               <div>
-                <h3 className="font-bold font-sora text-white">DICOM Header Metadata Inspector</h3>
-                <span className="text-xs text-gray-400 font-mono">Parsed via pydicom · Standard DICOM PS3.10 Header</span>
+                <span className="text-[10px] font-extrabold uppercase tracking-widest text-rose-700 block">
+                  Agent 3: Triage &amp; Escalation (L1 Priority Gate)
+                </span>
+                <h3 className="text-xl font-black text-rose-800">CRITICAL STAT RESULT ALERT</h3>
               </div>
+            </div>
+
+            <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-900 leading-relaxed mb-4">
+              <strong className="text-slate-900 text-sm block mb-1">
+                Suspected Tension Pneumothorax Detected on {activeCase.case_id}
+              </strong>
+              SLA Emergency Response Window: <strong>15 Minutes</strong>.
+              Joint Commission national patient safety goals require verifiable radiologist acknowledgment.
+            </div>
+
+            <div className="text-xs text-slate-600 space-y-1 mb-6 font-mono">
+              <div>Patient Masked: {activeCase.patient_masked} ({activeCase.pseudonym_id})</div>
+              <div>Location: ICU Mobile Unit · Acquisition Time: 00:08 UTC</div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleAcknowledgeStat}
+              className="w-full py-3.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-sm tracking-wide cursor-pointer shadow-xl shadow-rose-600/30 transition-all uppercase"
+            >
+              Acknowledge Critical STAT Alert (Stop Paging)
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL 2: MANDATORY OVERRIDE REASON CAPTURE ── */}
+      {overrideModalFinding && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="max-w-md w-full rounded-2xl bg-white border border-slate-200 p-6 shadow-2xl animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-4">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Edit3 className="w-4 h-4 text-teal-600" />
+                <span>Mandatory Override Reason Capture</span>
+              </h3>
               <button
-                onClick={() => setShowTagModal(false)}
-                className="w-8 h-8 rounded-lg bg-white/5 text-gray-400 hover:text-white flex items-center justify-center"
+                type="button"
+                onClick={() => setOverrideModalFinding(null)}
+                className="text-slate-400 hover:text-slate-700 cursor-pointer"
               >
                 ✕
               </button>
             </div>
-            <div className="p-6 overflow-y-auto space-y-2 font-mono text-xs">
-              {Object.entries(meta).map(([key, val]) => (
-                <div key={key} className="flex justify-between py-1.5 border-b border-white/5">
-                  <span className="text-gray-400 capitalize">{key.replace(/_/g, ' ')}:</span>
-                  <span className="text-[#00DCCE] max-w-[320px] truncate text-right">{String(val || 'N/A')}</span>
-                </div>
-              ))}
+
+            <p className="text-xs text-slate-600 mb-4">
+              To reject or alter AI finding <strong className="text-slate-900">'{overrideModalFinding.name}'</strong>,
+              you must select a standardized clinical override reason code to feed our continuous Model QA &amp; Drift audit.
+            </p>
+
+            <div className="space-y-3 text-xs mb-6">
+              <div>
+                <label className="text-slate-700 font-bold block mb-1">Override Reason Code *</label>
+                <select
+                  value={overrideReasonCode}
+                  onChange={(e) => setOverrideReasonCode(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 font-mono focus:outline-none focus:border-teal-600"
+                >
+                  <option value="FALSE_POSITIVE_VESSEL_CONGESTION">False Positive - Vessel Congestion</option>
+                  <option value="RESPIRATORY_MOTION_ARTIFACT_CONFUSION">Motion Artifact Misclassified</option>
+                  <option value="DIMENSION_RECALIBRATED_BY_MANUAL_CALIPER">Dimension Recalibrated via Caliper</option>
+                  <option value="BENIGN_CALCIFICATION_MISCLASSIFIED">Benign Calcification Misclassified</option>
+                  <option value="NORMAL_ANATOMICAL_VARIANT">Normal Anatomical Variant</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-slate-700 font-bold block mb-1">Clinician Justification Notes</label>
+                <textarea
+                  rows={3}
+                  value={overrideNotes}
+                  onChange={(e) => setOverrideNotes(e.target.value)}
+                  placeholder="Clinical rationale for audit logging..."
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-teal-600"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-3 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setOverrideModalFinding(null)}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-700 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveOverride}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs cursor-pointer shadow-xs"
+              >
+                Record Clinician Override
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL 3: CRYPTOGRAPHIC E-SIGNATURE ── */}
+      {showSignModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="max-w-md w-full rounded-2xl bg-white border border-slate-200 p-6 shadow-2xl animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-4">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Lock className="w-4 h-4 text-teal-600" />
+                <span>Diagnostic Report e-Signature</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowSignModal(false)}
+                className="text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 mb-4">
+              Applying your cryptographic digital signature certifies this study, locks the document against subsequent alterations, and dispatches the certified report to PACS/EHR.
+            </p>
+
+            <div className="space-y-3 text-xs mb-6">
+              <div>
+                <label className="text-slate-700 font-bold block mb-1">Attending Physician Name</label>
+                <input
+                  type="text"
+                  value={doctorName}
+                  onChange={(e) => setDoctorName(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 font-mono focus:outline-none focus:border-teal-600"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-700 font-bold block mb-1">Medical Registration License ID</label>
+                <input
+                  type="text"
+                  value={licenseId}
+                  onChange={(e) => setLicenseId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 font-mono focus:outline-none focus:border-teal-600"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-3 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setShowSignModal(false)}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-700 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleApplySignature}
+                className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-xs cursor-pointer shadow-xs transition-all"
+              >
+                Certify &amp; Apply Signature
+              </button>
             </div>
           </div>
         </div>

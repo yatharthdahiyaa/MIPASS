@@ -4,11 +4,13 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useRBAC } from '@/context/RBACContext';
 import { CLINICAL_PERSONAS, ROLE_DEFINITIONS, type Role } from '@/types/rbac';
+import { iamAuthService } from '@/services/iamAuthService';
 import {
   ShieldCheck,
   Eye,
   EyeOff,
   ArrowRight,
+  ArrowLeft,
   Lock,
   Fingerprint,
   Activity,
@@ -16,6 +18,12 @@ import {
   Cpu,
   FileCheck2,
   AlertTriangle,
+  Cloud,
+  Key,
+  ShieldAlert,
+  CheckCircle2,
+  ExternalLink,
+  KeyRound,
 } from 'lucide-react';
 
 /* ── colour tokens ── */
@@ -55,8 +63,12 @@ export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const canvasRef = useRef<HTMLDivElement>(null);
-  const { switchPersona, currentUser } = useRBAC();
+  const { switchPersona, currentUser, loginWithIAM } = useRBAC();
 
+  // Authentication mode: IAM cloud service vs clinical demo credentials
+  const [authMode, setAuthMode] = useState<'iam' | 'clinical'>('iam');
+
+  // Clinical demo states
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -66,7 +78,27 @@ export default function LoginPage() {
   const [selectedQuickLogin, setSelectedQuickLogin] = useState<string | null>(null);
   const [particles, setParticles] = useState<Array<{ id: number; x: number; y: number; delay: number }>>([]);
 
+  // AWS IAM Two-step and MFA states
+  const [iamStep, setIamStep] = useState<1 | 2 | 3>(1);
+  const [iamUserType, setIamUserType] = useState<'root' | 'iam'>('root');
+  const [iamEmail, setIamEmail] = useState('root@aws-example.com');
+  const [iamAccountIdOrAlias, setIamAccountIdOrAlias] = useState('aws-demo');
+  const [iamUsername, setIamUsername] = useState('alice.dev');
+  const [iamPassword, setIamPassword] = useState('');
+  const [iamRememberDevice, setIamRememberDevice] = useState(false);
+  const [iamAccountName, setIamAccountName] = useState('');
+  const [iamMfaSessionToken, setIamMfaSessionToken] = useState('');
+  const [iamMfaCode, setIamMfaCode] = useState('');
+  const [iamIsBackupCode, setIamIsBackupCode] = useState(false);
+  const [iamBackendOnline, setIamBackendOnline] = useState<boolean | null>(null);
+  const [isLocked, setIsLocked] = useState(false);
+
   const redirectTo = searchParams.get('redirect') || '/lung-cancer';
+
+  // Check IAM backend service health on mount
+  useEffect(() => {
+    iamAuthService.checkHealth().then((online) => setIamBackendOnline(online));
+  }, []);
 
   // Generate floating particles on mount
   useEffect(() => {
@@ -322,6 +354,106 @@ export default function LoginPage() {
       }, 1800);
     },
     [switchPersona, router, redirectTo]
+  );
+
+  /* ── IAM Step 1 Handler (Identifier validation) ── */
+  const handleIamStep1 = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      setError('');
+      setIsLoading(true);
+
+      try {
+        const res = await iamAuthService.signinStep1({
+          userType: iamUserType,
+          email: iamUserType === 'root' ? iamEmail.trim() : undefined,
+          accountIdOrAlias: iamUserType === 'iam' ? iamAccountIdOrAlias.trim() : undefined,
+          username: iamUserType === 'iam' ? iamUsername.trim() : undefined,
+        });
+
+        if (res.success) {
+          setIamAccountName(res.data?.accountName || 'AWS Console');
+          setIamStep(2);
+        }
+      } catch (err: any) {
+        setError(err.message || 'Incorrect credentials. Please verify your information.');
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [iamUserType, iamEmail, iamAccountIdOrAlias, iamUsername]
+  );
+
+  /* ── IAM Step 2 Handler (Password authentication) ── */
+  const handleIamStep2 = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      setError('');
+      setIsLocked(false);
+      setIsLoading(true);
+
+      try {
+        const res = await iamAuthService.signinStep2({
+          userType: iamUserType,
+          email: iamUserType === 'root' ? iamEmail.trim() : undefined,
+          accountIdOrAlias: iamUserType === 'iam' ? iamAccountIdOrAlias.trim() : undefined,
+          username: iamUserType === 'iam' ? iamUsername.trim() : undefined,
+          password: iamPassword,
+          rememberDevice: iamRememberDevice,
+        });
+
+        if (res.success) {
+          if (res.requiresMfa) {
+            setIamMfaSessionToken(res.mfaSessionToken || '');
+            setIamStep(3);
+          } else if (res.data?.user) {
+            loginWithIAM(res.data.user);
+            setLoginSuccess(true);
+            setTimeout(() => {
+              router.push(redirectTo);
+            }, 1800);
+          }
+        }
+      } catch (err: any) {
+        if (err.error === 'AccountLocked' || err.status === 423) {
+          setIsLocked(true);
+        }
+        setError(err.message || 'Incorrect credentials. Please verify your information and try again.');
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [iamUserType, iamEmail, iamAccountIdOrAlias, iamUsername, iamPassword, iamRememberDevice, loginWithIAM, router, redirectTo]
+  );
+
+  /* ── IAM Step 3 Handler (MFA TOTP / Backup Code) ── */
+  const handleIamMfa = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      setError('');
+      setIsLoading(true);
+
+      try {
+        const res = await iamAuthService.verifyMfa({
+          mfaSessionToken: iamMfaSessionToken,
+          code: iamMfaCode.trim(),
+          isBackupCode: iamIsBackupCode,
+        });
+
+        if (res.success && res.data?.user) {
+          loginWithIAM(res.data.user);
+          setLoginSuccess(true);
+          setTimeout(() => {
+            router.push(redirectTo);
+          }, 1800);
+        }
+      } catch (err: any) {
+        setError(err.message || 'Invalid authentication code. Please try again.');
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [iamMfaSessionToken, iamMfaCode, iamIsBackupCode, loginWithIAM, router, redirectTo]
   );
 
   return (
@@ -736,12 +868,12 @@ export default function LoginPage() {
               ) : (
                 <>
                   {/* ── Form Header ── */}
-                  <div style={{ marginBottom: 36 }}>
+                  <div style={{ marginBottom: 28 }}>
                     <div
                       style={{
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: 6,
+                        gap: 8,
                         padding: '5px 14px',
                         borderRadius: 999,
                         background: `${C.teal}12`,
@@ -749,20 +881,46 @@ export default function LoginPage() {
                         fontSize: 12,
                         fontWeight: 600,
                         color: C.teal,
-                        marginBottom: 20,
+                        marginBottom: 16,
                         letterSpacing: '0.02em',
                       }}
                     >
                       <Lock style={{ width: 12, height: 12 }} />
-                      RBAC-Protected Access
+                      Enterprise RBAC Authentication
+                      {iamBackendOnline !== null && (
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            marginLeft: 4,
+                            paddingLeft: 8,
+                            borderLeft: `1px solid ${C.teal}40`,
+                            color: iamBackendOnline ? '#00DCCE' : '#FF7869',
+                            fontSize: 11,
+                          }}
+                        >
+                          <span
+                            style={{
+                              width: 6,
+                              height: 6,
+                              borderRadius: '50%',
+                              background: iamBackendOnline ? '#00DCCE' : '#FF7869',
+                              display: 'inline-block',
+                            }}
+                          />
+                          {iamBackendOnline ? 'IAM API Live' : 'IAM API Offline'}
+                        </span>
+                      )}
                     </div>
+
                     <h1
                       style={{
                         fontFamily: 'Sora, system-ui, sans-serif',
-                        fontSize: 32,
+                        fontSize: 30,
                         fontWeight: 700,
                         lineHeight: 1.15,
-                        marginBottom: 10,
+                        marginBottom: 8,
                       }}
                     >
                       Sign in to{' '}
@@ -777,284 +935,843 @@ export default function LoginPage() {
                         MiPAAS
                       </span>
                     </h1>
-                    <p style={{ color: C.mute, fontSize: 15, lineHeight: 1.6, margin: 0 }}>
-                      Authenticate with your institutional credentials to access the clinical imaging platform.
+                    <p style={{ color: C.mute, fontSize: 14, lineHeight: 1.5, margin: 0 }}>
+                      Choose your enterprise identity provider or clinical institutional credentials.
                     </p>
                   </div>
 
-                  {/* ── Login Form ── */}
-                  <form onSubmit={handleLogin}>
-                    {/* Email */}
-                    <div style={{ marginBottom: 18 }}>
-                      <label
-                        htmlFor="login-email"
-                        style={{
-                          display: 'block',
-                          fontSize: 13,
-                          fontWeight: 600,
-                          color: C.mute,
-                          marginBottom: 8,
-                          letterSpacing: '0.02em',
-                        }}
-                      >
-                        Institutional Email
-                      </label>
-                      <input
-                        id="login-email"
-                        type="email"
-                        className="login-input"
-                        value={email}
-                        onChange={(e) => { setEmail(e.target.value); setError(''); }}
-                        placeholder="name@mipaas.health"
-                        required
-                        autoComplete="email"
-                        style={{
-                          width: '100%',
-                          padding: '14px 18px',
-                          borderRadius: 14,
-                          border: `1px solid ${C.line}`,
-                          background: 'rgba(255,255,255,0.03)',
-                          color: '#fff',
-                          fontSize: 15,
-                          fontFamily: 'inherit',
-                          transition: 'all 0.25s',
-                        }}
-                      />
-                    </div>
-
-                    {/* Password */}
-                    <div style={{ marginBottom: 24 }}>
-                      <label
-                        htmlFor="login-password"
-                        style={{
-                          display: 'block',
-                          fontSize: 13,
-                          fontWeight: 600,
-                          color: C.mute,
-                          marginBottom: 8,
-                          letterSpacing: '0.02em',
-                        }}
-                      >
-                        Password
-                      </label>
-                      <div style={{ position: 'relative' }}>
-                        <input
-                          id="login-password"
-                          type={showPassword ? 'text' : 'password'}
-                          className="login-input"
-                          value={password}
-                          onChange={(e) => { setPassword(e.target.value); setError(''); }}
-                          placeholder="Enter your password"
-                          required
-                          autoComplete="current-password"
-                          style={{
-                            width: '100%',
-                            padding: '14px 50px 14px 18px',
-                            borderRadius: 14,
-                            border: `1px solid ${C.line}`,
-                            background: 'rgba(255,255,255,0.03)',
-                            color: '#fff',
-                            fontSize: 15,
-                            fontFamily: 'inherit',
-                            transition: 'all 0.25s',
-                          }}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowPassword(!showPassword)}
-                          style={{
-                            position: 'absolute',
-                            right: 14,
-                            top: '50%',
-                            transform: 'translateY(-50%)',
-                            background: 'none',
-                            border: 'none',
-                            color: C.mute,
-                            cursor: 'pointer',
-                            padding: 4,
-                          }}
-                          aria-label={showPassword ? 'Hide password' : 'Show password'}
-                        >
-                          {showPassword ? <EyeOff style={{ width: 18, height: 18 }} /> : <Eye style={{ width: 18, height: 18 }} />}
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Error */}
-                    {error && (
-                      <div
-                        style={{
-                          padding: '12px 16px',
-                          borderRadius: 12,
-                          background: 'rgba(255, 120, 105, 0.1)',
-                          border: '1px solid rgba(255, 120, 105, 0.25)',
-                          color: C.coral,
-                          fontSize: 13,
-                          marginBottom: 18,
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 8,
-                          animation: 'login-slide-up 0.3s ease-out',
-                        }}
-                        role="alert"
-                      >
-                        <AlertTriangle style={{ width: 16, height: 16, flexShrink: 0 }} />
-                        {error}
-                      </div>
-                    )}
-
-                    {/* Submit */}
-                    <button
-                      type="submit"
-                      disabled={isLoading}
-                      style={{
-                        width: '100%',
-                        padding: '15px 24px',
-                        borderRadius: 14,
-                        border: 'none',
-                        background: isLoading
-                          ? 'rgba(255,255,255,0.08)'
-                          : `linear-gradient(135deg, ${C.coral}, #ff5040)`,
-                        color: '#fff',
-                        fontSize: 15,
-                        fontWeight: 700,
-                        fontFamily: 'Sora, system-ui, sans-serif',
-                        cursor: isLoading ? 'wait' : 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 10,
-                        transition: 'all 0.3s',
-                        boxShadow: isLoading ? 'none' : `0 12px 36px -10px ${C.coral}`,
-                      }}
-                    >
-                      {isLoading ? (
-                        <>
-                          <div
-                            style={{
-                              width: 20,
-                              height: 20,
-                              border: '2px solid rgba(255,255,255,0.2)',
-                              borderTopColor: '#fff',
-                              borderRadius: '50%',
-                              animation: 'login-glow-orbit 0.8s linear infinite',
-                            }}
-                          />
-                          Authenticating...
-                        </>
-                      ) : (
-                        <>
-                          Sign In Securely
-                          <ArrowRight style={{ width: 18, height: 18 }} />
-                        </>
-                      )}
-                    </button>
-                  </form>
-
-                  {/* ── Divider ── */}
+                  {/* ── Mode Selection Tabs ── */}
                   <div
                     style={{
                       display: 'flex',
-                      alignItems: 'center',
-                      gap: 16,
-                      margin: '28px 0',
+                      gap: 8,
+                      padding: 4,
+                      background: 'rgba(255,255,255,0.03)',
+                      borderRadius: 14,
+                      border: `1px solid ${C.line}`,
+                      marginBottom: 24,
                     }}
                   >
-                    <div style={{ flex: 1, height: 1, background: C.line }} />
-                    <span style={{ fontSize: 12, color: C.mute, fontWeight: 500 }}>
-                      Quick Demo Login
-                    </span>
-                    <div style={{ flex: 1, height: 1, background: C.line }} />
+                    <button
+                      type="button"
+                      onClick={() => { setAuthMode('iam'); setError(''); }}
+                      style={{
+                        flex: 1,
+                        padding: '10px 14px',
+                        borderRadius: 10,
+                        border: 'none',
+                        background: authMode === 'iam' ? `linear-gradient(135deg, ${C.tealDim}, ${C.teal})` : 'transparent',
+                        color: authMode === 'iam' ? '#050A10' : C.mute,
+                        fontWeight: 700,
+                        fontSize: 13,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                        transition: 'all 0.25s',
+                      }}
+                    >
+                      <Cloud style={{ width: 15, height: 15 }} />
+                      AWS IAM Cloud Sign-in
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setAuthMode('clinical'); setError(''); }}
+                      style={{
+                        flex: 1,
+                        padding: '10px 14px',
+                        borderRadius: 10,
+                        border: 'none',
+                        background: authMode === 'clinical' ? 'rgba(255,255,255,0.1)' : 'transparent',
+                        color: authMode === 'clinical' ? '#fff' : C.mute,
+                        fontWeight: 700,
+                        fontSize: 13,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                        transition: 'all 0.25s',
+                      }}
+                    >
+                      <Fingerprint style={{ width: 15, height: 15 }} />
+                      Clinical Demo Passwords
+                    </button>
                   </div>
 
-                  {/* ── Quick login cards ── */}
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(2, 1fr)',
-                      gap: 10,
-                    }}
-                  >
-                    {Object.entries(CLINICAL_PERSONAS).slice(0, 4).map(([id, persona]) => {
-                      const roleDef = ROLE_DEFINITIONS[persona.role];
-                      const isSelected = selectedQuickLogin === id;
-                      return (
-                        <button
-                          key={id}
-                          className="quick-login-card"
-                          disabled={isLoading}
-                          onClick={() => handleQuickLogin(id)}
-                          style={{
-                            padding: '14px 16px',
-                            borderRadius: 16,
-                            border: `1px solid ${isSelected ? roleDef.borderColor : C.line}`,
-                            background: isSelected
-                              ? roleDef.badgeBg
-                              : 'rgba(255,255,255,0.02)',
-                            color: '#fff',
-                            cursor: isLoading ? 'wait' : 'pointer',
-                            textAlign: 'left',
-                            fontFamily: 'inherit',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: 8,
-                            opacity: isLoading && !isSelected ? 0.4 : 1,
-                          }}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <div
-                              style={{
-                                width: 28,
-                                height: 28,
-                                borderRadius: 8,
-                                background: roleDef.badgeBg,
-                                border: `1px solid ${roleDef.borderColor}`,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                color: roleDef.badgeColor,
-                                flexShrink: 0,
-                              }}
-                            >
-                              {ROLE_ICONS[persona.role]}
-                            </div>
-                            <div>
-                              <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.2 }}>
-                                {persona.name.split(',')[0].split(' ').slice(0, 2).join(' ')}
-                              </div>
-                              <div style={{ fontSize: 11, color: roleDef.badgeColor }}>
-                                {roleDef.title}
-                              </div>
+                  {/* ────────────────────────────────────────────────────────── */}
+                  {/* MODE A: AWS IAM CLOUD SERVICE FLOW                         */}
+                  {/* ────────────────────────────────────────────────────────── */}
+                  {authMode === 'iam' && (
+                    <div>
+                      {/* STEP 1: IDENTIFIER SELECTION */}
+                      {iamStep === 1 && (
+                        <form onSubmit={handleIamStep1}>
+                          <div style={{ marginBottom: 18 }}>
+                            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: C.mute, marginBottom: 10 }}>
+                              Select IAM Identity Type
+                            </label>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                              <label
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'flex-start',
+                                  gap: 10,
+                                  padding: '12px 14px',
+                                  borderRadius: 12,
+                                  border: `1.5px solid ${iamUserType === 'root' ? C.teal : C.line}`,
+                                  background: iamUserType === 'root' ? `${C.teal}12` : 'rgba(255,255,255,0.02)',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.2s',
+                                }}
+                              >
+                                <input
+                                  type="radio"
+                                  name="iamUserType"
+                                  checked={iamUserType === 'root'}
+                                  onChange={() => setIamUserType('root')}
+                                  style={{ marginTop: 2, accentColor: C.teal }}
+                                />
+                                <div>
+                                  <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>Root User</div>
+                                  <div style={{ fontSize: 11, color: C.mute, marginTop: 2 }}>Account owner (full bypass)</div>
+                                </div>
+                              </label>
+
+                              <label
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'flex-start',
+                                  gap: 10,
+                                  padding: '12px 14px',
+                                  borderRadius: 12,
+                                  border: `1.5px solid ${iamUserType === 'iam' ? C.teal : C.line}`,
+                                  background: iamUserType === 'iam' ? `${C.teal}12` : 'rgba(255,255,255,0.02)',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.2s',
+                                }}
+                              >
+                                <input
+                                  type="radio"
+                                  name="iamUserType"
+                                  checked={iamUserType === 'iam'}
+                                  onChange={() => setIamUserType('iam')}
+                                  style={{ marginTop: 2, accentColor: C.teal }}
+                                />
+                                <div>
+                                  <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>IAM User</div>
+                                  <div style={{ fontSize: 11, color: C.mute, marginTop: 2 }}>Delegated RBAC role</div>
+                                </div>
+                              </label>
                             </div>
                           </div>
-                        </button>
-                      );
-                    })}
-                  </div>
 
-                  {/* ── Credentials hint ── */}
-                  <div
-                    style={{
-                      marginTop: 24,
-                      padding: '14px 16px',
-                      borderRadius: 14,
-                      background: 'rgba(255,255,255,0.02)',
-                      border: `1px solid ${C.line}`,
-                      fontSize: 12,
-                      color: C.mute,
-                      lineHeight: 1.6,
-                    }}
-                  >
-                    <div style={{ fontWeight: 600, color: '#fff', marginBottom: 6, fontSize: 13 }}>
-                      🔐 Demo Credentials
+                          {iamUserType === 'root' ? (
+                            <div style={{ marginBottom: 20 }}>
+                              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: C.mute, marginBottom: 8 }}>
+                                Root User Email Address
+                              </label>
+                              <input
+                                type="email"
+                                required
+                                value={iamEmail}
+                                onChange={(e) => { setIamEmail(e.target.value); setError(''); }}
+                                placeholder="root@aws-example.com"
+                                className="login-input"
+                                style={{
+                                  width: '100%',
+                                  padding: '14px 18px',
+                                  borderRadius: 14,
+                                  border: `1px solid ${C.line}`,
+                                  background: 'rgba(255,255,255,0.03)',
+                                  color: '#fff',
+                                  fontSize: 15,
+                                  fontFamily: 'inherit',
+                                }}
+                              />
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 20 }}>
+                              <div>
+                                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: C.mute, marginBottom: 8 }}>
+                                  AWS Account ID or Account Alias
+                                </label>
+                                <input
+                                  type="text"
+                                  required
+                                  value={iamAccountIdOrAlias}
+                                  onChange={(e) => { setIamAccountIdOrAlias(e.target.value); setError(''); }}
+                                  placeholder="aws-demo"
+                                  className="login-input"
+                                  style={{
+                                    width: '100%',
+                                    padding: '14px 18px',
+                                    borderRadius: 14,
+                                    border: `1px solid ${C.line}`,
+                                    background: 'rgba(255,255,255,0.03)',
+                                    color: '#fff',
+                                    fontSize: 15,
+                                    fontFamily: 'monospace',
+                                  }}
+                                />
+                              </div>
+
+                              <div>
+                                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: C.mute, marginBottom: 8 }}>
+                                  IAM Username
+                                </label>
+                                <input
+                                  type="text"
+                                  required
+                                  value={iamUsername}
+                                  onChange={(e) => { setIamUsername(e.target.value); setError(''); }}
+                                  placeholder="alice.dev"
+                                  className="login-input"
+                                  style={{
+                                    width: '100%',
+                                    padding: '14px 18px',
+                                    borderRadius: 14,
+                                    border: `1px solid ${C.line}`,
+                                    background: 'rgba(255,255,255,0.03)',
+                                    color: '#fff',
+                                    fontSize: 15,
+                                    fontFamily: 'inherit',
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Quick autofill helper chips */}
+                          <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIamUserType('root');
+                                setIamEmail('root@aws-example.com');
+                                setIamPassword('SuperSecret#Root2026!');
+                              }}
+                              style={{
+                                fontSize: 11,
+                                padding: '5px 12px',
+                                borderRadius: 8,
+                                background: 'rgba(255, 153, 0, 0.12)',
+                                border: '1px solid rgba(255, 153, 0, 0.3)',
+                                color: '#FF9900',
+                                cursor: 'pointer',
+                                fontWeight: 600,
+                              }}
+                            >
+                              ⚡ Fill Root: root@aws-example.com
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIamUserType('iam');
+                                setIamAccountIdOrAlias('aws-demo');
+                                setIamUsername('alice.dev');
+                                setIamPassword('DeveloperPass#2026!');
+                              }}
+                              style={{
+                                fontSize: 11,
+                                padding: '5px 12px',
+                                borderRadius: 8,
+                                background: `${C.teal}12`,
+                                border: `1px solid ${C.teal}30`,
+                                color: C.teal,
+                                cursor: 'pointer',
+                                fontWeight: 600,
+                              }}
+                            >
+                              ⚡ Fill IAM: alice.dev @ aws-demo
+                            </button>
+                          </div>
+
+                          {error && (
+                            <div
+                              style={{
+                                padding: '12px 16px',
+                                borderRadius: 12,
+                                background: 'rgba(255, 120, 105, 0.1)',
+                                border: '1px solid rgba(255, 120, 105, 0.25)',
+                                color: C.coral,
+                                fontSize: 13,
+                                marginBottom: 18,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 8,
+                              }}
+                            >
+                              <AlertTriangle style={{ width: 16, height: 16, flexShrink: 0 }} />
+                              {error}
+                            </div>
+                          )}
+
+                          <button
+                            type="submit"
+                            disabled={isLoading}
+                            style={{
+                              width: '100%',
+                              padding: '15px 24px',
+                              borderRadius: 14,
+                              border: 'none',
+                              background: isLoading ? 'rgba(255,255,255,0.08)' : `linear-gradient(135deg, #FF9900, #EC7211)`,
+                              color: '#000',
+                              fontSize: 15,
+                              fontWeight: 800,
+                              cursor: isLoading ? 'wait' : 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 10,
+                              transition: 'all 0.3s',
+                              boxShadow: isLoading ? 'none' : '0 12px 36px -10px rgba(255, 153, 0, 0.4)',
+                            }}
+                          >
+                            {isLoading ? 'Verifying with AWS IAM...' : 'Next: Enter Password'}
+                            <ArrowRight style={{ width: 18, height: 18 }} />
+                          </button>
+                        </form>
+                      )}
+
+                      {/* STEP 2: PASSWORD ENTRY */}
+                      {iamStep === 2 && (
+                        <form onSubmit={handleIamStep2}>
+                          {/* Active identity badge */}
+                          <div
+                            style={{
+                              padding: '12px 16px',
+                              borderRadius: 12,
+                              background: 'rgba(255,255,255,0.03)',
+                              border: `1px solid ${C.line}`,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              marginBottom: 20,
+                            }}
+                          >
+                            <div>
+                              <div style={{ fontSize: 11, color: C.mute, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                {iamUserType === 'root' ? 'Root User' : `IAM User @ ${iamAccountName}`}
+                              </div>
+                              <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>
+                                {iamUserType === 'root' ? iamEmail : iamUsername}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => { setIamStep(1); setError(''); }}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                color: C.teal,
+                                fontSize: 12,
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 4,
+                              }}
+                            >
+                              <ArrowLeft style={{ width: 14, height: 14 }} />
+                              Edit
+                            </button>
+                          </div>
+
+                          <div style={{ marginBottom: 20 }}>
+                            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: C.mute, marginBottom: 8 }}>
+                              Password
+                            </label>
+                            <div style={{ position: 'relative' }}>
+                              <input
+                                type={showPassword ? 'text' : 'password'}
+                                autoFocus
+                                required
+                                value={iamPassword}
+                                onChange={(e) => { setIamPassword(e.target.value); setError(''); }}
+                                placeholder="Enter your IAM password"
+                                className="login-input"
+                                style={{
+                                  width: '100%',
+                                  padding: '14px 50px 14px 18px',
+                                  borderRadius: 14,
+                                  border: `1px solid ${C.line}`,
+                                  background: 'rgba(255,255,255,0.03)',
+                                  color: '#fff',
+                                  fontSize: 15,
+                                  fontFamily: 'inherit',
+                                }}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowPassword(!showPassword)}
+                                style={{
+                                  position: 'absolute',
+                                  right: 14,
+                                  top: '50%',
+                                  transform: 'translateY(-50%)',
+                                  background: 'none',
+                                  border: 'none',
+                                  color: C.mute,
+                                  cursor: 'pointer',
+                                  padding: 4,
+                                }}
+                              >
+                                {showPassword ? <EyeOff style={{ width: 18, height: 18 }} /> : <Eye style={{ width: 18, height: 18 }} />}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Remember Device checkbox */}
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, cursor: 'pointer', fontSize: 13, color: C.mute }}>
+                            <input
+                              type="checkbox"
+                              checked={iamRememberDevice}
+                              onChange={(e) => setIamRememberDevice(e.target.checked)}
+                              style={{ accentColor: C.teal }}
+                            />
+                            Remember this device for 30 days
+                          </label>
+
+                          {error && (
+                            <div
+                              style={{
+                                padding: '12px 16px',
+                                borderRadius: 12,
+                                background: isLocked ? 'rgba(245, 166, 35, 0.12)' : 'rgba(255, 120, 105, 0.1)',
+                                border: `1px solid ${isLocked ? 'rgba(245, 166, 35, 0.3)' : 'rgba(255, 120, 105, 0.25)'}`,
+                                color: isLocked ? '#F5A623' : C.coral,
+                                fontSize: 13,
+                                marginBottom: 18,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 8,
+                              }}
+                            >
+                              {isLocked ? <ShieldAlert style={{ width: 16, height: 16, flexShrink: 0 }} /> : <AlertTriangle style={{ width: 16, height: 16, flexShrink: 0 }} />}
+                              {error}
+                            </div>
+                          )}
+
+                          <button
+                            type="submit"
+                            disabled={isLoading || !iamPassword}
+                            style={{
+                              width: '100%',
+                              padding: '15px 24px',
+                              borderRadius: 14,
+                              border: 'none',
+                              background: isLoading || !iamPassword ? 'rgba(255,255,255,0.08)' : `linear-gradient(135deg, #FF9900, #EC7211)`,
+                              color: '#000',
+                              fontSize: 15,
+                              fontWeight: 800,
+                              cursor: isLoading ? 'wait' : 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 10,
+                              transition: 'all 0.3s',
+                              boxShadow: isLoading ? 'none' : '0 12px 36px -10px rgba(255, 153, 0, 0.4)',
+                            }}
+                          >
+                            {isLoading ? 'Authenticating Credentials...' : 'Sign in to AWS Console'}
+                            <ArrowRight style={{ width: 18, height: 18 }} />
+                          </button>
+                        </form>
+                      )}
+
+                      {/* STEP 3: MFA TOTP VERIFICATION */}
+                      {iamStep === 3 && (
+                        <form onSubmit={handleIamMfa}>
+                          <div
+                            style={{
+                              padding: '14px 16px',
+                              borderRadius: 12,
+                              background: `${C.teal}12`,
+                              border: `1px solid ${C.teal}30`,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 10,
+                              marginBottom: 20,
+                            }}
+                          >
+                            <ShieldCheck style={{ width: 22, height: 22, color: C.teal, flexShrink: 0 }} />
+                            <div>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>Two-Factor Security Enforced</div>
+                              <div style={{ fontSize: 11, color: C.mute }}>Authentication token required for this IAM account</div>
+                            </div>
+                          </div>
+
+                          <div style={{ marginBottom: 20 }}>
+                            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: C.mute, marginBottom: 8 }}>
+                              {iamIsBackupCode ? 'Enter 8-Character Emergency Backup Code' : 'Enter 6-Digit Code from Google Authenticator / Authy'}
+                            </label>
+                            <input
+                              type="text"
+                              autoFocus
+                              required
+                              maxLength={iamIsBackupCode ? 12 : 6}
+                              value={iamMfaCode}
+                              onChange={(e) => {
+                                const val = iamIsBackupCode ? e.target.value.toUpperCase() : e.target.value.replace(/\D/g, '');
+                                setIamMfaCode(val);
+                                setError('');
+                              }}
+                              placeholder={iamIsBackupCode ? 'A1B2C3D4' : '123456'}
+                              className="login-input"
+                              style={{
+                                width: '100%',
+                                padding: '14px 18px',
+                                borderRadius: 14,
+                                border: `1px solid ${C.line}`,
+                                background: 'rgba(255,255,255,0.03)',
+                                color: '#fff',
+                                fontSize: 20,
+                                fontFamily: 'monospace',
+                                letterSpacing: '0.25em',
+                                textAlign: 'center',
+                              }}
+                            />
+                          </div>
+
+                          {error && (
+                            <div
+                              style={{
+                                padding: '12px 16px',
+                                borderRadius: 12,
+                                background: 'rgba(255, 120, 105, 0.1)',
+                                border: '1px solid rgba(255, 120, 105, 0.25)',
+                                color: C.coral,
+                                fontSize: 13,
+                                marginBottom: 18,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 8,
+                              }}
+                            >
+                              <AlertTriangle style={{ width: 16, height: 16, flexShrink: 0 }} />
+                              {error}
+                            </div>
+                          )}
+
+                          <button
+                            type="submit"
+                            disabled={isLoading || !iamMfaCode.trim()}
+                            style={{
+                              width: '100%',
+                              padding: '15px 24px',
+                              borderRadius: 14,
+                              border: 'none',
+                              background: isLoading || !iamMfaCode.trim() ? 'rgba(255,255,255,0.08)' : `linear-gradient(135deg, ${C.tealDim}, ${C.teal})`,
+                              color: '#050A10',
+                              fontSize: 15,
+                              fontWeight: 800,
+                              cursor: isLoading ? 'wait' : 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 10,
+                              transition: 'all 0.3s',
+                            }}
+                          >
+                            {isLoading ? 'Validating Token...' : 'Verify & Complete Sign-in'}
+                            <ArrowRight style={{ width: 18, height: 18 }} />
+                          </button>
+
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 14, fontSize: 12 }}>
+                            <button
+                              type="button"
+                              onClick={() => { setIamIsBackupCode(!iamIsBackupCode); setIamMfaCode(''); }}
+                              style={{ background: 'none', border: 'none', color: C.teal, cursor: 'pointer', padding: 0 }}
+                            >
+                              {iamIsBackupCode ? 'Use authenticator app' : 'Use backup code instead'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { setIamStep(1); setError(''); }}
+                              style={{ background: 'none', border: 'none', color: C.mute, cursor: 'pointer', padding: 0 }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </form>
+                      )}
+
+                      {/* Link to Dedicated AWS Console */}
+                      <div
+                        style={{
+                          marginTop: 24,
+                          paddingTop: 16,
+                          borderTop: `1px solid ${C.line}`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          fontSize: 12,
+                        }}
+                      >
+                        <span style={{ color: C.mute }}>IAM Administration Console:</span>
+                        <a
+                          href="http://localhost:5173"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            color: '#FF9900',
+                            textDecoration: 'none',
+                            fontWeight: 700,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                          }}
+                        >
+                          Launch IAM Console (Port 5173)
+                          <ExternalLink style={{ width: 13, height: 13 }} />
+                        </a>
+                      </div>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px' }}>
-                      <div><strong>Radiologist:</strong> elena.vance@...</div>
-                      <div>Rad!0l0gist#2026</div>
-                      <div><strong>Technician:</strong> marcus.chen@...</div>
-                      <div>T3chCT$can#2026</div>
+                  )}
+
+                  {/* ────────────────────────────────────────────────────────── */}
+                  {/* MODE B: INSTITUTIONAL PASSWORDS & 1-CLICK PERSONAS         */}
+                  {/* ────────────────────────────────────────────────────────── */}
+                  {authMode === 'clinical' && (
+                    <div>
+                      <form onSubmit={handleLogin}>
+                        {/* Email */}
+                        <div style={{ marginBottom: 18 }}>
+                          <label htmlFor="login-email" style={{ display: 'block', fontSize: 13, fontWeight: 600, color: C.mute, marginBottom: 8 }}>
+                            Institutional Email
+                          </label>
+                          <input
+                            id="login-email"
+                            type="email"
+                            className="login-input"
+                            value={email}
+                            onChange={(e) => { setEmail(e.target.value); setError(''); }}
+                            placeholder="name@mipaas.health"
+                            required
+                            autoComplete="email"
+                            style={{
+                              width: '100%',
+                              padding: '14px 18px',
+                              borderRadius: 14,
+                              border: `1px solid ${C.line}`,
+                              background: 'rgba(255,255,255,0.03)',
+                              color: '#fff',
+                              fontSize: 15,
+                              fontFamily: 'inherit',
+                              transition: 'all 0.25s',
+                            }}
+                          />
+                        </div>
+
+                        {/* Password */}
+                        <div style={{ marginBottom: 24 }}>
+                          <label htmlFor="login-password" style={{ display: 'block', fontSize: 13, fontWeight: 600, color: C.mute, marginBottom: 8 }}>
+                            Password
+                          </label>
+                          <div style={{ position: 'relative' }}>
+                            <input
+                              id="login-password"
+                              type={showPassword ? 'text' : 'password'}
+                              className="login-input"
+                              value={password}
+                              onChange={(e) => { setPassword(e.target.value); setError(''); }}
+                              placeholder="Enter your password"
+                              required
+                              autoComplete="current-password"
+                              style={{
+                                width: '100%',
+                                padding: '14px 50px 14px 18px',
+                                borderRadius: 14,
+                                border: `1px solid ${C.line}`,
+                                background: 'rgba(255,255,255,0.03)',
+                                color: '#fff',
+                                fontSize: 15,
+                                fontFamily: 'inherit',
+                                transition: 'all 0.25s',
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowPassword(!showPassword)}
+                              style={{
+                                position: 'absolute',
+                                right: 14,
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                background: 'none',
+                                border: 'none',
+                                color: C.mute,
+                                cursor: 'pointer',
+                                padding: 4,
+                              }}
+                              aria-label={showPassword ? 'Hide password' : 'Show password'}
+                            >
+                              {showPassword ? <EyeOff style={{ width: 18, height: 18 }} /> : <Eye style={{ width: 18, height: 18 }} />}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Error */}
+                        {error && (
+                          <div
+                            style={{
+                              padding: '12px 16px',
+                              borderRadius: 12,
+                              background: 'rgba(255, 120, 105, 0.1)',
+                              border: '1px solid rgba(255, 120, 105, 0.25)',
+                              color: C.coral,
+                              fontSize: 13,
+                              marginBottom: 18,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 8,
+                            }}
+                            role="alert"
+                          >
+                            <AlertTriangle style={{ width: 16, height: 16, flexShrink: 0 }} />
+                            {error}
+                          </div>
+                        )}
+
+                        {/* Submit */}
+                        <button
+                          type="submit"
+                          disabled={isLoading}
+                          style={{
+                            width: '100%',
+                            padding: '15px 24px',
+                            borderRadius: 14,
+                            border: 'none',
+                            background: isLoading
+                              ? 'rgba(255,255,255,0.08)'
+                              : `linear-gradient(135deg, ${C.coral}, #ff5040)`,
+                            color: '#fff',
+                            fontSize: 15,
+                            fontWeight: 700,
+                            fontFamily: 'Sora, system-ui, sans-serif',
+                            cursor: isLoading ? 'wait' : 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 10,
+                            transition: 'all 0.3s',
+                            boxShadow: isLoading ? 'none' : `0 12px 36px -10px ${C.coral}`,
+                          }}
+                        >
+                          {isLoading ? 'Authenticating...' : 'Sign In Securely'}
+                          <ArrowRight style={{ width: 18, height: 18 }} />
+                        </button>
+                      </form>
+
+                      {/* ── Divider ── */}
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 16,
+                          margin: '28px 0',
+                        }}
+                      >
+                        <div style={{ flex: 1, height: 1, background: C.line }} />
+                        <span style={{ fontSize: 12, color: C.mute, fontWeight: 500 }}>
+                          1-Click Demo Login
+                        </span>
+                        <div style={{ flex: 1, height: 1, background: C.line }} />
+                      </div>
+
+                      {/* ── Quick login cards ── */}
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(2, 1fr)',
+                          gap: 10,
+                        }}
+                      >
+                        {Object.entries(CLINICAL_PERSONAS).slice(0, 4).map(([id, persona]) => {
+                          const roleDef = ROLE_DEFINITIONS[persona.role];
+                          const isSelected = selectedQuickLogin === id;
+                          return (
+                            <button
+                              key={id}
+                              className="quick-login-card"
+                              disabled={isLoading}
+                              onClick={() => handleQuickLogin(id)}
+                              style={{
+                                padding: '14px 16px',
+                                borderRadius: 16,
+                                border: `1px solid ${isSelected ? roleDef.borderColor : C.line}`,
+                                background: isSelected
+                                  ? roleDef.badgeBg
+                                  : 'rgba(255,255,255,0.02)',
+                                color: '#fff',
+                                cursor: isLoading ? 'wait' : 'pointer',
+                                textAlign: 'left',
+                                fontFamily: 'inherit',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 8,
+                                opacity: isLoading && !isSelected ? 0.4 : 1,
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <div
+                                  style={{
+                                    width: 28,
+                                    height: 28,
+                                    borderRadius: 8,
+                                    background: roleDef.badgeBg,
+                                    border: `1px solid ${roleDef.borderColor}`,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: roleDef.badgeColor,
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  {ROLE_ICONS[persona.role]}
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.2 }}>
+                                    {persona.name.split(',')[0].split(' ').slice(0, 2).join(' ')}
+                                  </div>
+                                  <div style={{ fontSize: 11, color: roleDef.badgeColor }}>
+                                    {roleDef.title}
+                                  </div>
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* ── Credentials hint ── */}
+                      <div
+                        style={{
+                          marginTop: 24,
+                          padding: '14px 16px',
+                          borderRadius: 14,
+                          background: 'rgba(255,255,255,0.02)',
+                          border: `1px solid ${C.line}`,
+                          fontSize: 12,
+                          color: C.mute,
+                          lineHeight: 1.6,
+                        }}
+                      >
+                        <div style={{ fontWeight: 600, color: '#fff', marginBottom: 6, fontSize: 13 }}>
+                          🔐 Demo Credentials
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px' }}>
+                          <div><strong>Radiologist:</strong> elena.vance@...</div>
+                          <div>Rad!0l0gist#2026</div>
+                          <div><strong>Technician:</strong> marcus.chen@...</div>
+                          <div>T3chCT$can#2026</div>
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* ── Bottom security notice ── */}
                   <p
@@ -1062,11 +1779,11 @@ export default function LoginPage() {
                       textAlign: 'center',
                       fontSize: 12,
                       color: C.mute,
-                      marginTop: 20,
+                      marginTop: 24,
                       lineHeight: 1.5,
                     }}
                   >
-                    🔒 Protected by 256-bit TLS · HIPAA BAA compliant · Audit logged
+                    🔒 Protected by 256-bit TLS · HIPAA BAA compliant · AWS IAM RBAC Policy Evaluator
                   </p>
                 </>
               )}

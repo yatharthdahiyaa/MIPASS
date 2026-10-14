@@ -33,16 +33,17 @@ import {
 } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
+import AnatomyViewer from '@/components/common/AnatomyViewer';
 
 /* ── colour tokens ── */
 const C = {
-  bg: '#060B11',
-  bg2: '#0A1823',
-  bg3: '#0E273A',
+  bg: '#0B1926',
+  bg2: '#102333',
+  bg3: '#132B3A',
   ink: '#EAF2F6',
-  mute: '#7B8FA0',
-  teal: '#00DCCE',
-  tealDim: '#008280',
+  mute: '#A6B3BD',
+  teal: '#7DB7B0',
+  tealDim: '#7DB7B0',
   coral: '#FF7869',
   amber: '#F5A623',
   lav: '#98AED9',
@@ -133,9 +134,7 @@ const TB_CASES = [
 type UploadPhase = 'idle' | 'uploading' | 'processing' | 'done';
 
 export default function TBPage() {
-  const stageRef = useRef<HTMLDivElement>(null);
   const stepsRef = useRef<HTMLDivElement>(null);
-  const gridRef  = useRef<HTMLDivElement>(null);
   const fileRef  = useRef<HTMLInputElement>(null);
 
   const { currentUser, hasPermission, setRBACModalOpen, addAuditLog } = useRBAC();
@@ -168,223 +167,6 @@ export default function TBPage() {
   const COUNTER_SUFFIXES = ['%', '%', 's', '%'];
   const COUNTER_LABELS = ['WHO TPP Sensitivity', 'GeneXpert Cartridge Savings', 'Edge Inference Time', 'Offline Field Operation'];
 
-  /* ── Three.js 3D Thoracic Cavitary Lesion & Lung Stage ── */
-  useEffect(() => {
-    const el = stageRef.current;
-    if (!el) return;
-
-    let cleanup = false;
-
-    const loadThree = async () => {
-      const threeModule = await import('three').catch(() => null);
-      if (!threeModule || cleanup) return;
-      const THREE = threeModule;
-
-      const W = () => el.clientWidth;
-      const H = () => el.clientHeight;
-
-      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-      renderer.setSize(W(), H());
-      el.prepend(renderer.domElement);
-      renderer.domElement.style.borderRadius = '28px';
-
-      const scene = new THREE.Scene();
-      const cam = new THREE.PerspectiveCamera(45, W() / H(), 0.1, 100);
-      cam.position.set(0, 0, 7.5);
-
-      const root = new THREE.Group();
-      scene.add(root);
-
-      /* 1. Pulmonary parenchyma point cloud (Left and Right lobes) */
-      function createLungParenchyma(side: number) {
-        const N = 4500;
-        const pos = new Float32Array(N * 3);
-        const col = new Float32Array(N * 3);
-        for (let i = 0; i < N; i++) {
-          const u = Math.random();
-          const v = Math.random();
-          const theta = u * 2 * Math.PI;
-          const phi = Math.acos(2 * v - 1);
-          const r = Math.cbrt(Math.random()) * 0.95;
-
-          let px = r * Math.sin(phi) * Math.cos(theta) * 0.72;
-          let py = r * Math.cos(phi) * 1.55;
-          let pz = r * Math.sin(phi) * Math.sin(theta) * 0.62;
-
-          px += side * 1.25;
-          py -= 0.15;
-          if (side < 0) px *= 0.92; // cardiac notch
-
-          pos[i * 3]     = px;
-          pos[i * 3 + 1] = py;
-          pos[i * 3 + 2] = pz;
-
-          // Teal base fading to dark slate
-          const t = Math.random();
-          col[i * 3]     = 0.05 + 0.15 * t;
-          col[i * 3 + 1] = 0.55 + 0.35 * t;
-          col[i * 3 + 2] = 0.65 + 0.30 * t;
-        }
-
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-        geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-        const mat = new THREE.PointsMaterial({
-          size: 0.038,
-          vertexColors: true,
-          transparent: true,
-          opacity: 0.75,
-          blending: THREE.AdditiveBlending,
-        });
-        return new THREE.Points(geo, mat);
-      }
-
-      root.add(createLungParenchyma(-1));
-      root.add(createLungParenchyma(1));
-
-      /* 2. Highlighted Apical Cavitary Lesion (Right Apex - Glowing Amber/Coral) */
-      const cavityGroup = new THREE.Group();
-      cavityGroup.position.set(1.15, 1.05, 0.2); // Right upper lobe apex
-
-      // Thick-walled cavity sphere wireframe
-      const cavityGeo = new THREE.SphereGeometry(0.38, 20, 20);
-      const cavityMat = new THREE.MeshBasicMaterial({
-        color: new THREE.Color(C.coral),
-        wireframe: true,
-        transparent: true,
-        opacity: 0.65,
-      });
-      const cavityMesh = new THREE.Mesh(cavityGeo, cavityMat);
-      cavityGroup.add(cavityMesh);
-
-      // Cavity necrotic core (dense amber glow)
-      const coreGeo = new THREE.SphereGeometry(0.24, 16, 16);
-      const coreMat = new THREE.MeshBasicMaterial({
-        color: new THREE.Color(C.amber),
-        transparent: true,
-        opacity: 0.85,
-      });
-      const coreMesh = new THREE.Mesh(coreGeo, coreMat);
-      cavityGroup.add(coreMesh);
-
-      // Tree-in-bud satellite micro-nodules around cavity
-      const budCount = 600;
-      const budPos = new Float32Array(budCount * 3);
-      for (let i = 0; i < budCount; i++) {
-        const theta = Math.random() * 2 * Math.PI;
-        const phi = Math.random() * Math.PI;
-        const dist = 0.38 + Math.random() * 0.55;
-        budPos[i * 3]     = dist * Math.sin(phi) * Math.cos(theta);
-        budPos[i * 3 + 1] = dist * Math.cos(phi) * 0.8;
-        budPos[i * 3 + 2] = dist * Math.sin(phi) * Math.sin(theta);
-      }
-      const budGeo = new THREE.BufferGeometry();
-      budGeo.setAttribute('position', new THREE.BufferAttribute(budPos, 3));
-      const budMat = new THREE.PointsMaterial({
-        color: new THREE.Color(C.amber),
-        size: 0.05,
-        transparent: true,
-        opacity: 0.9,
-        blending: THREE.AdditiveBlending,
-      });
-      cavityGroup.add(new THREE.Points(budGeo, budMat));
-      root.add(cavityGroup);
-
-      /* 3. Bronchial Tree (Trachea and Main Stem Bronchi) */
-      const bronchiMat = new THREE.LineBasicMaterial({
-        color: new THREE.Color(C.tealDim),
-        transparent: true,
-        opacity: 0.7,
-      });
-      const bronchiGeo = new THREE.BufferGeometry();
-      const bPoints = [
-        new THREE.Vector3(0, 1.8, 0),
-        new THREE.Vector3(0, 0.4, 0),
-        new THREE.Vector3(0.8, -0.2, 0.1),
-        new THREE.Vector3(1.3, -0.6, 0.2),
-        new THREE.Vector3(0, 0.4, 0),
-        new THREE.Vector3(-0.9, -0.15, 0.1),
-        new THREE.Vector3(-1.4, -0.55, 0.2),
-      ];
-      bronchiGeo.setFromPoints(bPoints);
-      const bronchiLine = new THREE.Line(bronchiGeo, bronchiMat);
-      root.add(bronchiLine);
-
-      /* 4. Sweeping CAD4TB Laser Scan Plane */
-      const planeGeo = new THREE.PlaneGeometry(3.6, 0.04);
-      const planeMat = new THREE.MeshBasicMaterial({
-        color: new THREE.Color(C.teal),
-        transparent: true,
-        opacity: 0.75,
-        side: THREE.DoubleSide,
-      });
-      const scanPlane = new THREE.Mesh(planeGeo, planeMat);
-      root.add(scanPlane);
-
-      /* Interaction & Animation Loop */
-      let drag = false, px = 0, ry = 0;
-      const vy = 0.003;
-      el.addEventListener('pointerdown', (e) => { drag = true; px = e.clientX; el.style.cursor = 'grabbing'; });
-      window.addEventListener('pointerup', () => { drag = false; el.style.cursor = 'grab'; });
-      window.addEventListener('pointermove', (e) => {
-        if (drag) {
-          ry += (e.clientX - px) * 0.01;
-          px = e.clientX;
-        }
-      });
-
-      let visible = true;
-      const visObs = new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; });
-      visObs.observe(el);
-
-      function loop(t: number) {
-        if (cleanup) return;
-        requestAnimationFrame(loop);
-        if (!visible) return;
-
-        if (!drag) ry += vy;
-        root.rotation.y = ry;
-        root.rotation.x = Math.sin(t / 3000) * 0.06;
-
-        // Subtle breathing expansion
-        const breath = 1 + Math.sin(t / 1400) * 0.035;
-        root.scale.set(breath, breath, breath);
-
-        // Sweeping scan plane
-        const k = (Math.sin(t / 1800) + 1) / 2;
-        scanPlane.position.y = -1.8 + k * 3.6;
-
-        // Pulsing cavity lesion
-        const pulse = 1 + Math.sin(t / 350) * 0.18;
-        coreMesh.scale.set(pulse, pulse, pulse);
-
-        renderer.render(scene, cam);
-      }
-      requestAnimationFrame(loop);
-
-      const onResize = () => {
-        renderer.setSize(W(), H());
-        cam.aspect = W() / H();
-        cam.updateProjectionMatrix();
-      };
-      window.addEventListener('resize', onResize);
-
-      return () => {
-        cleanup = true;
-        window.removeEventListener('resize', onResize);
-        visObs.disconnect();
-        renderer.dispose();
-      };
-    };
-
-    const disposePromise = loadThree();
-    return () => {
-      cleanup = true;
-      disposePromise.then((dispose) => dispose?.());
-    };
-  }, []);
-
   /* ── pipeline reveal on scroll ── */
   useEffect(() => {
     const el = stepsRef.current;
@@ -400,46 +182,6 @@ export default function TBPage() {
     }, { threshold: 0.25 });
     obs.observe(el);
     return () => obs.disconnect();
-  }, []);
-
-  /* ── 3D tilt on feature cards ── */
-  useEffect(() => {
-    const el = gridRef.current;
-    if (!el || !window.matchMedia('(hover: hover)').matches) return;
-    const cards = el.querySelectorAll<HTMLElement>('.feat-card');
-    const handlers: Array<{ card: HTMLElement; enter: () => void; leave: () => void; move: (e: MouseEvent) => void }> = [];
-
-    cards.forEach((card) => {
-      let raf = 0;
-      const onMove = (e: MouseEvent) => {
-        cancelAnimationFrame(raf);
-        raf = requestAnimationFrame(() => {
-          const r = card.getBoundingClientRect();
-          const x = (e.clientX - r.left) / r.width - 0.5;
-          const y = (e.clientY - r.top) / r.height - 0.5;
-          card.style.transform = `perspective(800px) rotateY(${x * 12}deg) rotateX(${-y * 12}deg) translateZ(10px)`;
-        });
-      };
-      const onEnter = () => { card.style.transition = 'transform .1s ease-out'; };
-      const onLeave = () => {
-        cancelAnimationFrame(raf);
-        card.style.transition = 'transform .4s ease-out';
-        card.style.transform = 'perspective(800px) rotateY(0deg) rotateX(0deg) translateZ(0)';
-      };
-
-      card.addEventListener('mouseenter', onEnter);
-      card.addEventListener('mousemove', onMove);
-      card.addEventListener('mouseleave', onLeave);
-      handlers.push({ card, enter: onEnter, leave: onLeave, move: onMove });
-    });
-
-    return () => {
-      handlers.forEach(({ card, enter, leave, move }) => {
-        card.removeEventListener('mouseenter', enter);
-        card.removeEventListener('mousemove', move);
-        card.removeEventListener('mouseleave', leave);
-      });
-    };
   }, []);
 
   /* ── animated stats counters ── */
@@ -518,9 +260,9 @@ export default function TBPage() {
       setTimeout(() => {
         router.push('/doctor');
       }, 500);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Upload failed:', err);
-      setUploadError(err.message || 'Error processing DICOM image');
+      setUploadError(err instanceof Error && err.message ? err.message : 'Error processing DICOM image');
       setUploadPhase('idle');
     }
   };
@@ -555,48 +297,42 @@ export default function TBPage() {
         .tb-alt { background: ${C.bg3}; }
         .tb-sub { color: ${C.mute}; max-width: 58ch; margin: 0 0 48px; font-size: 16px; line-height: 1.7; }
         .tb-h2 { font-size: clamp(28px, 4vw, 44px); margin-bottom: 14px; }
-        .tb-btn { display: inline-flex; align-items: center; gap: 8px; border-radius: 999px; padding: 13px 26px; font-weight: 600; font-size: 14px; border: 1px solid ${C.line}; background: rgba(255,255,255,.05); color: ${C.ink}; cursor: pointer; transition: transform .2s, box-shadow .3s; text-decoration: none; }
-        .tb-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 30px -8px rgba(0,220,206,.25); }
-        .tb-btn-p { background: linear-gradient(135deg, ${C.amber}, #e07010); border: 0; color: #fff; box-shadow: 0 12px 36px -10px ${C.amber}; }
-        .tb-btn-p:hover { box-shadow: 0 16px 44px -8px ${C.amber}; }
-        .tb-btn-teal { background: linear-gradient(135deg, ${C.teal}, ${C.tealDim}); border: 0; color: #060B11; font-weight: 700; box-shadow: 0 12px 36px -10px ${C.teal}; }
-        .tb-tag { font-size: 12px; padding: 5px 12px; border-radius: 99px; background: rgba(245,166,35,.15); color: ${C.amber}; font-weight: 600; letter-spacing: .02em; }
+        .tb-btn { display: inline-flex; align-items: center; gap: 8px; border-radius: 10px; padding: 13px 26px; font-weight: 600; font-size: 14px; border: 1px solid ${C.line}; background: ${C.bg2}; color: ${C.ink}; cursor: pointer; transition: background .2s, border-color .2s; text-decoration: none; }
+        .tb-btn:hover { border-color: ${C.teal}; background: ${C.bg3}; }
+        .tb-btn:focus-visible { outline: 2px solid ${C.teal}; outline-offset: 3px; }
+        .tb-btn-p, .tb-btn-teal { background: ${C.coral}; border: 1px solid ${C.coral}; color: #0B1926; font-weight: 700; }
+        .tb-btn-p:hover, .tb-btn-teal:hover { background: #F48C7E; border-color: #F48C7E; }
+        .tb-tag { font-size: 12px; padding: 5px 12px; border-radius: 6px; background: ${C.bg2}; color: ${C.teal}; font-weight: 600; letter-spacing: .02em; }
         
         .tb-hero { position: relative; min-height: 100vh; display: flex; align-items: center; padding: 120px 0 80px; overflow: hidden; }
         .tb-hero-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 36px; align-items: center; width: 100%; }
         .tb-hero h1 { font-size: clamp(38px, 5vw, 60px); }
-        .tb-hero h1 em { font-style: normal; background: linear-gradient(135deg, ${C.amber}, ${C.coral}); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .tb-hero h1 em { font-style: normal; color: ${C.teal}; }
         .tb-hero-p { color: ${C.mute}; max-width: 48ch; margin: 20px 0 32px; font-size: 16px; line-height: 1.7; }
         
-        .tb-stage { position: relative; height: 520px; border-radius: 28px; background: radial-gradient(circle at 50% 45%, rgba(245,166,35,.12), transparent 65%); border: 1px solid rgba(255,255,255,.07); cursor: grab; overflow: hidden; }
-        .tb-stage canvas { display: block; width: 100%; height: 100%; }
-        .tb-chip { position: absolute; padding: 10px 16px; border-radius: 14px; background: rgba(6,11,17,.78); backdrop-filter: blur(14px); border: 1px solid rgba(255,255,255,.1); font-size: 12px; pointer-events: none; }
-        .tb-chip b { display: block; font: 600 13px Sora; margin-bottom: 2px; }
-        .tb-chip-amber b { color: ${C.amber}; }
-        .tb-chip-teal b { color: ${C.teal}; }
-        .tb-chip-coral b { color: ${C.coral}; }
+        .tb-stage { position: relative; height: 520px; border-radius: 16px; background: ${C.bg2}; border: 1px solid ${C.line}; overflow: hidden; }
 
-        .tb-drop { border: 2px dashed rgba(245,166,35,.35); border-radius: 24px; padding: 50px 24px; text-align: center; background: rgba(255,255,255,.015); transition: all .25s; min-height: 260px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; cursor: pointer; }
-        .tb-drop:hover, .tb-drop.over { border-color: ${C.amber}; background: rgba(245,166,35,.05); transform: scale(1.005); }
+        .tb-drop { border: 2px dashed ${C.teal}; border-radius: 14px; padding: 50px 24px; text-align: center; background: ${C.bg2}; transition: border-color .25s, background .25s; min-height: 260px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; cursor: pointer; }
+        .tb-drop:hover, .tb-drop.over { border-color: ${C.coral}; background: ${C.bg3}; }
         .tb-bar { width: min(440px, 100%); height: 8px; background: rgba(255,255,255,.08); border-radius: 9px; overflow: hidden; }
-        .tb-bar-fill { height: 100%; background: linear-gradient(90deg, ${C.amber}, ${C.coral}); border-radius: 9px; transition: width .15s; }
+        .tb-bar-fill { height: 100%; background: ${C.teal}; border-radius: 9px; transition: width .15s; }
 
         .tb-steps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; }
         .tb-step { padding: 22px 18px; border-radius: 20px; border: 1px solid rgba(255,255,255,.06); opacity: .3; transform: translateY(18px); transition: all .6s cubic-bezier(.16,1,.3,1); background: rgba(255,255,255,.02); }
-        .tb-step.on { opacity: 1; transform: none; border-color: rgba(245,166,35,.45); background: rgba(245,166,35,.04); box-shadow: 0 0 30px -10px rgba(245,166,35,.2); }
+        .tb-step.on { opacity: 1; transform: none; border-color: ${C.teal}; background: ${C.bg2}; }
         .tb-step-num { font: 700 12px Sora; margin-bottom: 10px; }
         .tb-step h3 { font-size: 16px; margin: 0 0 6px; }
         .tb-step p { margin: 0; font-size: 12px; color: ${C.mute}; line-height: 1.5; }
 
-        .tb-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; perspective: 1000px; }
-        .feat-card { padding: 28px; border-radius: 22px; background: linear-gradient(160deg, rgba(255,255,255,.06), rgba(255,255,255,.015)); border: 1px solid rgba(255,255,255,.07); transition: transform .2s, box-shadow .35s; will-change: transform; }
-        .feat-card:hover { box-shadow: 0 25px 60px -20px rgba(245,166,35,.3), 0 0 0 1px rgba(245,166,35,.2); }
-        .feat-card h3 { font-size: 18px; margin-top: 12px; }
-        .feat-card p { color: ${C.mute}; font-size: 13px; margin: 8px 0 16px; line-height: 1.6; }
-        .feat-card small { display: block; margin-top: 12px; color: ${C.amber}; font-weight: 600; font-size: 13px; }
+        .tb-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+        .tb-page .feat-card { padding: 28px; border-radius: 14px; background: ${C.bg2}; border: 1px solid ${C.line}; transition: border-color .2s; }
+        .tb-page .feat-card:hover { border-color: ${C.teal}; }
+        .tb-page .feat-card h3 { font-size: 18px; margin-top: 12px; }
+        .tb-page .feat-card p { color: ${C.mute}; font-size: 13px; margin: 8px 0 16px; line-height: 1.6; }
+        .tb-page .feat-card small { display: block; margin-top: 12px; color: ${C.teal}; font-weight: 600; font-size: 13px; }
 
         .tb-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; text-align: center; }
-        .tb-stat-n { font: 700 clamp(36px, 4.5vw, 54px) Sora; font-variant-numeric: tabular-nums; background: linear-gradient(135deg, #fff, ${C.amber}); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .tb-stat-n { font: 700 clamp(36px, 4.5vw, 54px) Sora; font-variant-numeric: tabular-nums; color: ${C.ink}; }
         .tb-stat-l { color: ${C.mute}; font-size: 13px; margin-top: 4px; }
 
         .tb-station { border-radius: 24px; border: 1px solid rgba(255,255,255,.1); background: #0A1823; overflow: hidden; }
@@ -653,23 +389,9 @@ export default function TBPage() {
                 </div>
               </div>
 
-              {/* 3D Anatomical Organ Stage */}
-              <div className="tb-stage" ref={stageRef}>
-                <div className="tb-chip tb-chip-amber" style={{ top: 20, left: 20 }}>
-                  <b>WHO CAD4TB Score: 88</b>
-                  <span style={{ color: C.mute }}>Presumptive Active TB</span>
-                </div>
-                <div className="tb-chip tb-chip-coral" style={{ top: 88, right: 20 }}>
-                  <b>Apical Cavity: 24.2 mm</b>
-                  <span style={{ color: C.mute }}>Thick-Walled · High Bacterial Load</span>
-                </div>
-                <div className="tb-chip tb-chip-teal" style={{ bottom: 24, left: 20 }}>
-                  <b>GeneXpert Cartridge Triage</b>
-                  <span style={{ color: C.mute }}>STAT Molecular Confirmation</span>
-                </div>
-                <div style={{ position: 'absolute', bottom: 12, right: 20, fontSize: 11, color: C.mute }}>
-                  Drag to rotate thoracic cavity in 3D
-                </div>
+              {/* Illustrative pulmonary anatomy */}
+              <div className="tb-stage">
+                <AnatomyViewer kind="lungs" />
               </div>
             </div>
           </div>
@@ -791,7 +513,7 @@ export default function TBPage() {
               Validated on over 500,000 real-world screening radiographs across high-burden global regions including India, South Africa, Indonesia, and Peru.
             </p>
 
-            <div className="tb-grid" ref={gridRef}>
+            <div className="tb-grid">
               {FEATURES.map((f, i) => (
                 <div key={i} className="feat-card">
                   <span className="tb-tag">{f.tag}</span>
@@ -894,7 +616,6 @@ export default function TBPage() {
                           borderRadius: '50%',
                           border: `3px solid ${C.coral}`,
                           background: `radial-gradient(circle, rgba(255,120,105,${heatmapOpacity / 100 * 0.4}) 0%, transparent 75%)`,
-                          boxShadow: `0 0 25px ${C.coral}`,
                           animation: 'pulse 2s infinite',
                         }}
                       >
@@ -907,10 +628,10 @@ export default function TBPage() {
                     {/* Tree-in-Bud Micronodules */}
                     {showTreeInBud && selectedCase.id === 'tb-01' && (
                       <div style={{ position: 'absolute', top: '34%', right: '24%', display: 'flex', gap: 6, flexWrap: 'wrap', width: 60 }}>
-                        <div style={{ width: 6, height: 6, borderRadius: '50%', background: C.amber, boxShadow: `0 0 8px ${C.amber}` }} />
-                        <div style={{ width: 5, height: 5, borderRadius: '50%', background: C.amber, boxShadow: `0 0 8px ${C.amber}` }} />
-                        <div style={{ width: 7, height: 7, borderRadius: '50%', background: C.coral, boxShadow: `0 0 8px ${C.coral}` }} />
-                        <div style={{ width: 6, height: 6, borderRadius: '50%', background: C.amber, boxShadow: `0 0 8px ${C.amber}` }} />
+                        <div style={{ width: 6, height: 6, borderRadius: '50%', background: C.amber }} />
+                        <div style={{ width: 5, height: 5, borderRadius: '50%', background: C.amber }} />
+                        <div style={{ width: 7, height: 7, borderRadius: '50%', background: C.coral }} />
+                        <div style={{ width: 6, height: 6, borderRadius: '50%', background: C.amber }} />
                       </div>
                     )}
 
@@ -926,7 +647,6 @@ export default function TBPage() {
                           borderRadius: '40% 60% 70% 30% / 40% 50% 60% 50%',
                           background: `radial-gradient(circle, rgba(245,166,35,${heatmapOpacity / 100 * 0.5}) 0%, transparent 80%)`,
                           border: `2px dashed ${C.amber}`,
-                          boxShadow: `0 0 20px ${C.amber}`,
                         }}
                       >
                         <div style={{ position: 'absolute', top: -18, left: 0, fontSize: 10, background: C.amber, color: '#060B11', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>
@@ -981,7 +701,7 @@ export default function TBPage() {
                     <div style={{ position: 'relative', height: 8, background: 'rgba(255,255,255,.1)', borderRadius: 4, margin: '14px 0 8px' }}>
                       <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${selectedCase.tbScore}%`, background: `linear-gradient(90deg, ${C.teal}, ${C.amber}, ${C.coral})`, borderRadius: 4 }} />
                       {/* Threshold marker */}
-                      <div style={{ position: 'absolute', left: `${whoThreshold}%`, top: -4, bottom: -4, width: 3, background: '#fff', boxShadow: '0 0 8px #fff' }} />
+                      <div style={{ position: 'absolute', left: `${whoThreshold}%`, top: -4, bottom: -4, width: 3, background: '#fff' }} />
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
@@ -1071,7 +791,7 @@ export default function TBPage() {
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
               <Link href="/lung-cancer" className="feat-card" style={{ textDecoration: 'none', display: 'block' }}>
-                <span className="tb-tag" style={{ color: C.violet, background: 'rgba(124,92,252,.15)' }}>LDCT · Oncology</span>
+                <span className="tb-tag">LDCT · Oncology</span>
                 <h3>qCT Lung Cancer</h3>
                 <p>3D nodule segmentation & 6-year Sybil cancer risk prediction.</p>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: C.teal, fontSize: 13, fontWeight: 600 }}>
@@ -1080,7 +800,7 @@ export default function TBPage() {
               </Link>
 
               <Link href="/cardiac" className="feat-card" style={{ textDecoration: 'none', display: 'block' }}>
-                <span className="tb-tag" style={{ color: '#FF5A78', background: 'rgba(255,90,120,.15)' }}>Cine MRI · Cardiology</span>
+                <span className="tb-tag">Cine MRI · Cardiology</span>
                 <h3>qCardiac Heart AI</h3>
                 <p>ACDC U-Net biventricular volumes & 17-segment AHA wall motion.</p>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: C.teal, fontSize: 13, fontWeight: 600 }}>
@@ -1089,7 +809,7 @@ export default function TBPage() {
               </Link>
 
               <Link href="/brain-tumor" className="feat-card" style={{ textDecoration: 'none', display: 'block' }}>
-                <span className="tb-tag" style={{ color: '#A855F7', background: 'rgba(168,85,247,.15)' }}>Multi-Seq MRI · Neuro</span>
+                <span className="tb-tag">Multi-Seq MRI · Neuro</span>
                 <h3>qBrain Tumor AI</h3>
                 <p>BraTS SegResNet multi-compartment glioma & WHO grading.</p>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: C.teal, fontSize: 13, fontWeight: 600 }}>

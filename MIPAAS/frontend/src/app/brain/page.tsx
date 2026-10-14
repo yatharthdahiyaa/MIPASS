@@ -7,6 +7,12 @@ export const metadata: Metadata = {
     'BraTS SegResNet multi-compartment glioma segmentation and 3D DenseNet WHO tumor grading.',
 };
 
+import ServiceGuard from '@/components/common/ServiceGuard';
+
 export default function Page() {
-  return <BrainTumorEnhanced />;
+  return (
+    <ServiceGuard serviceId="brain-tumor">
+      <BrainTumorEnhanced />
+    </ServiceGuard>
+  );
 }
