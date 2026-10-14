@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -200,9 +201,9 @@ export default function PatientPortal() {
         setErrorMessage(data.message || data.error?.message || 'Pipeline encountered a validation error.');
         setCurrentStep(0);
       }
-    } catch (err: any) {
+    } catch (err) {
       clearInterval(stepInterval);
-      setErrorMessage(`Network or processing error: ${err.message}`);
+      setErrorMessage(`Network or processing error: ${err instanceof Error ? err.message : String(err)}`);
       setCurrentStep(0);
     } finally {
       setIsProcessing(false);
@@ -260,8 +261,8 @@ POSITIVE RADIOLOGICAL FINDINGS:
 ${pipelineResult.positive_findings.map((f) => `- ${f.name}: ${f.percentage}% (Cutoff: ${f.threshold_percentage}%) -> ${f.description}`).join('\n')}
 
 EXPLAINABILITY & LOCALIZATION (Agent 6):
-Localization: ${pipelineResult.stages.agent_6_explainability.anatomical_localization}
-Attribution: ${pipelineResult.stages.agent_6_explainability.attribution_narrative}
+Localization: ${String(pipelineResult.stages.agent_6_explainability.anatomical_localization)}
+Attribution: ${String((pipelineResult.stages.agent_6_explainability as { attribution_narrative?: unknown })?.attribution_narrative ?? '')}
 
 RECOMMENDED CLINICAL ACTIONS:
 ${pipelineResult.report.recommendations.map((r: string, i: number) => `${i + 1}. ${r}`).join('\n')}
@@ -576,56 +577,56 @@ ${pipelineResult.report.medical_disclaimer}
                     </div>
                     {expandedAgent === 1 && (
                       <div className="space-y-1 font-mono text-[11px] text-slate-300">
-                        <p>Format Signature: {pipelineResult.stages.agent_1_validation.file_signature}</p>
-                        <p>MIME Type: {pipelineResult.stages.agent_1_validation.mime_type}</p>
-                        <p>Size: {pipelineResult.stages.agent_1_validation.file_size_kb} KB</p>
-                        <p>Integrity Hash: {pipelineResult.stages.agent_1_validation.sha256_hash}</p>
-                        <p className="text-emerald-400">Verdict: {pipelineResult.stages.agent_1_validation.authenticity_verdict}</p>
+                        <p>Format Signature: {String(pipelineResult.stages.agent_1_validation.file_signature)}</p>
+                        <p>MIME Type: {String(pipelineResult.stages.agent_1_validation.mime_type)}</p>
+                        <p>Size: {String(pipelineResult.stages.agent_1_validation.file_size_kb)} KB</p>
+                        <p>Integrity Hash: {String(pipelineResult.stages.agent_1_validation.sha256_hash)}</p>
+                        <p className="text-emerald-400">Verdict: {String(pipelineResult.stages.agent_1_validation.authenticity_verdict)}</p>
                       </div>
                     )}
                     {expandedAgent === 2 && (
                       <div className="space-y-1 font-mono text-[11px] text-slate-300">
-                        <p>Target Service: {pipelineResult.stages.agent_2_clinical_compatibility.selected_service}</p>
-                        <p>Detected Modality / Anatomy: {pipelineResult.stages.agent_2_clinical_compatibility.detected_modality} ({pipelineResult.stages.agent_2_clinical_compatibility.detected_anatomy})</p>
+                        <p>Target Service: {String(pipelineResult.stages.agent_2_clinical_compatibility.selected_service)}</p>
+                        <p>Detected Modality / Anatomy: {String(pipelineResult.stages.agent_2_clinical_compatibility.detected_modality)} ({String(pipelineResult.stages.agent_2_clinical_compatibility.detected_anatomy)})</p>
                         <p>Non-Biasing Isolation: {pipelineResult.stages.agent_2_clinical_compatibility.patient_context.non_biasing_enforcement}</p>
                         <p className="text-emerald-400">Decision: Compatible</p>
                       </div>
                     )}
                     {expandedAgent === 3 && (
                       <div className="space-y-1 font-mono text-[11px] text-slate-300">
-                        <p>Resolution: {pipelineResult.stages.agent_3_quality_assessment.dimensions}</p>
-                        <p>Laplacian Blur Variance: {pipelineResult.stages.agent_3_quality_assessment.laplacian_variance} (Threshold: 45.0)</p>
-                        <p>SNR: {pipelineResult.stages.agent_3_quality_assessment.snr_db} dB · Grade: {pipelineResult.stages.agent_3_quality_assessment.quality_grade}</p>
+                        <p>Resolution: {String(pipelineResult.stages.agent_3_quality_assessment.dimensions)}</p>
+                        <p>Laplacian Blur Variance: {String(pipelineResult.stages.agent_3_quality_assessment.laplacian_variance)} (Threshold: 45.0)</p>
+                        <p>SNR: {String(pipelineResult.stages.agent_3_quality_assessment.snr_db)} dB · Grade: {String(pipelineResult.stages.agent_3_quality_assessment.quality_grade)}</p>
                         <p className="text-emerald-400">Decision: Suitable for diagnostic analysis</p>
                       </div>
                     )}
                     {expandedAgent === 4 && (
                       <div className="space-y-1 font-mono text-[11px] text-slate-300">
-                        <p>Windowing: {pipelineResult.stages.agent_4_preprocessing.windowing_applied}</p>
-                        <p>Resampling: {pipelineResult.stages.agent_4_preprocessing.resampling_grid}</p>
+                        <p>Windowing: {String(pipelineResult.stages.agent_4_preprocessing.windowing_applied)}</p>
+                        <p>Resampling: {String(pipelineResult.stages.agent_4_preprocessing.resampling_grid)}</p>
                         <p>Tensor Shape: {JSON.stringify(pipelineResult.stages.agent_4_preprocessing.input_tensor_shape)}</p>
                       </div>
                     )}
                     {expandedAgent === 5 && (
                       <div className="space-y-1 font-mono text-[11px] text-slate-300">
-                        <p>Model: {pipelineResult.stages.agent_5_ai_inference.model_architecture}</p>
-                        <p>Primary Finding: {pipelineResult.stages.agent_5_ai_inference.primary_diagnosis} ({pipelineResult.stages.agent_5_ai_inference.primary_confidence_pct}%)</p>
+                        <p>Model: {String(pipelineResult.stages.agent_5_ai_inference.model_architecture)}</p>
+                        <p>Primary Finding: {String(pipelineResult.stages.agent_5_ai_inference.primary_diagnosis)} ({String(pipelineResult.stages.agent_5_ai_inference.primary_confidence_pct)}%)</p>
                         <p>Calibrated Threshold: {pipelineResult.stages.agent_5_ai_inference.calibrated_threshold * 100}%</p>
-                        <p className="text-amber-400">Severity: {pipelineResult.stages.agent_5_ai_inference.severity}</p>
+                        <p className="text-amber-400">Severity: {String(pipelineResult.stages.agent_5_ai_inference.severity)}</p>
                       </div>
                     )}
                     {expandedAgent === 6 && (
                       <div className="space-y-1 font-mono text-[11px] text-slate-300">
-                        <p>Attribution Method: {pipelineResult.stages.agent_6_explainability.method}</p>
-                        <p>Localization: {pipelineResult.stages.agent_6_explainability.anatomical_localization}</p>
-                        <p className="text-slate-400">{pipelineResult.stages.agent_6_explainability.uncertainty_caveat}</p>
+                        <p>Attribution Method: {String(pipelineResult.stages.agent_6_explainability.method)}</p>
+                        <p>Localization: {String(pipelineResult.stages.agent_6_explainability.anatomical_localization)}</p>
+                        <p className="text-slate-400">{String((pipelineResult.stages.agent_6_explainability as { uncertainty_caveat?: unknown })?.uncertainty_caveat ?? '')}</p>
                       </div>
                     )}
                     {expandedAgent === 7 && (
                       <div className="space-y-1 font-mono text-[11px] text-slate-300">
-                        <p>Report ID: {pipelineResult.stages.agent_7_report_generation.report_id}</p>
-                        <p>Digital Seal: {pipelineResult.stages.agent_7_report_generation.digital_signature}</p>
-                        <p className="text-emerald-400">Status: {pipelineResult.stages.agent_7_report_generation.verification_status}</p>
+                        <p>Report ID: {String(pipelineResult.stages.agent_7_report_generation.report_id)}</p>
+                        <p>Digital Seal: {String(pipelineResult.stages.agent_7_report_generation.digital_signature)}</p>
+                        <p className="text-emerald-400">Status: {String(pipelineResult.stages.agent_7_report_generation.verification_status)}</p>
                       </div>
                     )}
                   </div>
@@ -733,8 +734,8 @@ ${pipelineResult.report.medical_disclaimer}
                       {/* Technical metadata HUD overlay */}
                       <div className="absolute top-4 left-4 p-2 rounded-lg bg-slate-900/80 backdrop-blur-sm border border-slate-700 text-[10px] font-mono text-slate-300 pointer-events-none space-y-0.5">
                         <p className="text-teal-400 font-bold">CASE: {pipelineResult.case_id.split('-').slice(0, 2).join('-')}</p>
-                        <p>MODALITY: {pipelineResult.stages.agent_2_clinical_compatibility.detected_modality}</p>
-                        <p>DIM: {pipelineResult.stages.agent_3_quality_assessment.dimensions}</p>
+                        <p>MODALITY: {String(pipelineResult.stages.agent_2_clinical_compatibility.detected_modality)}</p>
+                        <p>DIM: {String(pipelineResult.stages.agent_3_quality_assessment.dimensions)}</p>
                         <p>WINDOW: LUNG HU</p>
                       </div>
 
@@ -768,11 +769,11 @@ ${pipelineResult.report.medical_disclaimer}
                       <span>Agent 6 Explainability &amp; Anatomical Focus</span>
                     </h4>
                     <p className="text-xs text-slate-700 leading-relaxed">
-                      {pipelineResult.stages.agent_6_explainability.attribution_narrative}
+                      {String((pipelineResult.stages.agent_6_explainability as { attribution_narrative?: unknown })?.attribution_narrative ?? '')}
                     </p>
                     <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 mt-2">
                       <strong className="text-slate-900 block mb-0.5">Clinical Caveat:</strong>
-                      {pipelineResult.stages.agent_6_explainability.uncertainty_caveat}
+                      {String((pipelineResult.stages.agent_6_explainability as { uncertainty_caveat?: unknown })?.uncertainty_caveat ?? '')}
                     </div>
                   </div>
                 </div>
@@ -879,7 +880,7 @@ ${pipelineResult.report.medical_disclaimer}
                       <span>Plain-Language Summary For You</span>
                     </h4>
                     <p className="text-xs text-slate-700 leading-relaxed">
-                      {pipelineResult.report.plain_language_patient_summary}
+                      {String((pipelineResult.report as { plain_language_patient_summary?: unknown })?.plain_language_patient_summary ?? '')}
                     </p>
                   </div>
                 </div>

@@ -37,7 +37,7 @@ const navLinks = [
   { label: 'Evidence', href: '/#evidence' },
 ];
 
-const IAM_SIGNIN_URL = process.env.NEXT_PUBLIC_IAM_URL || 'http://localhost:5173/signin';
+const LOGIN_URL = '/login?redirect=/doctor';
 
 export default function Navbar() {
   const { services, activeServices } = useServices();
@@ -127,9 +127,9 @@ export default function Navbar() {
               </button>
             </div>
           ) : (
-            <a href={IAM_SIGNIN_URL} className="button-primary nav-cta" title="Sign in via IAM RBAC Portal">
+            <Link href={LOGIN_URL} className="button-primary nav-cta" title="Sign in to the MiPAAS platform">
               Login <ArrowRight size={15} />
-            </a>
+            </Link>
           )}
         </div>
         <button ref={triggerRef} type="button" className="mobile-trigger" aria-label="Open menu" aria-expanded={mobileOpen} aria-controls="mobile-navigation" onClick={() => setMobileOpen(true)}><Menu size={25} /></button>
@@ -139,7 +139,7 @@ export default function Navbar() {
         <button type="button" className="mobile-pathway-toggle" aria-expanded={mobileProductsOpen} aria-controls="mobile-pathways" onClick={() => setMobileProductsOpen(!mobileProductsOpen)}>Clinical pathways <ChevronDown size={20} className={mobileProductsOpen ? 'rotate-180' : ''} /></button>
         {mobileProductsOpen && <div id="mobile-pathways" className="mobile-pathways">{navProductList.map((item) => <Link key={item.id} href={item.href} onClick={closeMobile}><span>{item.name}{item.status && item.status !== 'active' && <small>Temporarily unavailable</small>}</span><span>{item.modality}</span></Link>)}</div>}
         <div className="mobile-nav-links">{navLinks.map((link) => <Link key={link.href} href={link.href} onClick={closeMobile}>{link.label}<ArrowRight size={18} /></Link>)}</div>
-        <a href={IAM_SIGNIN_URL} onClick={closeMobile} className="button-primary">Login to IAM <ArrowRight size={17} /></a>
+        <Link href={LOGIN_URL} onClick={closeMobile} className="button-primary">Login to MiPAAS <ArrowRight size={17} /></Link>
       </div>}
     </nav>
   );

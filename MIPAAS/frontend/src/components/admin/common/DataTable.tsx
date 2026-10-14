@@ -28,7 +28,7 @@ interface DataTableProps<T> {
   emptyMessage?: string;
 }
 
-export default function DataTable<T extends Record<string, any>>({
+export default function DataTable<T extends object>({
   columns,
   data,
   searchPlaceholder = 'Filter records...',
@@ -74,7 +74,7 @@ export default function DataTable<T extends Record<string, any>>({
     const rows = filteredData.map((row) =>
       activeCols
         .map((c) => {
-          const val = row[c.key];
+          const val = (row as Record<string, unknown>)[c.key];
           return `"${String(val ?? '').replace(/"/g, '""')}"`;
         })
         .join(',')
@@ -213,7 +213,7 @@ export default function DataTable<T extends Record<string, any>>({
                     .filter((c) => visibleColumns[c.key])
                     .map((c) => (
                       <td key={c.key} className="py-2.5 px-4 text-gray-200">
-                        {c.render ? c.render(row) : row[c.key]}
+                        {c.render ? c.render(row) : String((row as Record<string, unknown>)[c.key] ?? '')}
                       </td>
                     ))}
                 </tr>

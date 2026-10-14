@@ -24,7 +24,7 @@ interface RBACContextType {
     action: string,
     resource: string,
     decision: 'allow' | 'deny',
-    details?: Record<string, any>
+    details?: Record<string, unknown>,
   ) => void;
   isRBACModalOpen: boolean;
   setRBACModalOpen: (open: boolean) => void;
@@ -136,7 +136,7 @@ export function RBACProvider({ children }: { children: React.ReactNode }) {
       action: string,
       resource: string,
       decision: 'allow' | 'deny',
-      details?: Record<string, any>
+      details?: Record<string, unknown>,
     ) => {
       const newEntry: AuditLogEntry = {
         id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,

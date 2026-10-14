@@ -3,8 +3,8 @@ import { ArrowRight, FileCode } from 'lucide-react';
 
 interface DiffItem {
   field: string;
-  before: any;
-  after: any;
+  before: unknown;
+  after: unknown;
 }
 
 interface AuditDiffProps {

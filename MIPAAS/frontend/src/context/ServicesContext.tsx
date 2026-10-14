@@ -52,7 +52,7 @@ export function ServicesProvider({ children }: { children: React.ReactNode }) {
         const parsed = JSON.parse(savedServices);
         if (Array.isArray(parsed) && parsed.length > 0) {
           const merged = INITIAL_SERVICES.map((initial) => {
-            const found = parsed.find((p: any) => p.id === initial.id);
+            const found = parsed.find((p) => (p as { id?: string } | null)?.id === initial.id) as Partial<ServiceConfig> | undefined;
             return found ? { ...initial, ...found } : initial;
           });
           setServices(merged);

@@ -1,10 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { INITIAL_SERVICES, INITIAL_SERVICE_AUDIT_LOGS } from '@/config/servicesData';
 import { ServiceConfig, ServiceAuditEntry, ServiceStatus } from '@/types/services';
+import fs from 'fs';
+import path from 'path';
 
-// Server-side in-memory store (persists across requests during runtime)
-let currentServices: ServiceConfig[] = [...INITIAL_SERVICES];
-let currentAuditLogs: ServiceAuditEntry[] = [...INITIAL_SERVICE_AUDIT_LOGS];
+const STATE_FILE_PATH = path.join(process.cwd(), '.services-state.json');
+
+function loadServicesState() {
+  try {
+    const raw = fs.readFileSync(STATE_FILE_PATH, 'utf-8');
+    const parsed = JSON.parse(raw) as { services?: unknown; auditLogs?: unknown };
+    return {
+      services: Array.isArray(parsed.services) ? parsed.services : [...INITIAL_SERVICES].map((s) => ({ ...s })),
+      auditLogs: Array.isArray(parsed.auditLogs) ? parsed.auditLogs : [...INITIAL_SERVICE_AUDIT_LOGS],
+    };
+  } catch {
+    return { services: [...INITIAL_SERVICES].map((s) => ({ ...s })), auditLogs: [...INITIAL_SERVICE_AUDIT_LOGS] };
+  }
+}
+
+function persistServicesState() {
+  try {
+    fs.writeFileSync(
+      STATE_FILE_PATH,
+      JSON.stringify({ services: currentServices, auditLogs: currentAuditLogs })
+    );
+  } catch {
+    // Ignore persistence failures; in-memory state remains active
+  }
+}
+
+// Server-side persistent store (survives Next.js restarts during development)
+const loadedState = loadServicesState();
+let currentServices: ServiceConfig[] = loadedState.services as ServiceConfig[];
+let currentAuditLogs: ServiceAuditEntry[] = loadedState.auditLogs as ServiceAuditEntry[];
 
 export async function GET() {
   return NextResponse.json({
@@ -44,6 +73,7 @@ export async function POST(req: NextRequest) {
         role,
       };
       currentAuditLogs = [newAudit, ...currentAuditLogs.slice(0, 49)];
+persistServicesState();
       return NextResponse.json({ success: true, data: { services: currentServices, auditLogs: currentAuditLogs } });
     }
 
@@ -67,6 +97,7 @@ export async function POST(req: NextRequest) {
         role,
       };
       currentAuditLogs = [newAudit, ...currentAuditLogs.slice(0, 49)];
+persistServicesState();
       return NextResponse.json({ success: true, data: { services: currentServices, auditLogs: currentAuditLogs } });
     }
 
@@ -89,6 +120,7 @@ export async function POST(req: NextRequest) {
         role,
       };
       currentAuditLogs = [newAudit, ...currentAuditLogs.slice(0, 49)];
+persistServicesState();
       return NextResponse.json({ success: true, data: { services: currentServices, auditLogs: currentAuditLogs } });
     }
 
@@ -132,6 +164,7 @@ export async function POST(req: NextRequest) {
       };
 
       currentAuditLogs = [newAudit, ...currentAuditLogs.slice(0, 49)];
+persistServicesState();
 
       return NextResponse.json({
         success: true,
@@ -144,7 +177,7 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ success: false, error: 'Invalid request' }, { status: 400 });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  } catch (err) {
+    return NextResponse.json({ success: false, error: err instanceof Error ? err.message : 'Invalid request' }, { status: 500 });
   }
 }

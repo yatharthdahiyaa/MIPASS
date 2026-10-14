@@ -53,7 +53,7 @@ export interface AuditLogEntry {
   action: string;
   resource: string;
   decision: 'allow' | 'deny';
-  details?: Record<string, any>;
+  details?: Record<string, unknown>;
 }
 
 export const ROLE_DEFINITIONS: Record<Role, RoleMeta> = {

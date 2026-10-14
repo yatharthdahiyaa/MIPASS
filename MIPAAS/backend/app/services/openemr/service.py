@@ -229,6 +229,108 @@ class OpenEMRManagementService:
         ]
         for o in orders:
             self._orders[o.procedure_order_id] = o
+        self._sync_with_central_db()
+
+    def _sync_with_central_db(self) -> None:
+        """Hydrate memory cache and sync with central relational database."""
+        try:
+            from app.database.session import get_db
+            from app.database.models.clinical import ClinicalPatient
+            with get_db() as db:
+                for db_p in db.query(ClinicalPatient).all():
+                    if db_p.id not in self._patients:
+                        self._patients[db_p.id] = OpenEMRPatient(
+                            id=db_p.id,
+                            pid=db_p.mrn.replace("MRN-", ""),
+                            pubpid=db_p.mrn,
+                            fname=db_p.fname,
+                            lname=db_p.lname,
+                            dob=db_p.dob,
+                            sex=db_p.gender,
+                            phone=db_p.phone,
+                            email=db_p.email,
+                            street=db_p.street,
+                            city=db_p.city,
+                            state=db_p.state,
+                            postal_code=db_p.postal_code,
+                            insurance_provider=db_p.insurance_provider,
+                        )
+        except Exception as exc:
+            logger.debug("openemr_db_sync_deferred", error=str(exc))
+
+    def _save_patient_to_db(self, patient: OpenEMRPatient) -> None:
+        try:
+            from app.database.session import get_db
+            from app.database.models.clinical import ClinicalPatient
+            with get_db() as db:
+                existing = db.query(ClinicalPatient).filter_by(id=patient.id).first()
+                if not existing:
+                    db.add(ClinicalPatient(
+                        id=patient.id,
+                        mrn=patient.pubpid,
+                        fname=patient.fname,
+                        lname=patient.lname,
+                        dob=patient.dob,
+                        gender=patient.sex,
+                        phone=patient.phone,
+                        email=patient.email,
+                        street=patient.street,
+                        city=patient.city,
+                        state=patient.state,
+                        postal_code=patient.postal_code,
+                        insurance_provider=patient.insurance_provider,
+                    ))
+        except Exception as exc:
+            logger.debug("openemr_patient_db_save_deferred", error=str(exc))
+
+    def _save_order_to_db(self, order: OpenEMRProcedureOrder) -> None:
+        try:
+            from app.database.session import get_db
+            from app.database.models.clinical import ProcedureOrder
+            with get_db() as db:
+                existing = db.query(ProcedureOrder).filter_by(id=order.procedure_order_id).first()
+                if not existing:
+                    db.add(ProcedureOrder(
+                        id=order.procedure_order_id,
+                        order_number=order.procedure_order_id.upper(),
+                        patient_id=order.patient_id,
+                        encounter_id=order.encounter_id,
+                        procedure_code=order.procedure_code,
+                        procedure_name=order.procedure_name,
+                        modality=order.modality,
+                        priority=order.order_priority.value if hasattr(order.order_priority, 'value') else str(order.order_priority),
+                        status=order.order_status.value if hasattr(order.order_status, 'value') else str(order.order_status),
+                        clinical_indication=order.clinical_notes,
+                    ))
+        except Exception as exc:
+            logger.debug("openemr_order_db_save_deferred", error=str(exc))
+
+    def _save_report_to_db(self, report: OpenEMRProcedureReport) -> None:
+        try:
+            from app.database.session import get_db
+            from app.database.models.clinical import ProcedureReport, ProcedureOrder
+            with get_db() as db:
+                existing = db.query(ProcedureReport).filter_by(id=report.procedure_report_id).first()
+                if not existing:
+                    order_obj = self.get_order(report.procedure_order_id)
+                    patient_id = order_obj.patient_id if order_obj else "unknown"
+                    db.add(ProcedureReport(
+                        id=report.procedure_report_id,
+                        report_number=report.procedure_report_id.upper(),
+                        order_id=report.procedure_order_id,
+                        patient_id=patient_id,
+                        status=report.report_status.value if hasattr(report.report_status, 'value') else str(report.report_status),
+                        findings=report.report_notes,
+                        impression=report.ai_prediction_summary,
+                        signed_by=report.signed_by_provider_name,
+                        signed_at=report.signed_at,
+                    ))
+                db_order = db.query(ProcedureOrder).filter_by(id=report.procedure_order_id).first()
+                if db_order:
+                    db_order.status = "completed"
+        except Exception as exc:
+            logger.debug("openemr_report_db_save_deferred", error=str(exc))
+
 
     # ─────────────────────────────────────────────────────────────
     # Practitioner & User Management (users table)
@@ -318,6 +420,7 @@ class OpenEMRManagementService:
             insurance_provider=data.get("insurance_provider"),
         )
         self._patients[pat_id] = new_patient
+        self._save_patient_to_db(new_patient)
         logger.info("openemr_patient_registered", patient_id=pat_id, mrn=mrn)
         return new_patient
 
@@ -436,6 +539,7 @@ class OpenEMRManagementService:
             patient_history=data.get("patient_history", ""),
         )
         self._orders[order_id] = order
+        self._save_order_to_db(order)
         logger.info("openemr_order_created", order_id=order_id, code=order.procedure_code)
         return order
 
@@ -493,6 +597,7 @@ class OpenEMRManagementService:
             signed_at=now,
         )
         self._reports[report_id] = report
+        self._save_report_to_db(report)
 
         # Update order status
         order = self.get_order(procedure_order_id)

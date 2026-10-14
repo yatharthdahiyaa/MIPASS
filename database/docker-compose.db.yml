@@ -1,0 +1,39 @@
+# ─────────────────────────────────────────────────────────────
+# MiPAAS Dedicated Central Database Stack
+# Spin up with: docker compose -f database/docker-compose.db.yml up -d
+# ─────────────────────────────────────────────────────────────
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: mipaas_central_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: mipaas
+      POSTGRES_PASSWORD: mipaas_dev_pass
+      POSTGRES_DB: mipaas_central
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_central_data:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mipaas -d mipaas_central"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Web GUI for inspecting and editing tables
+  adminer:
+    image: adminer:latest
+    container_name: mipaas_central_adminer
+    restart: always
+    ports:
+      - "8088:8080"
+    depends_on:
+      - postgres
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+
+volumes:
+  postgres_central_data:

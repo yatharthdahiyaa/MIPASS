@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
           { status: 500 }
         );
       }
-    } catch (execErr: any) {
+    } catch (execErr) {
       if (isTempFile) {
         try {
           await fs.unlink(targetFilePath);
@@ -104,16 +104,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           status: "error",
-          message: `7-Agent Diagnostic Pipeline execution failed: ${execErr.message}`,
+          message: `7-Agent Diagnostic Pipeline execution failed: ${execErr instanceof Error ? execErr.message : String(execErr)}`,
         },
         { status: 500 }
       );
     }
-  } catch (err: any) {
+  } catch (err) {
     return NextResponse.json(
       {
         status: "error",
-        message: `Internal server error: ${err.message}`,
+        message: `Internal server error: ${err instanceof Error ? err.message : String(err)}`,
       },
       { status: 500 }
     );

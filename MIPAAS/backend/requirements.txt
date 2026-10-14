@@ -14,12 +14,14 @@ google-cloud-secret-manager>=2.20
 google-cloud-logging>=3.11
 google-auth>=2.34
 
-# Utilities
+# Utilities & Database
 pyyaml>=6.0
 marshmallow>=3.22
 python-dotenv>=1.0
 structlog>=24.4
 redis>=5.1
+sqlalchemy>=2.0
+psycopg2-binary>=2.9
 
 # Medical imaging (lightweight, for metadata parsing only)
 pydicom>=3.0

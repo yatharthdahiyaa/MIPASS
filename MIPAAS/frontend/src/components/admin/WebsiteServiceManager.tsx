@@ -340,7 +340,7 @@ export default function WebsiteServiceManager() {
                 <button
                   key={pill.key}
                   type="button"
-                  onClick={() => setFilterMode(pill.key as any)}
+                  onClick={() => setFilterMode(pill.key as 'all' | 'active' | 'closed' | 'listed' | 'unlisted')}
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                     filterMode === pill.key
                       ? 'bg-teal-600 text-white shadow-xs'
@@ -800,7 +800,7 @@ export default function WebsiteServiceManager() {
                 </label>
                 <select
                   value={editReason}
-                  onChange={(e) => setEditReason(e.target.value as any)}
+                  onChange={(e) => setEditReason(e.target.value as MaintenanceReason)}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 focus:outline-none focus:border-teal-600 focus:bg-white"
                 >
                   <option value="scheduled_maintenance">Scheduled Platform Maintenance</option>

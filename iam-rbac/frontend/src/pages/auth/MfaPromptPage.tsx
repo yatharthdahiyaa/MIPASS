@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { authApi } from '../../api/auth';
 import { useAuth } from '../../context/AuthContext';
@@ -55,8 +56,10 @@ export function MfaPromptPage() {
       });
 
       if (res.success && res.data?.user) {
-        loginUser(res.data.user);
-        navigate('/dashboard');
+        flushSync(() => {
+          loginUser(res.data.user);
+        });
+        navigate('/dashboard', { replace: true });
       }
     } catch (err: any) {
       setError(err.message || 'Invalid MFA code. Please try again.');

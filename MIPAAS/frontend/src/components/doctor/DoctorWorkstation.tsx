@@ -381,7 +381,7 @@ export default function DoctorWorkstation() {
           signed_by: `${doctorName} (${licenseId})`,
         });
         setNotification(`Report certified & filed into OpenEMR (Order #${activeCase.order_id}) with signature ${sig}`);
-      } catch (err: any) {
+      } catch (err) {
         setNotification(`Report certified with digital hash ${sig} (OpenEMR status: saved locally)`);
       }
     } else {

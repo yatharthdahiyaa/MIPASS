@@ -159,8 +159,8 @@ export interface AuditRecord {
   reason?: string;
   diff?: {
     field: string;
-    before: any;
-    after: any;
+    before: unknown;
+    after: unknown;
   }[];
 }
 

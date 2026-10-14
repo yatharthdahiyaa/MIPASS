@@ -29,6 +29,30 @@ logger = structlog.get_logger()
 openemr_bp = Blueprint("openemr", __name__)
 
 
+@openemr_bp.route("/emr/status", methods=["GET"])
+def get_openemr_status():
+    """Return OpenEMR service health and basic counts."""
+    service = get_openemr_service()
+    patients = service.list_patients()
+    orders = service.list_orders()
+
+    def _status_value(order):
+        status = getattr(order, "order_status", None)
+        return str(getattr(status, "value", status)).lower()
+
+    active_orders = [
+        order for order in orders if _status_value(order) in {"pending", "in_progress"}
+    ]
+
+    return api_response({
+        "status": "healthy",
+        "service": "openemr",
+        "version": "1.0",
+        "registered_patients": len(patients),
+        "active_orders": len(active_orders),
+    })
+
+
 # ─────────────────────────────────────────────────────────────
 # 1. Practitioners & Users (OpenEMR users table)
 # ─────────────────────────────────────────────────────────────

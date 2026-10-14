@@ -1541,7 +1541,7 @@ export default function OpenEMRHub() {
                   <label className="font-bold block mb-1">Biological Sex *</label>
                   <select
                     value={newPatientForm.sex}
-                    onChange={(e) => setNewPatientForm({ ...newPatientForm, sex: e.target.value as any })}
+                    onChange={(e) => setNewPatientForm({ ...newPatientForm, sex: e.target.value as 'Male' | 'Female' | 'Other' })}
                     className="w-full px-3 py-2 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-black/30 focus:outline-none focus:border-[#006699]"
                   >
                     <option value="Female">Female</option>
@@ -1631,7 +1631,7 @@ export default function OpenEMRHub() {
                   <label className="font-bold block mb-1">Imaging Modality *</label>
                   <select
                     value={newOrderForm.modality}
-                    onChange={(e) => setNewOrderForm({ ...newOrderForm, modality: e.target.value as any })}
+                    onChange={(e) => setNewOrderForm({ ...newOrderForm, modality: e.target.value as 'CT' | 'CXR' | 'MRI' })}
                     className="w-full px-3 py-2 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-black/30 focus:outline-none"
                   >
                     <option value="CT">CT Volume (Thorax/Head)</option>
@@ -1643,7 +1643,7 @@ export default function OpenEMRHub() {
                   <label className="font-bold block mb-1">Priority Gate *</label>
                   <select
                     value={newOrderForm.order_priority}
-                    onChange={(e) => setNewOrderForm({ ...newOrderForm, order_priority: e.target.value as any })}
+                    onChange={(e) => setNewOrderForm({ ...newOrderForm, order_priority: e.target.value as 'STAT' | 'URGENT' | 'ROUTINE' })}
                     className="w-full px-3 py-2 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-black/30 focus:outline-none"
                   >
                     <option value="ROUTINE">ROUTINE</option>

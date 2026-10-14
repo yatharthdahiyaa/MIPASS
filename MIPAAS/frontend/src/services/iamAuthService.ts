@@ -136,8 +136,8 @@ export const iamAuthService = {
     const data = await res.json();
     if (!res.ok) {
       const errorObj = new Error(data.message || 'Incorrect credentials.');
-      (errorObj as any).error = data.error;
-      (errorObj as any).status = res.status;
+      (errorObj as unknown as Record<string, unknown>).error = data.error;
+      (errorObj as unknown as Record<string, unknown>).status = res.status;
       throw errorObj;
     }
     return data;

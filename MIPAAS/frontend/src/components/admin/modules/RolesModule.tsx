@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useMultiLevelAdmin } from '@/context/MultiLevelAdminContext';
-import { RoleDefinition } from '@/types/multiLevelRbac';
+import { AccessLevel, Action, PermissionScope, Resource, RoleDefinition } from '@/types/multiLevelRbac';
 import { BUILT_IN_ROLES } from '@/utils/multiLevelRbacDefaults';
 import PermissionMatrix from '../common/PermissionMatrix';
 import {
@@ -19,6 +19,67 @@ import {
 export default function RolesModule() {
   const { simulateRole, addAuditLog } = useMultiLevelAdmin();
   const [allRoles, setAllRoles] = useState<RoleDefinition[]>(BUILT_IN_ROLES);
+
+  // Live-sync role catalogue with backend RBAC store when available
+  useEffect(() => {
+    const loadBackendRoles = async () => {
+      try {
+        const response = await fetch('http://localhost:8080/api/v1/rbac/roles', {
+          headers: {
+            Accept: 'application/json',
+            'X-User-ID': 'admin-01',
+            'X-User-Role': 'admin',
+          },
+        }).catch(async () => {
+          return fetch('/api/v1/rbac/roles', {
+            headers: {
+              Accept: 'application/json',
+              'X-User-ID': 'admin-01',
+              'X-User-Role': 'admin',
+            },
+          });
+        });
+
+        if (!response.ok) return;
+        const payload = await response.json();
+        const remoteRoles = (payload?.data?.roles ?? payload?.roles ?? {}) as Record<string, unknown>;
+
+        const mapped: RoleDefinition[] = Object.entries(remoteRoles).map(([key, value]) => {
+          const r = (value ?? {}) as Record<string, unknown>;
+          const rawPermissions = Array.isArray(r.permissions) ? (r.permissions as unknown[]) : [];
+          const permissions = rawPermissions.map((p) => {
+            const [resource, action] = String(p).split(':');
+            return {
+              resource: resource as Resource,
+              action: action as Action,
+              scope: 'platform' as PermissionScope,
+            };
+          });
+
+          return {
+            id: key,
+            name: String(r.title ?? key),
+            level: 'level_1_organisation' as AccessLevel,
+            levelLabel: 'Backend RBAC',
+            description: String(r.description ?? ''),
+            isBuiltIn: true,
+            permissions,
+            userCount: Number(r.permissions_count ?? rawPermissions.length),
+          };
+        });
+
+        if (mapped.length > 0) {
+          setAllRoles(mapped);
+          setSelectedRole(mapped[0]);
+        }
+      } catch {
+        // Keep prefetched demo roles if backend is unavailable
+      }
+    };
+
+    void loadBackendRoles();
+  }, []);
+
   const [selectedRole, setSelectedRole] = useState<RoleDefinition>(allRoles[0]);
 
   const handleCloneRole = (cloned: RoleDefinition) => {

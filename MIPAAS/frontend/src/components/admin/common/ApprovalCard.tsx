@@ -18,7 +18,7 @@ interface ApprovalCardProps {
   requiresSecondSigner?: boolean;
   onApprove?: () => void;
   onReject?: () => void;
-  diffSummary?: { field: string; before: any; after: any }[];
+  diffSummary?: { field: string; before: unknown; after: unknown }[];
 }
 
 export default function ApprovalCard({

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { authApi } from '../../api/auth';
 import { useAuth } from '../../context/AuthContext';
@@ -77,13 +78,17 @@ export function SignInStep2Page() {
             },
           });
         } else if (res.data?.user) {
-          loginUser(res.data.user);
+          // Flush the auth-state update synchronously so the dashboard and layout
+          // (sidebar, navbar, role/permission gating) render with the new user.
+          flushSync(() => {
+            loginUser(res.data.user);
+          });
           try {
             localStorage.setItem('mipaas_iam_user', JSON.stringify(res.data.user));
           } catch {
             // ignore
           }
-          navigate('/dashboard');
+          navigate('/dashboard', { replace: true });
         }
       }
     } catch (err: any) {

@@ -100,6 +100,13 @@ export default function LoginPage() {
     iamAuthService.checkHealth().then((online) => setIamBackendOnline(online));
   }, []);
 
+  // Fall back to clinical demo credentials when the IAM backend is unavailable
+  useEffect(() => {
+    if (iamBackendOnline === false) {
+      setAuthMode('clinical');
+    }
+  }, [iamBackendOnline]);
+
   // Generate floating particles on mount
   useEffect(() => {
     const pts = Array.from({ length: 40 }, (_, i) => ({
@@ -115,183 +122,278 @@ export default function LoginPage() {
   useEffect(() => {
     const el = canvasRef.current;
     if (!el) return;
-    let cleanup = false;
+    let disposed = false;
+    let teardown: (() => void) | null = null;
 
-    const loadThree = async () => {
-      const threeModule = await import('three').catch(() => null);
-      if (!threeModule || cleanup) return;
-      const THREE = threeModule;
+    const initThree = async () => {
+      const THREE = await import('three').catch(() => null);
+      if (!THREE || disposed) return;
 
-      const W = () => el.clientWidth;
-      const H = () => el.clientHeight;
+      const sizeOf = () => ({
+        w: Math.max(el.clientWidth, 1),
+        h: Math.max(el.clientHeight, 1),
+      });
+      let { w, h } = sizeOf();
 
       const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
       renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-      renderer.setSize(W(), H());
-      el.appendChild(renderer.domElement);
+      renderer.setSize(w, h);
       renderer.domElement.style.position = 'absolute';
-      renderer.domElement.style.inset = '0';
+      renderer.domElement.style.top = '0';
+      renderer.domElement.style.left = '0';
+      renderer.domElement.style.opacity = '0';
+      renderer.domElement.style.transition = 'opacity 1.2s ease-out';
+      el.appendChild(renderer.domElement);
 
       const scene = new THREE.Scene();
-      const cam = new THREE.PerspectiveCamera(50, W() / H(), 0.1, 100);
-      cam.position.set(0, 0, 8.5);
+      scene.fog = new THREE.FogExp2(0x050a10, 0.045);
+
+      const cam = new THREE.PerspectiveCamera(48, w / h, 0.1, 60);
+      cam.position.set(0, 0.2, 9);
 
       const root = new THREE.Group();
       scene.add(root);
 
-      // ── Shield shape (torus knot representing security) ──
-      const shieldGeo = new THREE.TorusKnotGeometry(0.72, 0.18, 140, 18, 2, 3);
-      const shieldMat = new THREE.MeshBasicMaterial({
-        color: 0x00dcce,
-        wireframe: true,
-        transparent: true,
-        opacity: 0.25,
-      });
-      const shield = new THREE.Mesh(shieldGeo, shieldMat);
-      shield.position.set(0, 1.5, 0);
+      const disposables: Array<{ dispose: () => void }> = [];
+      const track = <T extends { dispose: () => void }>(obj: T): T => {
+        disposables.push(obj);
+        return obj;
+      };
+
+      // ── Lighting: gives the geometry real shaded depth ──
+      scene.add(new THREE.AmbientLight(0x1a2c3d, 1.6));
+      const tealLight = new THREE.PointLight(0x00dcce, 60, 30, 2);
+      tealLight.position.set(5, 3, 6);
+      const violetLight = new THREE.PointLight(0x7c5cfc, 45, 30, 2);
+      violetLight.position.set(-6, -3, 5);
+      const coralLight = new THREE.PointLight(0xff7869, 25, 25, 2);
+      coralLight.position.set(0, 5, -5);
+      scene.add(tealLight, violetLight, coralLight);
+
+      // ── Security knot (torus knot, physically shaded) ──
+      const knotGeo = track(new THREE.TorusKnotGeometry(0.78, 0.2, 220, 36, 2, 3));
+      const knotMat = track(
+        new THREE.MeshStandardMaterial({
+          color: 0x0e273a,
+          metalness: 0.9,
+          roughness: 0.18,
+          emissive: 0x00dcce,
+          emissiveIntensity: 0.16,
+        })
+      );
+      const shield = new THREE.Mesh(knotGeo, knotMat);
+      shield.position.set(0, 1.6, 0);
       root.add(shield);
 
-      // ── Inner glow sphere ──
-      const glowGeo = new THREE.SphereGeometry(0.5, 32, 32);
-      const glowMat = new THREE.MeshBasicMaterial({
-        color: 0x7c5cfc,
-        transparent: true,
-        opacity: 0.14,
-      });
+      // ── Inner core glow ──
+      const glowGeo = track(new THREE.SphereGeometry(0.52, 32, 32));
+      const glowMat = track(
+        new THREE.MeshBasicMaterial({
+          color: 0x7c5cfc,
+          transparent: true,
+          opacity: 0.16,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          fog: false,
+        })
+      );
       const glow = new THREE.Mesh(glowGeo, glowMat);
-      glow.position.set(0, 1.5, 0);
+      glow.position.copy(shield.position);
       root.add(glow);
 
-      // ── DNA-like helix around shield ──
-      const helixPoints1: InstanceType<typeof THREE.Vector3>[] = [];
-      const helixPoints2: InstanceType<typeof THREE.Vector3>[] = [];
-      for (let i = 0; i < 220; i++) {
-        const t = (i / 220) * Math.PI * 6;
-        const y = (i / 220) * 6.4 - 3.2;
-        helixPoints1.push(new THREE.Vector3(Math.cos(t) * 2.3, y, Math.sin(t) * 2.3));
-        helixPoints2.push(new THREE.Vector3(Math.cos(t + Math.PI) * 2.3, y, Math.sin(t + Math.PI) * 2.3));
+      // ── DNA helix strands as shaded instanced beads ──
+      const STRAND_N = 72;
+      const helixR = 2.35;
+      const helixH = 6.6;
+      const helixTurns = Math.PI * 5.4;
+      const beadGeo = track(new THREE.SphereGeometry(0.085, 14, 14));
+      const beadMatA = track(
+        new THREE.MeshStandardMaterial({
+          color: 0x00dcce,
+          emissive: 0x00dcce,
+          emissiveIntensity: 0.5,
+          metalness: 0.3,
+          roughness: 0.4,
+        })
+      );
+      const beadMatB = track(
+        new THREE.MeshStandardMaterial({
+          color: 0x98aed9,
+          emissive: 0x4b6a9b,
+          emissiveIntensity: 0.4,
+          metalness: 0.3,
+          roughness: 0.4,
+        })
+      );
+      const strandA = new THREE.InstancedMesh(beadGeo, beadMatA, STRAND_N);
+      const strandB = new THREE.InstancedMesh(beadGeo, beadMatB, STRAND_N);
+      const dummy = new THREE.Object3D();
+      type Vec3 = InstanceType<typeof THREE.Vector3>;
+      const posA: Vec3[] = [];
+      const posB: Vec3[] = [];
+      for (let i = 0; i < STRAND_N; i++) {
+        const f = i / (STRAND_N - 1);
+        const t = f * helixTurns;
+        const y = f * helixH - helixH / 2;
+        const a = new THREE.Vector3(Math.cos(t) * helixR, y, Math.sin(t) * helixR);
+        const b = new THREE.Vector3(Math.cos(t + Math.PI) * helixR, y, Math.sin(t + Math.PI) * helixR);
+        posA.push(a);
+        posB.push(b);
+        dummy.position.copy(a);
+        dummy.scale.setScalar(1);
+        dummy.updateMatrix();
+        strandA.setMatrixAt(i, dummy.matrix);
+        dummy.position.copy(b);
+        dummy.updateMatrix();
+        strandB.setMatrixAt(i, dummy.matrix);
       }
-      const helixGeo1 = new THREE.BufferGeometry().setFromPoints(helixPoints1);
-      const helixGeo2 = new THREE.BufferGeometry().setFromPoints(helixPoints2);
-      const helixMat1 = new THREE.LineBasicMaterial({ color: 0x00dcce, transparent: true, opacity: 0.3 });
-      const helixMat2 = new THREE.LineBasicMaterial({ color: 0x98aed9, transparent: true, opacity: 0.2 });
-      root.add(new THREE.Line(helixGeo1, helixMat1));
-      root.add(new THREE.Line(helixGeo2, helixMat2));
+      root.add(strandA, strandB);
 
-      // ── Cross-links between helices ──
-      for (let i = 0; i < 220; i += 12) {
-        const crossGeo = new THREE.BufferGeometry().setFromPoints([helixPoints1[i], helixPoints2[i]]);
-        const crossMat = new THREE.LineBasicMaterial({ color: 0xff7869, transparent: true, opacity: 0.12 });
-        root.add(new THREE.Line(crossGeo, crossMat));
+      // ── Base-pair rungs ──
+      const rungGeo = track(new THREE.CylinderGeometry(0.03, 0.03, 1, 8));
+      const rungMat = track(
+        new THREE.MeshStandardMaterial({
+          color: 0xff7869,
+          emissive: 0xff7869,
+          emissiveIntensity: 0.3,
+          transparent: true,
+          opacity: 0.55,
+          roughness: 0.5,
+        })
+      );
+      const up = new THREE.Vector3(0, 1, 0);
+      for (let i = 2; i < STRAND_N; i += 4) {
+        const from = posA[i];
+        const dir = posB[i].clone().sub(from);
+        const len = dir.length();
+        const rung = new THREE.Mesh(rungGeo, rungMat);
+        rung.position.copy(from).addScaledVector(dir, 0.5);
+        rung.quaternion.setFromUnitVectors(up, dir.normalize());
+        rung.scale.set(1, len, 1);
+        root.add(rung);
       }
 
-      // ── Orbiting particles (hardware accelerated rotation) ──
-      const orbitN = 160;
+      // ── Orbiting particle shell ──
+      const orbitN = 220;
       const orbitPos = new Float32Array(orbitN * 3);
       const orbitCol = new Float32Array(orbitN * 3);
       const tealC = new THREE.Color(0x00dcce);
       const violetC = new THREE.Color(0x7c5cfc);
       for (let i = 0; i < orbitN; i++) {
         const theta = Math.random() * Math.PI * 2;
-        const phi = Math.random() * Math.PI;
-        const r = 2.4 + Math.random() * 0.9;
-        orbitPos[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
+        const phi = Math.acos(2 * Math.random() - 1);
+        const r = 2.6 + Math.random() * 1.1;
+        orbitPos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
         orbitPos[i * 3 + 1] = r * Math.cos(phi) * 1.3;
         orbitPos[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
         const c = tealC.clone().lerp(violetC, Math.random());
-        orbitCol[i * 3]     = c.r;
+        orbitCol[i * 3] = c.r;
         orbitCol[i * 3 + 1] = c.g;
         orbitCol[i * 3 + 2] = c.b;
       }
-      const orbitGeo = new THREE.BufferGeometry();
+      const orbitGeo = track(new THREE.BufferGeometry());
       orbitGeo.setAttribute('position', new THREE.BufferAttribute(orbitPos, 3));
       orbitGeo.setAttribute('color', new THREE.BufferAttribute(orbitCol, 3));
-      const orbitPts = new THREE.Points(
-        orbitGeo,
+      const orbitMat = track(
         new THREE.PointsMaterial({
-          size: 0.045,
+          size: 0.05,
           vertexColors: true,
           transparent: true,
-          opacity: 0.8,
+          opacity: 0.85,
           depthWrite: false,
           blending: THREE.AdditiveBlending,
+          fog: false,
         })
       );
+      const orbitPts = new THREE.Points(orbitGeo, orbitMat);
       root.add(orbitPts);
 
-      // ── Smooth Animation Loop with Damped Mouse Parallax ──
-      let targetMouseX = 0, targetMouseY = 0;
-      let curMouseX = 0, curMouseY = 0;
-      let autoRotY = 0;
+      // ── Frame-rate-independent animation with damped parallax ──
+      let targetX = 0;
+      let targetY = 0;
+      let curX = 0;
+      let curY = 0;
 
       const onMouseMove = (e: MouseEvent) => {
         const rect = el.getBoundingClientRect();
-        targetMouseX = ((e.clientX - rect.left) / rect.width - 0.5) * 2;
-        targetMouseY = ((e.clientY - rect.top) / rect.height - 0.5) * 2;
+        targetX = ((e.clientX - rect.left) / rect.width - 0.5) * 2;
+        targetY = ((e.clientY - rect.top) / rect.height - 0.5) * 2;
       };
       const onMouseLeave = () => {
-        targetMouseX = 0;
-        targetMouseY = 0;
+        targetX = 0;
+        targetY = 0;
       };
       el.addEventListener('mousemove', onMouseMove);
       el.addEventListener('mouseleave', onMouseLeave);
 
-      let lastTime = performance.now();
+      let rafId = 0;
+      let last = performance.now();
 
-      function loop(now: number) {
-        if (cleanup) return;
-        requestAnimationFrame(loop);
+      const loop = (now: number) => {
+        rafId = requestAnimationFrame(loop);
 
-        const dt = Math.min((now - lastTime) / 1000, 0.1);
-        lastTime = now;
+        const dt = Math.min((now - last) / 1000, 0.05);
+        last = now;
+        // exponential damping: identical feel at 60, 120, 144 Hz
+        const damp = 1 - Math.exp(-5 * dt);
+        const dampCam = 1 - Math.exp(-3 * dt);
+        curX += (targetX - curX) * damp;
+        curY += (targetY - curY) * damp;
 
-        // Buttery-smooth lerp damping (0.05 easing factor)
-        curMouseX += (targetMouseX - curMouseX) * 0.05;
-        curMouseY += (targetMouseY - curMouseY) * 0.05;
+        const t = now * 0.001;
+        root.rotation.y += dt * 0.22;
+        orbitPts.rotation.y -= dt * 0.05;
 
-        // Continuous smooth rotation
-        autoRotY += dt * 0.25;
-        root.rotation.y = autoRotY + curMouseX * 0.35;
-        root.rotation.x = Math.sin(now * 0.0006) * 0.08 - curMouseY * 0.2;
+        shield.rotation.x = t * 0.35;
+        shield.rotation.y = t * 0.5;
+        const breath = 1 + Math.sin(t * 1.6) * 0.05;
+        shield.scale.setScalar(breath);
+        shield.position.y = 1.6 + Math.sin(t * 0.8) * 0.12;
 
-        // Torus knot fluid rotation & subtle breathing scale
-        shield.rotation.y += dt * 0.32;
-        shield.rotation.z += dt * 0.16;
-        const breath = 1 + Math.sin(now * 0.0016) * 0.045;
-        shield.scale.set(breath, breath, breath);
+        glow.position.copy(shield.position);
+        glow.scale.setScalar(1 + 0.14 * Math.sin(t * 2.1));
 
-        // Core glow pulse
-        glow.scale.setScalar(1 + 0.12 * Math.sin(now * 0.002));
-        glow.material.opacity = 0.14 + 0.06 * Math.sin(now * 0.003);
+        // parallax moves the camera, so perspective shifts with real depth
+        cam.position.x += (curX * 1.1 - cam.position.x) * dampCam;
+        cam.position.y += (-curY * 0.7 + 0.2 - cam.position.y) * dampCam;
+        cam.lookAt(0, 0.4, 0);
 
-        // Orbit particles rotation
-        orbitPts.rotation.y += dt * 0.18;
-        orbitPts.rotation.x = Math.sin(now * 0.0008) * 0.08;
+        tealLight.intensity = 60 + Math.sin(t * 0.9) * 12;
+        violetLight.position.x = Math.cos(t * 0.3) * 6;
+        violetLight.position.z = Math.sin(t * 0.3) * 5 + 2;
 
         renderer.render(scene, cam);
-      }
-      requestAnimationFrame(loop);
-
-      const onResize = () => {
-        renderer.setSize(W(), H());
-        cam.aspect = W() / H();
-        cam.updateProjectionMatrix();
       };
-      window.addEventListener('resize', onResize);
+      rafId = requestAnimationFrame(loop);
+      requestAnimationFrame(() => {
+        renderer.domElement.style.opacity = '1';
+      });
 
-      return () => {
-        cleanup = true;
+      const ro = new ResizeObserver(() => {
+        ({ w, h } = sizeOf());
+        renderer.setSize(w, h);
+        cam.aspect = w / h;
+        cam.updateProjectionMatrix();
+      });
+      ro.observe(el);
+
+      teardown = () => {
+        cancelAnimationFrame(rafId);
+        ro.disconnect();
         el.removeEventListener('mousemove', onMouseMove);
         el.removeEventListener('mouseleave', onMouseLeave);
-        window.removeEventListener('resize', onResize);
+        if (renderer.domElement.parentNode === el) el.removeChild(renderer.domElement);
+        strandA.dispose();
+        strandB.dispose();
+        disposables.forEach((d) => d.dispose());
         renderer.dispose();
       };
     };
 
-    const disposePromise = loadThree();
+    void initThree();
     return () => {
-      cleanup = true;
-      disposePromise.then((dispose) => dispose?.());
+      disposed = true;
+      teardown?.();
     };
   }, []);
 
@@ -375,8 +477,8 @@ export default function LoginPage() {
           setIamAccountName(res.data?.accountName || 'AWS Console');
           setIamStep(2);
         }
-      } catch (err: any) {
-        setError(err.message || 'Incorrect credentials. Please verify your information.');
+      } catch (err) {
+        setError((err instanceof Error ? err.message : String(err)) || 'Incorrect credentials. Please verify your information.');
       } finally {
         setIsLoading(false);
       }
@@ -414,11 +516,11 @@ export default function LoginPage() {
             }, 1800);
           }
         }
-      } catch (err: any) {
-        if (err.error === 'AccountLocked' || err.status === 423) {
+      } catch (err) {
+        if ((err as { error?: unknown; status?: unknown }).error === 'AccountLocked' || (err as { status?: unknown }).status === 423) {
           setIsLocked(true);
         }
-        setError(err.message || 'Incorrect credentials. Please verify your information and try again.');
+        setError((err instanceof Error ? err.message : String(err)) || 'Incorrect credentials. Please verify your information and try again.');
       } finally {
         setIsLoading(false);
       }
@@ -447,8 +549,8 @@ export default function LoginPage() {
             router.push(redirectTo);
           }, 1800);
         }
-      } catch (err: any) {
-        setError(err.message || 'Invalid authentication code. Please try again.');
+      } catch (err) {
+        setError((err instanceof Error ? err.message : String(err)) || 'Invalid authentication code. Please try again.');
       } finally {
         setIsLoading(false);
       }

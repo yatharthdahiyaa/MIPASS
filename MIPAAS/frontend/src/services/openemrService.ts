@@ -112,7 +112,11 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
     });
     if (!res.ok) {
       const errBody = await res.json().catch(() => ({}));
-      throw new Error(errBody.error || `Request failed with status ${res.status}`);
+      const errorMessage =
+        (typeof errBody.error === 'string'
+          ? errBody.error
+          : errBody.error?.message) || `Request failed with status ${res.status}`;
+      throw new Error(errorMessage);
     }
     return await res.json();
   } catch {
@@ -127,7 +131,11 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
     });
     if (!res.ok) {
       const errBody = await res.json().catch(() => ({}));
-      throw new Error(errBody.error || `Request failed with status ${res.status}`);
+      const errorMessage =
+        (typeof errBody.error === 'string'
+          ? errBody.error
+          : errBody.error?.message) || `Request failed with status ${res.status}`;
+      throw new Error(errorMessage);
     }
     return await res.json();
   }
@@ -266,7 +274,7 @@ export const openemrService = {
   /**
    * HL7 FHIR R4 Resources
    */
-  async getFhirResource<T = any>(resourceType: 'Patient' | 'Practitioner' | 'Encounter' | 'ServiceRequest' | 'DiagnosticReport', id: string): Promise<T> {
+  async getFhirResource<T = unknown>(resourceType: 'Patient' | 'Practitioner' | 'Encounter' | 'ServiceRequest' | 'DiagnosticReport', id: string): Promise<T> {
     return apiFetch(`/api/v1/emr/fhir/${resourceType}/${id}`);
   },
 };

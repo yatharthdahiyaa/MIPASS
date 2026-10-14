@@ -63,9 +63,9 @@ export default function DicomUploader({
       setStatusMessage('Redirecting to Doctor Workstation...');
       // REDIRECT TO DOCTOR FINDINGS PAGE
       router.push('/doctor');
-    } catch (err: any) {
+    } catch (err) {
       console.error('DICOM upload error:', err);
-      setErrorMessage(err.message || 'An error occurred while evaluating the DICOM image.');
+      setErrorMessage((err instanceof Error ? err.message : String(err)) || 'An error occurred while evaluating the DICOM image.');
       setIsProcessing(false);
     }
   }, [router]);

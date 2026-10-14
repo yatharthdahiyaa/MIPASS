@@ -40,6 +40,12 @@ class BaseConfig:
     REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
     REDIS_DB = int(os.getenv("REDIS_DB", "0"))
 
+    # Central Database
+    DATABASE_URL = os.getenv("DATABASE_URL")
+    DATABASE_POOL_SIZE = int(os.getenv("DATABASE_POOL_SIZE", "10"))
+    DATABASE_MAX_OVERFLOW = int(os.getenv("DATABASE_MAX_OVERFLOW", "20"))
+    DATABASE_AUTO_SEED = os.getenv("DATABASE_AUTO_SEED", "true").lower() in ("true", "1")
+
     # Rate Limiting
     RATE_LIMIT_REQUESTS_PER_MINUTE = int(os.getenv("RATE_LIMIT_RPM", "60"))
 
@@ -63,9 +69,9 @@ class DevelopmentConfig(BaseConfig):
     TESTING = False
     GCS_DATA_BUCKET = os.getenv("GCS_DATA_BUCKET", "mipaas-dev-data")
 
-    # Use emulators locally
-    FIRESTORE_EMULATOR_HOST = os.getenv("FIRESTORE_EMULATOR_HOST", "localhost:8080")
-    PUBSUB_EMULATOR_HOST = os.getenv("PUBSUB_EMULATOR_HOST", "localhost:8085")
+    # Use emulators locally only when explicitly configured
+    FIRESTORE_EMULATOR_HOST = os.getenv("FIRESTORE_EMULATOR_HOST")
+    PUBSUB_EMULATOR_HOST = os.getenv("PUBSUB_EMULATOR_HOST")
 
 
 class StagingConfig(BaseConfig):

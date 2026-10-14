@@ -56,6 +56,16 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.middleware.error_handler import register_error_handlers
     register_error_handlers(app)
 
+    # Initialize Central Database
+    try:
+        from app.database import init_db, seed_database
+        init_db()
+        if app.config.get("DATABASE_AUTO_SEED", True):
+            seed_database(overwrite=False)
+        logger.info("central_database_ready")
+    except Exception as exc:
+        logger.warning("central_database_init_warning", error=str(exc))
+
     # Register blueprints (routes)
     from app.routes.health import health_bp
     from app.routes.upload import upload_bp
@@ -67,6 +77,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.routes.agents_and_workflows import workflows_bp
     from app.routes.openemr import openemr_bp
     from app.routes.eka_portal import eka_bp
+    from app.routes.database_admin import database_bp
 
     app.register_blueprint(health_bp)
     app.register_blueprint(upload_bp, url_prefix="/api/v1")
@@ -78,6 +89,7 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(workflows_bp, url_prefix="/api/v1")
     app.register_blueprint(openemr_bp, url_prefix="/api/v1")
     app.register_blueprint(eka_bp, url_prefix="/api/v1")
+    app.register_blueprint(database_bp, url_prefix="/api/v1")
 
     logger.info(
         "app_initialized",

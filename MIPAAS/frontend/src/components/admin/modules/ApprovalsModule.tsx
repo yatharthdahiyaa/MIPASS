@@ -26,7 +26,7 @@ interface ModelChangeRequest {
   expiresInMinutes?: number;
   firstSigner?: string;
   requiresSecondSigner?: boolean;
-  diffSummary?: { field: string; before: any; after: any }[];
+  diffSummary?: { field: string; before: unknown; after: unknown }[];
 }
 
 export default function ApprovalsModule() {

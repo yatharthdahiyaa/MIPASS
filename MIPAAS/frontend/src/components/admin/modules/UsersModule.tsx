@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useMultiLevelAdmin } from '@/context/MultiLevelAdminContext';
 import { PermissionScope } from '@/types/multiLevelRbac';
 import DataTable, { Column } from '../common/DataTable';
@@ -115,6 +115,60 @@ export default function UsersModule() {
       status: 'suspended',
     },
   ]);
+
+  // Live-sync UsersModule with the backend RBAC user store when available
+  useEffect(() => {
+    const loadBackendUsers = async () => {
+      try {
+        const response = await fetch('http://localhost:8080/api/v1/rbac/users', {
+          headers: {
+            Accept: 'application/json',
+            'X-User-ID': 'admin-01',
+            'X-User-Role': 'admin',
+          },
+        }).catch(async () => {
+          return fetch('/api/v1/rbac/users', {
+            headers: {
+              Accept: 'application/json',
+              'X-User-ID': 'admin-01',
+              'X-User-Role': 'admin',
+            },
+          });
+        });
+
+        if (!response.ok) return;
+        const payload = await response.json();
+        const backendUsers = Array.isArray(payload?.data?.users)
+          ? payload.data.users
+          : Array.isArray(payload?.users)
+          ? payload.users
+          : [];
+
+        if (backendUsers.length > 0) {
+          const mapped: UserRecord[] = backendUsers.map((u: unknown) => {
+            const r = u as Record<string, unknown>;
+            return {
+              id: String(r.id ?? ''),
+              name: String(r.name ?? ''),
+              email: String(r.email ?? ''),
+              role: String(r.role_title ?? r.role ?? ''),
+              scope: 'site' as PermissionScope,
+              siteName: activeSite?.name || 'MiPAAS Backend',
+              mfaEnabled: Boolean(r.mfaEnabled ?? r.isMfaEnabled ?? false),
+              ssoGroup: 'Backend RBAC',
+              lastLogin: String(r.lastLogin ?? '—'),
+              status: 'active',
+            };
+          });
+          setUsers(mapped);
+        }
+      } catch {
+        // Keep prefetched demo data if the backend is unavailable
+      }
+    };
+
+    void loadBackendUsers();
+  }, [activeSite]);
 
   const [selectedUser, setSelectedUser] = useState<UserRecord | null>(null);
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
@@ -272,7 +326,7 @@ export default function UsersModule() {
         data={users}
         searchPlaceholder="Filter staff by name, email, or role..."
         searchKey={(u) => `${u.name} ${u.email} ${u.role}`}
-        onRowClick={(row) => setSelectedUser(row)}
+        onRowClick={(row) => setSelectedUser(row as unknown as UserRecord)}
         exportFileName="mipaas-users-directory.csv"
       />
 

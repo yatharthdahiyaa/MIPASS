@@ -329,8 +329,183 @@ class EkaCarePortalService:
         for a in appointments:
             self._appointments[a.id] = a
 
+        self._sync_with_central_db()
+
         logger.info("eka_portal_seeded", members=len(self._members),
                     medications=len(self._medications), records=len(self._records))
+
+    def _sync_with_central_db(self) -> None:
+        """Hydrate in-memory state from central database."""
+        try:
+            from app.database.session import get_db
+            from app.database.models.consumer_health import (
+                FamilyMember as DbMember,
+                Medication as DbMed,
+                VitalRecord as DbVital,
+                HealthRecord as DbRecord,
+                ConsumerAppointment as DbApt,
+            )
+            with get_db() as db:
+                for m in db.query(DbMember).all():
+                    if m.id not in self._members:
+                        self._members[m.id] = FamilyMember(
+                            id=m.id,
+                            name=m.name,
+                            relation=m.relation,
+                            age=m.age,
+                            gender=m.gender,
+                            abha_id=m.abha_id,
+                            blood_group=m.blood_group or "Unknown",
+                            avatar_color=m.avatar_color or "from-teal-500 to-emerald-600",
+                            primary_condition=m.primary_condition,
+                        )
+                for med in db.query(DbMed).all():
+                    if med.id not in self._medications:
+                        self._medications[med.id] = Medication(
+                            id=med.id,
+                            member_id=med.member_id,
+                            name=med.name,
+                            dosage=med.dosage,
+                            frequency=med.frequency,
+                            timing=med.timing,
+                            instruction=med.instruction,
+                            prescribed_by=med.prescribed_by or "Self",
+                            refill_days_left=med.refill_days_left,
+                            time_slot=med.time_slot,
+                            taken_today=med.taken_today,
+                        )
+        except Exception as exc:
+            logger.debug("eka_db_sync_deferred", error=str(exc))
+
+    def _save_member_to_db(self, m: FamilyMember) -> None:
+        try:
+            from app.database.session import get_db
+            from app.database.models.consumer_health import FamilyMember as DbMember
+            with get_db() as db:
+                if not db.query(DbMember).filter_by(id=m.id).first():
+                    db.add(DbMember(
+                        id=m.id,
+                        name=m.name,
+                        relation=m.relation,
+                        age=m.age,
+                        gender=m.gender,
+                        abha_id=m.abha_id,
+                        blood_group=m.blood_group,
+                        avatar_color=m.avatar_color,
+                        primary_condition=m.primary_condition,
+                    ))
+        except Exception as exc:
+            logger.debug("eka_member_db_save_deferred", error=str(exc))
+
+    def _save_medication_to_db(self, med: Medication) -> None:
+        try:
+            from app.database.session import get_db
+            from app.database.models.consumer_health import Medication as DbMed
+            with get_db() as db:
+                if not db.query(DbMed).filter_by(id=med.id).first():
+                    db.add(DbMed(
+                        id=med.id,
+                        member_id=med.member_id,
+                        name=med.name,
+                        dosage=med.dosage,
+                        frequency=med.frequency,
+                        timing=med.timing,
+                        instruction=med.instruction,
+                        prescribed_by=med.prescribed_by,
+                        refill_days_left=med.refill_days_left,
+                        time_slot=med.time_slot,
+                        taken_today=med.taken_today,
+                    ))
+        except Exception as exc:
+            logger.debug("eka_med_db_save_deferred", error=str(exc))
+
+    def _update_medication_in_db(self, med: Medication) -> None:
+        try:
+            from app.database.session import get_db
+            from app.database.models.consumer_health import Medication as DbMed
+            with get_db() as db:
+                db_med = db.query(DbMed).filter_by(id=med.id).first()
+                if db_med:
+                    db_med.taken_today = med.taken_today
+        except Exception as exc:
+            logger.debug("eka_med_db_update_deferred", error=str(exc))
+
+    def _save_vital_to_db(self, v: VitalRecord) -> None:
+        try:
+            from app.database.session import get_db
+            from app.database.models.consumer_health import VitalRecord as DbVital
+            with get_db() as db:
+                if not db.query(DbVital).filter_by(id=v.id).first():
+                    db.add(DbVital(
+                        id=v.id,
+                        member_id=v.member_id,
+                        vital_type=v.type,
+                        value=v.value,
+                        unit=v.unit,
+                        status=v.status,
+                        recorded_at=v.recorded_at,
+                        trend=v.trend,
+                        target_range=v.target_range,
+                    ))
+        except Exception as exc:
+            logger.debug("eka_vital_db_save_deferred", error=str(exc))
+
+    def _save_record_to_db(self, r: HealthRecord) -> None:
+        try:
+            import json
+            from app.database.session import get_db
+            from app.database.models.consumer_health import HealthRecord as DbRecord
+            with get_db() as db:
+                if not db.query(DbRecord).filter_by(id=r.id).first():
+                    db.add(DbRecord(
+                        id=r.id,
+                        member_id=r.member_id,
+                        title=r.title,
+                        category=r.category,
+                        doctor_or_lab=r.doctor_or_lab,
+                        record_date=r.date,
+                        file_type=r.file_type,
+                        file_size=r.file_size,
+                        ai_key_summary=r.ai_key_summary,
+                        tags_json=json.dumps(r.tags),
+                        extracted_parameters_json=json.dumps(r.extracted_parameters),
+                    ))
+        except Exception as exc:
+            logger.debug("eka_record_db_save_deferred", error=str(exc))
+
+    def _save_appointment_to_db(self, a: Appointment) -> None:
+        try:
+            from app.database.session import get_db
+            from app.database.models.consumer_health import ConsumerAppointment as DbApt
+            with get_db() as db:
+                if not db.query(DbApt).filter_by(id=a.id).first():
+                    db.add(DbApt(
+                        id=a.id,
+                        member_id=a.member_id,
+                        doctor_name=a.doctor_name,
+                        specialty=a.specialty,
+                        hospital=a.hospital,
+                        appointment_date=a.date,
+                        appointment_time=a.time,
+                        token_number=a.token_number,
+                        appointment_type=a.type,
+                        status=a.status,
+                        queue_wait_mins=a.queue_wait_mins,
+                    ))
+        except Exception as exc:
+            logger.debug("eka_apt_db_save_deferred", error=str(exc))
+
+    def _update_appointment_status_in_db(self, apt_id: str, status: str) -> None:
+        try:
+            from app.database.session import get_db
+            from app.database.models.consumer_health import ConsumerAppointment as DbApt
+            with get_db() as db:
+                db_apt = db.query(DbApt).filter_by(id=apt_id).first()
+                if db_apt:
+                    db_apt.status = status
+        except Exception as exc:
+            logger.debug("eka_apt_db_update_deferred", error=str(exc))
+
 
     # ─────────────────────────────────────────────────────────────
     # Session & family
@@ -374,6 +549,7 @@ class EkaCarePortalService:
         )
         with self._lock:
             self._members[member.id] = member
+        self._save_member_to_db(member)
         logger.info("eka_member_added", member_id=member.id, name=member.name)
         return member
 
@@ -399,6 +575,7 @@ class EkaCarePortalService:
         )
         with self._lock:
             self._medications[med.id] = med
+        self._save_medication_to_db(med)
         logger.info("eka_medication_added", med_id=med.id, member_id=member_id)
         return med
 
@@ -408,6 +585,7 @@ class EkaCarePortalService:
             return None
         with self._lock:
             med.taken_today = (not med.taken_today) if taken is None else bool(taken)
+        self._update_medication_in_db(med)
         logger.info("eka_medication_toggled", med_id=med_id, taken=med.taken_today)
         return med
 
@@ -464,6 +642,7 @@ class EkaCarePortalService:
         )
         with self._lock:
             self._vitals[vital.id] = vital
+        self._save_vital_to_db(vital)
         logger.info("eka_vital_logged", vit_id=vital.id, member_id=member_id, status=vital.status)
         return vital
 
@@ -513,6 +692,7 @@ class EkaCarePortalService:
         )
         with self._lock:
             self._records[record.id] = record
+        self._save_record_to_db(record)
         logger.info("eka_record_uploaded", rec_id=record.id, member_id=member_id)
         return record
 
@@ -546,6 +726,7 @@ class EkaCarePortalService:
         )
         with self._lock:
             self._appointments[apt.id] = apt
+        self._save_appointment_to_db(apt)
         logger.info("eka_appointment_booked", apt_id=apt.id, member_id=member_id)
         return apt
 
@@ -555,6 +736,7 @@ class EkaCarePortalService:
             return False
         with self._lock:
             apt.status = "Cancelled"
+        self._update_appointment_status_in_db(apt_id, "Cancelled")
         logger.info("eka_appointment_cancelled", apt_id=apt_id)
         return True
 

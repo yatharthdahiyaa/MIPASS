@@ -40,6 +40,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [refreshUser]);
 
   const loginUser = (userProfile: UserProfile) => {
+    // Marking loading as finished avoids a brief unauthenticated bounce while
+    // role/permission-derived UI re-renders with the new user profile.
+    setIsLoading(false);
     setUser(userProfile);
   };
 

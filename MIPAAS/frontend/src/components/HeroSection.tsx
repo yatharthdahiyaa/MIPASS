@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { ArrowRight, Layers, FileCheck2, Stethoscope } from 'lucide-react';
 import { useRBAC } from '@/context/RBACContext';
 
-const IAM_SIGNIN_URL = process.env.NEXT_PUBLIC_IAM_URL || 'http://localhost:5173/signin';
+const LOGIN_URL = '/login?redirect=/doctor';
 
 export default function HeroSection() {
   const { isIamAuthenticated } = useRBAC();
@@ -25,7 +25,7 @@ export default function HeroSection() {
             ) : (
               <>
                 <a href="#products" className="button-primary">Explore pathways <ArrowRight size={17} /></a>
-                <a href={IAM_SIGNIN_URL} className="button-secondary">Sign in <ArrowRight size={17} /></a>
+                <Link href={LOGIN_URL} className="button-secondary">Sign in <ArrowRight size={17} /></Link>
               </>
             )}
           </div>

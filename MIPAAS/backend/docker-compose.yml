@@ -21,10 +21,12 @@ services:
       - REDIS_HOST=redis
       - CORS_ORIGINS=http://localhost:3000
       - DISEASE_CONFIG_DIR=/app/config/diseases
+      - DATABASE_URL=postgresql://mipaas:mipaas_dev_pass@postgres:5432/mipaas_central
     depends_on:
       - firestore
       - pubsub
       - redis
+      - postgres
     volumes:
       - ./app:/app/app
       - ./config:/app/config
@@ -126,3 +128,24 @@ services:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+
+  # ──── Central PostgreSQL Database ────
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: mipaas
+      POSTGRES_PASSWORD: mipaas_dev_pass
+      POSTGRES_DB: mipaas_central
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mipaas -d mipaas_central"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

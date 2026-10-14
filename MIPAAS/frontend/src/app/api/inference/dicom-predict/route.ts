@@ -129,13 +129,13 @@ export async function POST(req: NextRequest) {
     } finally {
       await fs.unlink(tempFilePath).catch(() => {});
     }
-  } catch (err: any) {
+  } catch (err) {
     return NextResponse.json(
       {
         success: false,
         error: {
           code: 500,
-          message: err?.message || "Internal server error during DICOM inference",
+          message: (err instanceof Error ? err.message : undefined) || "Internal server error during DICOM inference",
         },
       },
       { status: 500 }
