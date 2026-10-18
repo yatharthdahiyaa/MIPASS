@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import DoctorWorkstation from '@/components/doctor/DoctorWorkstation';
+import DoctorWorkstation from '@/portals/doctor/DoctorWorkstation';
 
 export const metadata: Metadata = {
   title: 'MiPAAS Doctor Workstation · AI Radiology Clinical Findings',

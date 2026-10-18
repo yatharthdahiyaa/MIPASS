@@ -9,6 +9,10 @@ Provides unified database access across all MiPAAS subsystems:
 """
 
 from app.database.models import (
+    AarogyaSetuAssessment,
+    AbdmConsent,
+    AbdmLinkedFacility,
+    AbhaProfile,
     AgentWorkflowRun,
     AuditLog,
     Base,
@@ -25,8 +29,10 @@ from app.database.models import (
     ProcedureOrder,
     ProcedureReport,
     Role,
+    ScanShareToken,
     User,
     UserSession,
+    VaccinationRecord,
     VitalRecord,
 )
 from app.database.session import (
@@ -75,4 +81,12 @@ __all__ = [
     "DicomSeries",
     "DiagnosticJob",
     "AgentWorkflowRun",
+    # ABDM & Aarogya Setu Models
+    "AbhaProfile",
+    "AbdmConsent",
+    "AbdmLinkedFacility",
+    "AarogyaSetuAssessment",
+    "VaccinationRecord",
+    "ScanShareToken",
 ]
+

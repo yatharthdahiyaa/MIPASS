@@ -77,6 +77,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.routes.agents_and_workflows import workflows_bp
     from app.routes.openemr import openemr_bp
     from app.routes.eka_portal import eka_bp
+    from app.routes.abdm import abdm_bp
     from app.routes.database_admin import database_bp
 
     app.register_blueprint(health_bp)
@@ -89,6 +90,7 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(workflows_bp, url_prefix="/api/v1")
     app.register_blueprint(openemr_bp, url_prefix="/api/v1")
     app.register_blueprint(eka_bp, url_prefix="/api/v1")
+    app.register_blueprint(abdm_bp, url_prefix="/api/v1")
     app.register_blueprint(database_bp, url_prefix="/api/v1")
 
     logger.info(

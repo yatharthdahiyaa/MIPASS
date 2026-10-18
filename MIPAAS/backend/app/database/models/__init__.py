@@ -24,6 +24,14 @@ from app.database.models.imaging_ai import (
     DicomSeries,
     DicomStudy,
 )
+from app.database.models.abdm import (
+    AarogyaSetuAssessment,
+    AbdmConsent,
+    AbdmLinkedFacility,
+    AbhaProfile,
+    ScanShareToken,
+    VaccinationRecord,
+)
 
 __all__ = [
     "Base",
@@ -47,4 +55,11 @@ __all__ = [
     "DicomSeries",
     "DiagnosticJob",
     "AgentWorkflowRun",
+    "AbhaProfile",
+    "AbdmConsent",
+    "AbdmLinkedFacility",
+    "AarogyaSetuAssessment",
+    "VaccinationRecord",
+    "ScanShareToken",
 ]
+

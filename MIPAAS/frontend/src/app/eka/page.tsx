@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import EkaCareHub from '@/components/eka/EkaCareHub';
+import OpenEMRUnifiedPortal from '@/portals/openemr/OpenEMRUnifiedPortal';
 
 export const metadata: Metadata = {
   title: 'Eka.care Health Hub · Day-to-Day Medical & Personal Health Records',
@@ -8,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function EkaCarePage() {
-  return <EkaCareHub />;
+  return <OpenEMRUnifiedPortal initialTab="eka" />;
 }

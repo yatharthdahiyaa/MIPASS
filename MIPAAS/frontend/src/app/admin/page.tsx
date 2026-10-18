@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import AdminPortal from '@/components/personas/AdminPortal';
+import AdminPortal from '@/portals/admin/AdminPortal';
 
 export const metadata: Metadata = {
   title: 'MiPAAS Lab Admin Hub · PACS, HL7, FHIR & Governance',

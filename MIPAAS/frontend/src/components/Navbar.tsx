@@ -30,11 +30,11 @@ export const productList: ProductItem[] = [
 ];
 
 const navLinks = [
-  { label: 'Eka.care Hub', href: '/eka' },
-  { label: 'OpenEMR Hub', href: '/emr' },
+  { label: 'OpenEMR Portal', href: '/openemr' },
+  { label: 'Doctor Portal', href: '/doctor' },
+  { label: 'Admin Hub', href: '/admin' },
   { label: 'Agents', href: '/agents' },
   { label: 'Impact', href: '/#impact' },
-  { label: 'Evidence', href: '/#evidence' },
 ];
 
 const LOGIN_URL = '/login?redirect=/doctor';

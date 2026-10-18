@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import OpenEMRHub from '@/components/emr/OpenEMRHub';
+import OpenEMRUnifiedPortal from '@/portals/openemr/OpenEMRUnifiedPortal';
 
 export const metadata: Metadata = {
   title: 'MiPAAS OpenEMR Management System · Master Patient Index & FHIR R4',
@@ -8,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function OpenEMRPage() {
-  return <OpenEMRHub />;
+  return <OpenEMRUnifiedPortal initialTab="clinical" />;
 }

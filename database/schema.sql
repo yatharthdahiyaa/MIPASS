@@ -354,3 +354,115 @@ CREATE TABLE IF NOT EXISTS agent_workflow_runs (
 );
 CREATE INDEX IF NOT EXISTS ix_agent_workflow_runs_job_id ON agent_workflow_runs(job_id);
 CREATE INDEX IF NOT EXISTS ix_agent_workflow_runs_agent_id ON agent_workflow_runs(agent_id);
+
+-- ---------------------------------------------------------------------
+-- 5. ABDM, ABHA & AAROGYA SETU GOVERNMENT HEALTH ECOSYSTEM
+-- ---------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS abha_profiles (
+    id VARCHAR(64) PRIMARY KEY,
+    user_id VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+    abha_number VARCHAR(20) UNIQUE NOT NULL,
+    abha_address VARCHAR(100) UNIQUE NOT NULL,
+    full_name VARCHAR(150) NOT NULL,
+    gender VARCHAR(20) NOT NULL,
+    dob VARCHAR(20) NOT NULL,
+    blood_group VARCHAR(10),
+    mobile VARCHAR(20) NOT NULL,
+    email VARCHAR(255),
+    state VARCHAR(100) DEFAULT 'Delhi',
+    district VARCHAR(100) DEFAULT 'New Delhi',
+    pincode VARCHAR(20) DEFAULT '110029',
+    kyc_status VARCHAR(50) NOT NULL DEFAULT 'UIDAI_VERIFIED',
+    notto_pledge_id VARCHAR(100),
+    photo_uri VARCHAR(500),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS ix_abha_profiles_number ON abha_profiles(abha_number);
+CREATE INDEX IF NOT EXISTS ix_abha_profiles_address ON abha_profiles(abha_address);
+
+CREATE TABLE IF NOT EXISTS abdm_consents (
+    id VARCHAR(64) PRIMARY KEY,
+    user_id VARCHAR(64) REFERENCES users(id) ON DELETE CASCADE,
+    consent_request_id VARCHAR(64) UNIQUE NOT NULL,
+    requester_name VARCHAR(150) NOT NULL,
+    requester_type VARCHAR(50) DEFAULT 'Hospital',
+    purpose_code VARCHAR(50) NOT NULL,
+    purpose_description VARCHAR(255),
+    record_types_json TEXT NOT NULL,
+    date_range_from VARCHAR(50),
+    date_range_to VARCHAR(50),
+    expiry_date VARCHAR(50) NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'REQUESTED',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS ix_abdm_consents_user_id ON abdm_consents(user_id);
+CREATE INDEX IF NOT EXISTS ix_abdm_consents_status ON abdm_consents(status);
+
+CREATE TABLE IF NOT EXISTS abdm_linked_facilities (
+    id VARCHAR(64) PRIMARY KEY,
+    user_id VARCHAR(64) REFERENCES users(id) ON DELETE CASCADE,
+    hip_id VARCHAR(64) NOT NULL,
+    facility_name VARCHAR(200) NOT NULL,
+    facility_type VARCHAR(100) DEFAULT 'General Hospital',
+    state VARCHAR(100) DEFAULT 'Delhi',
+    linked_date VARCHAR(50) NOT NULL,
+    sync_status VARCHAR(50) DEFAULT 'SYNCED',
+    records_count INTEGER DEFAULT 0,
+    last_synced_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS ix_abdm_facilities_user_id ON abdm_linked_facilities(user_id);
+CREATE INDEX IF NOT EXISTS ix_abdm_facilities_hip_id ON abdm_linked_facilities(hip_id);
+
+CREATE TABLE IF NOT EXISTS aarogya_setu_assessments (
+    id VARCHAR(64) PRIMARY KEY,
+    user_id VARCHAR(64) REFERENCES users(id) ON DELETE CASCADE,
+    risk_level VARCHAR(50) NOT NULL DEFAULT 'SAFE_LOW',
+    score INTEGER NOT NULL DEFAULT 0,
+    symptoms_json TEXT,
+    comorbidities_json TEXT,
+    travel_history BOOLEAN DEFAULT FALSE,
+    contact_exposure BOOLEAN DEFAULT FALSE,
+    recommendations_json TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS ix_aarogya_assessments_user_id ON aarogya_setu_assessments(user_id);
+
+CREATE TABLE IF NOT EXISTS vaccination_records (
+    id VARCHAR(64) PRIMARY KEY,
+    user_id VARCHAR(64) REFERENCES users(id) ON DELETE CASCADE,
+    vaccine_name VARCHAR(100) NOT NULL,
+    dose_type VARCHAR(50) NOT NULL,
+    date_administered VARCHAR(50) NOT NULL,
+    batch_number VARCHAR(50) NOT NULL,
+    vaccinated_by VARCHAR(150),
+    center_name VARCHAR(200) NOT NULL,
+    certificate_ref VARCHAR(100) UNIQUE NOT NULL,
+    qr_payload TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS ix_vaccination_records_user_id ON vaccination_records(user_id);
+CREATE INDEX IF NOT EXISTS ix_vaccination_records_ref ON vaccination_records(certificate_ref);
+
+CREATE TABLE IF NOT EXISTS scan_and_share_tokens (
+    id VARCHAR(64) PRIMARY KEY,
+    user_id VARCHAR(64) REFERENCES users(id) ON DELETE CASCADE,
+    token_number VARCHAR(50) NOT NULL,
+    facility_name VARCHAR(200) NOT NULL,
+    department VARCHAR(100) NOT NULL,
+    counter_number VARCHAR(20) DEFAULT 'Counter 4',
+    queue_position INTEGER DEFAULT 3,
+    estimated_wait_mins INTEGER DEFAULT 15,
+    status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS ix_scan_tokens_user_id ON scan_and_share_tokens(user_id);
+CREATE INDEX IF NOT EXISTS ix_scan_tokens_number ON scan_and_share_tokens(token_number);
+
