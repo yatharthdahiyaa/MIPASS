@@ -28,6 +28,9 @@ interface RBACContextType {
   ) => void;
   isRBACModalOpen: boolean;
   setRBACModalOpen: (open: boolean) => void;
+  // Session Authentication status
+  isAuthenticated: boolean;
+  logout: () => void;
   // IAM Authentication Integration
   iamUser: IamUserResult | null;
   isIamAuthenticated: boolean;
@@ -87,6 +90,12 @@ const INITIAL_AUDIT_LOGS: AuditLogEntry[] = [
 export function RBACProvider({ children }: { children: React.ReactNode }) {
   // Default to Radiologist persona
   const [currentUser, setCurrentUser] = useState<UserProfile>(() => CLINICAL_PERSONAS['rad-01']);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('mipaas_session_active') === 'true';
+    }
+    return false;
+  });
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(INITIAL_AUDIT_LOGS);
   const [isRBACModalOpen, setRBACModalOpen] = useState(false);
   const [iamUser, setIamUser] = useState<IamUserResult | null>(null);
@@ -161,9 +170,11 @@ export function RBACProvider({ children }: { children: React.ReactNode }) {
 
       const previousRole = currentUser.role;
       setCurrentUser(persona);
+      setIsAuthenticated(true);
 
       try {
         localStorage.setItem('mipaas_active_persona', personaId);
+        localStorage.setItem('mipaas_session_active', 'true');
       } catch {
         // Ignore localStorage write errors
       }
@@ -239,8 +250,10 @@ export function RBACProvider({ children }: { children: React.ReactNode }) {
       setIamUser(user);
       const clinicalProfile = iamAuthService.mapIamUserToClinicalProfile(user);
       setCurrentUser(clinicalProfile);
+      setIsAuthenticated(true);
       try {
         localStorage.setItem('mipaas_iam_user', JSON.stringify(user));
+        localStorage.setItem('mipaas_session_active', 'true');
         localStorage.removeItem('mipaas_active_persona');
       } catch {
         // ignore
@@ -260,13 +273,27 @@ export function RBACProvider({ children }: { children: React.ReactNode }) {
     [addAuditLog]
   );
 
-  const logoutIAM = useCallback(async () => {
+  const logout = useCallback(() => {
+    setIsAuthenticated(false);
+    setIamUser(null);
     try {
-      await iamAuthService.logout();
+      localStorage.removeItem('mipaas_session_active');
+      localStorage.removeItem('mipaas_active_persona');
       localStorage.removeItem('mipaas_iam_user');
     } catch {
       // ignore
     }
+  }, []);
+
+  const logoutIAM = useCallback(async () => {
+    try {
+      await iamAuthService.logout();
+      localStorage.removeItem('mipaas_iam_user');
+      localStorage.removeItem('mipaas_session_active');
+    } catch {
+      // ignore
+    }
+    setIsAuthenticated(false);
     setIamUser(null);
     setCurrentUser(CLINICAL_PERSONAS['rad-01']);
     addAuditLog('auth:iam_logout', 'iam:session', 'allow');
@@ -286,6 +313,8 @@ export function RBACProvider({ children }: { children: React.ReactNode }) {
         addAuditLog,
         isRBACModalOpen,
         setRBACModalOpen,
+        isAuthenticated,
+        logout,
         iamUser,
         isIamAuthenticated: !!iamUser,
         loginWithIAM,

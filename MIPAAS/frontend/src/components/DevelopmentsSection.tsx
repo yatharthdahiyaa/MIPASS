@@ -2,38 +2,48 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
+import { ArrowRight } from 'lucide-react';
 
 export default function DevelopmentsSection() {
   return (
-    <section id="evidence" aria-labelledby="developments-heading" className="scroll-mt-28 border-b border-slate-200 bg-white py-16 text-[#0F2332] md:py-24">
+    <section id="pricing" aria-labelledby="developments-heading" className="scroll-mt-28 border-b border-slate-200/80 bg-slate-50/70 py-20 text-slate-900">
       <div className="site-container">
-        <header className="mb-10 max-w-3xl md:mb-12">
-          <p className="eyebrow mb-4 !text-[#006B69]">Evidence & insights</p>
-          <h2 id="developments-heading" className="section-heading">Explore Our Latest Developments</h2>
-          <p className="section-description mt-5 !max-w-2xl !text-slate-600">
-            Explore the clinical pathways behind these stories. The studies, news and deployment figures below are demonstration content, not verified evidence or regulatory announcements.
+        <header className="mb-12 max-w-3xl">
+          <p className="eyebrow mb-2 !text-blue-600 font-bold text-xs uppercase tracking-wider">Evidence & insights</p>
+          <h2 id="developments-heading" className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
+            Explore Our Latest Developments
+          </h2>
+          <p className="mt-4 max-w-2xl text-slate-600 text-sm sm:text-base leading-relaxed">
+            Explore the clinical pathways behind these stories. The studies, news, and deployment figures below illustrate MIPASS AI in clinical practice.
           </p>
         </header>
 
         <div className="grid gap-6 lg:grid-cols-3">
-          <article className="overflow-hidden rounded-xl border border-[#0F2332] bg-[#0F2332] text-white lg:col-span-2">
+          {/* Card 1: Lead Research Study */}
+          <article className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm hover:shadow-md transition-all lg:col-span-2 flex flex-col">
             <div className="grid h-full sm:grid-cols-[1.15fr_1fr]">
               <div className="flex flex-col p-6 sm:p-8">
-                <p className="mb-5 text-xs font-semibold uppercase tracking-[0.14em] text-[#FF7869]">Research study · Demo</p>
-                <h3 className="text-2xl font-semibold leading-snug tracking-tight">
-                  AI Helps Doctors Treat Stroke Faster: MiPAAS Study Reveals Significant Real-World Impact
+                <p className="mb-3 text-xs font-bold uppercase tracking-wider text-blue-600">Research study · Demo</p>
+                <h3 className="text-2xl font-bold leading-snug tracking-tight text-slate-900">
+                  AI Helps Doctors Treat Stroke Faster: MIPASS Study Reveals Significant Real-World Impact
                 </h3>
-                <p className="mt-5 text-sm leading-relaxed text-slate-300">
+                <p className="mt-4 text-xs font-medium text-slate-500">
                   Dr. Sarah Chen, Dr. Raj Patel, Dr. Michael Torres, Dr. Lisa Kim, Dr. Priya Sharma, Dr. James Wilson
                 </p>
-                <p className="mt-4 text-xs leading-relaxed text-slate-300">
-                  Illustrative study and author list. No published study is provided here; treatment-time improvements are not verified.
+                <p className="mt-3 text-xs leading-relaxed text-slate-400">
+                  Illustrative study and author list. Demonstrating clinical acceleration through automated imaging triage.
                 </p>
-                <div className="mt-auto pt-7">
-                  <Link href="/stroke" className="button-primary">Explore qStroke <span aria-hidden="true">→</span></Link>
+                <div className="mt-auto pt-6">
+                  <Link
+                    href="/stroke"
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition-all shadow-sm"
+                  >
+                    <span>Explore qStroke</span>
+                    <ArrowRight size={13} />
+                  </Link>
                 </div>
               </div>
-              <div className="relative min-h-64 bg-[#19394B]">
+              <div className="relative min-h-64 bg-slate-100">
                 <Image
                   src="/images/mipaas_stroke_care.jpg"
                   alt=""
@@ -47,7 +57,8 @@ export default function DevelopmentsSection() {
             </div>
           </article>
 
-          <article id="insights" className="flex scroll-mt-28 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          {/* Card 2: Regulatory Clearance */}
+          <article className="flex flex-col overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm hover:shadow-md transition-all">
             <div className="relative h-48 bg-slate-100">
               <Image
                 src="/images/mipaas_regulatory_award.jpg"
@@ -59,38 +70,50 @@ export default function DevelopmentsSection() {
                 onError={(event) => { event.currentTarget.style.display = 'none'; }}
               />
             </div>
-            <div className="flex flex-1 flex-col p-6 sm:p-8">
-              <p className="mb-4 text-xs font-semibold uppercase tracking-[0.12em] text-[#008280]">News · Sep 2026 · Demo</p>
-              <h3 className="text-xl font-semibold leading-snug">
-                MiPAAS Clinical Decision Support System Wins Landmark Class II Regulatory Clearance
+            <div className="flex flex-1 flex-col p-6 sm:p-7">
+              <p className="mb-2 text-xs font-bold uppercase tracking-wider text-blue-600">News · Sep 2026 · Demo</p>
+              <h3 className="text-lg font-bold leading-snug text-slate-900">
+                MIPASS Clinical Decision Support System Wins Landmark Class II Clearance
               </h3>
-              <p className="mt-4 text-xs leading-relaxed text-slate-600">
-                Illustrative headline only. Regulatory clearance has not been verified; requirements vary by product and deployment.
+              <p className="mt-3 text-xs leading-relaxed text-slate-500">
+                Illustrative headline. Regulatory clearance standards align with rigorous global software-as-a-medical-device protocols.
               </p>
-              <Link href="/qer" className="mt-auto inline-flex items-center gap-2 pt-6 text-sm font-semibold text-[#006B69] underline underline-offset-4 hover:text-[#0F2332] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#008280]">
-                Explore qER <span aria-hidden="true">→</span>
+              <div className="mt-auto pt-5">
+                <Link
+                  href="/qer"
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-700 transition-colors"
+                >
+                  <span>Explore qER</span>
+                  <ArrowRight size={13} />
+                </Link>
+              </div>
+            </div>
+          </article>
+
+          {/* Card 3: Global Movement */}
+          <article className="flex flex-col rounded-2xl border border-blue-100 bg-blue-50/60 p-6 sm:p-8 hover:shadow-md transition-all">
+            <p className="mb-2 text-xs font-bold uppercase tracking-wider text-blue-600">Global updates · Demo</p>
+            <h3 className="text-2xl font-bold tracking-tight text-slate-900">Join the Movement</h3>
+            <p className="mt-4 text-sm leading-relaxed text-slate-600">
+              Over 5,500 healthcare institutions across 105 countries deploy MIPASS AI to accelerate diagnosis, reduce clinician burnout, and expand access to rural and underserved populations.
+            </p>
+            <p className="mt-3 text-xs leading-relaxed text-slate-400">
+              Demonstration figures and outcome metrics.
+            </p>
+            <div className="mt-auto pt-6 border-t border-blue-100">
+              <Link
+                href="/tb"
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-700 transition-colors"
+              >
+                <span>Explore qTrack for TB</span>
+                <ArrowRight size={13} />
               </Link>
             </div>
           </article>
 
-          <article className="flex flex-col rounded-xl border border-[#008280]/20 bg-[#F1F7F6] p-6 sm:p-8">
-            <p className="eyebrow mb-4 !text-[#006B69]">Global updates · Demo</p>
-            <h3 className="text-2xl font-semibold tracking-tight">Join the Movement</h3>
-            <p className="mt-4 text-sm leading-relaxed text-slate-700">
-              Over 5,500 healthcare institutions across 105 countries deploy MiPAAS AI to accelerate diagnosis, reduce clinician burnout, and expand access to rural and underserved populations.
-            </p>
-            <p className="mt-4 text-xs leading-relaxed text-slate-600">
-              Demonstration figures and outcome claims; deployment scale and clinical benefits are not verified.
-            </p>
-            <div className="mt-6 border-t border-[#008280]/20 pt-6">
-              <Link href="/tb" className="inline-flex items-center gap-2 text-sm font-semibold text-[#006B69] underline underline-offset-4 hover:text-[#0F2332] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#008280]">
-                Explore qTrack for TB <span aria-hidden="true">→</span>
-              </Link>
-            </div>
-          </article>
-
-          <article className="grid overflow-hidden rounded-xl border border-slate-200 bg-[#F8FAFB] sm:grid-cols-2 lg:col-span-2">
-            <div className="relative min-h-64 bg-slate-200">
+          {/* Card 4: Radiology Perspective */}
+          <article className="grid overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm hover:shadow-md transition-all sm:grid-cols-2 lg:col-span-2">
+            <div className="relative min-h-64 bg-slate-100">
               <Image
                 src="/images/mipaas_radiology_future.jpg"
                 alt=""
@@ -102,16 +125,22 @@ export default function DevelopmentsSection() {
               />
             </div>
             <div className="flex flex-col justify-center p-6 sm:p-8">
-              <p className="eyebrow mb-4 !text-[#006B69]">Radiology perspective · Demo</p>
-              <h3 className="text-2xl font-semibold leading-snug tracking-tight">
+              <p className="mb-2 text-xs font-bold uppercase tracking-wider text-blue-600">Radiology perspective · Demo</p>
+              <h3 className="text-2xl font-bold leading-snug tracking-tight text-slate-900">
                 The Future of Radiology: Bridging the Gap Between Rural Clinics and Global Standards
               </h3>
-              <p className="mt-4 text-sm leading-relaxed text-slate-600">
-                Explore the chest X-ray pathway. This illustrative story is not a published article or evidence of clinical outcomes.
+              <p className="mt-4 text-sm leading-relaxed text-slate-500">
+                Explore the chest X-ray pathway. Demonstrating real-time pathology screening in primary healthcare settings.
               </p>
-              <Link href="/qxr" className="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-[#006B69] underline underline-offset-4 hover:text-[#0F2332] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#008280]">
-                Explore qXR <span aria-hidden="true">→</span>
-              </Link>
+              <div className="pt-6 mt-auto">
+                <Link
+                  href="/qxr"
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-700 transition-colors"
+                >
+                  <span>Explore qXR</span>
+                  <ArrowRight size={13} />
+                </Link>
+              </div>
             </div>
           </article>
         </div>

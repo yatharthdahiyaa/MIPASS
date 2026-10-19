@@ -2,7 +2,7 @@
  * RBAC Types and Definitions for MiPAAS
  */
 
-export type Role = 'admin' | 'radiologist' | 'technician' | 'researcher' | 'auditor';
+export type Role = 'admin' | 'radiologist' | 'technician' | 'researcher' | 'auditor' | 'doctor' | 'patient';
 
 export type Permission =
   | 'jobs:create'
@@ -153,9 +153,69 @@ export const ROLE_DEFINITIONS: Record<Role, RoleMeta> = {
       'models:read',
     ],
   },
+  doctor: {
+    role: 'doctor',
+    title: 'Attending Physician & Clinician',
+    shortDesc: 'Clinical patient consultations & medical orders',
+    description: 'Lead Physician. Manages appointments, patient records, prescription orders, lab review, and care plans.',
+    badgeColor: '#0F9D9A',
+    badgeBg: 'rgba(15, 157, 154, 0.16)',
+    borderColor: 'rgba(15, 157, 154, 0.35)',
+    iconName: 'Stethoscope',
+    permissions: [
+      'jobs:read',
+      'results:read',
+      'reports:sign',
+      'reports:export',
+      'phi:read',
+    ],
+  },
+  patient: {
+    role: 'patient',
+    title: 'Registered Patient',
+    shortDesc: 'Personal health portal & medical record access',
+    description: 'Patient. Accesses personal test results, appointments, care plan, medications, and messages their care team.',
+    badgeColor: '#0F9D9A',
+    badgeBg: 'rgba(15, 157, 154, 0.16)',
+    borderColor: 'rgba(15, 157, 154, 0.35)',
+    iconName: 'Heart',
+    permissions: [
+      'results:read',
+      'phi:read',
+    ],
+  },
 };
 
 export const CLINICAL_PERSONAS: Record<string, UserProfile> = {
+  'doc-01': {
+    id: 'doc-01',
+    name: 'Dr. Elena Vance, MD',
+    email: 'elena.vance@mipaas.health',
+    role: 'doctor',
+    roleTitle: 'Internal Medicine & Lead Clinician',
+    department: 'Outpatient Clinical Medicine',
+    organization: 'CareNest Hospital System',
+    permissions: [
+      'jobs:read',
+      'results:read',
+      'reports:sign',
+      'reports:export',
+      'phi:read',
+    ],
+  },
+  'pat-01': {
+    id: 'pat-01',
+    name: 'Alex Taylor',
+    email: 'alex.taylor@carenest.health',
+    role: 'patient',
+    roleTitle: 'Registered Patient',
+    department: 'Preventive Care',
+    organization: 'CareNest Health Plan',
+    permissions: [
+      'results:read',
+      'phi:read',
+    ],
+  },
   'rad-01': {
     id: 'rad-01',
     name: 'Dr. Elena Vance',
@@ -207,3 +267,4 @@ export const CLINICAL_PERSONAS: Record<string, UserProfile> = {
     permissions: ROLE_DEFINITIONS.auditor.permissions,
   },
 };
+

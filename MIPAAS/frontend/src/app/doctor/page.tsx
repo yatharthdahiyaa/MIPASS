@@ -1,12 +1,12 @@
 import type { Metadata } from 'next';
-import DoctorWorkstation from '@/components/doctor/DoctorWorkstation';
+import DoctorPortal from '@/components/doctor/DoctorPortal';
 
 export const metadata: Metadata = {
-  title: 'MiPAAS Doctor Workstation · AI Radiology Clinical Findings',
+  title: 'CareNest Hospital System · Doctor Clinical Dashboard',
   description:
-    'Physician Diagnostic Station: Visual inspection of uploaded DICOM scans, automated deep-learning triage using trained neural models, and Grad-CAM visual explainability.',
+    'Physician workstation for Dr. Elena Vance: view clinical schedules, manage active patients, review pending lab results, and respond to critical patient alerts.',
 };
 
 export default function DoctorPage() {
-  return <DoctorWorkstation />;
+  return <DoctorPortal />;
 }

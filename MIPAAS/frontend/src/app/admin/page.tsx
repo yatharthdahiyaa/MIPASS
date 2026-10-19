@@ -1,12 +1,12 @@
 import type { Metadata } from 'next';
-import AdminPortal from '@/components/personas/AdminPortal';
+import AdminPortalSwitcher from '@/components/admin/AdminPortalSwitcher';
 
 export const metadata: Metadata = {
-  title: 'MiPAAS Lab Admin Hub · PACS, HL7, FHIR & Governance',
+  title: 'MiPAAS Administration Console · Multi-Level Enterprise & Lab PACS Hub',
   description:
-    'Laboratory administration portal: PACS AE title configuration, C-ECHO verification, multi-site RBAC, usage analytics, and API keys.',
+    'Comprehensive administration portal: Multi-level RBAC, enterprise organizations, break-glass approvals, PACS AE titles, and diagnostic telemetry.',
 };
 
 export default function AdminPage() {
-  return <AdminPortal />;
+  return <AdminPortalSwitcher />;
 }

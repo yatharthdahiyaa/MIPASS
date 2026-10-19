@@ -29,9 +29,7 @@ export const productList: ProductItem[] = [
   { id: 'diabetic-foot', name: 'qThermo – Diabetic Foot AI', tagline: 'Plantar Thermogram Bilateral Asymmetry & DM', href: '/diabetic-foot', modality: 'Thermal IR', badge: 'Thermogram ML', accent: '#10B981' },
 ];
 
-const navLinks = [
-  { label: 'Eka.care Hub', href: '/eka' },
-  { label: 'OpenEMR Hub', href: '/emr' },
+const staticNavLinks = [
   { label: 'Agents', href: '/agents' },
   { label: 'Impact', href: '/#impact' },
   { label: 'Evidence', href: '/#evidence' },
@@ -87,7 +85,18 @@ export default function Navbar() {
 
   const closeMobile = () => { setMobileOpen(false); triggerRef.current?.focus(); };
 
-  const { iamUser, isIamAuthenticated, currentUser, logoutIAM } = useRBAC();
+  const { iamUser, isIamAuthenticated, currentUser, switchPersona, logoutIAM } = useRBAC();
+  const [showRoleSwitcher, setShowRoleSwitcher] = useState(false);
+
+  const isPatient = currentUser?.role === 'patient';
+  const isDoctor = currentUser?.role === 'doctor' || currentUser?.role === 'radiologist';
+
+  // Dynamic portal links matching user's authenticated persona
+  const portalLinks = [
+    ...(isDoctor ? [{ label: 'Doctor Portal', href: '/doctor', badge: 'Doctor' }] : []),
+    ...(isPatient ? [{ label: 'Patient Portal', href: '/emr', badge: 'Patient' }] : []),
+    ...staticNavLinks,
+  ];
 
   return (
     <nav ref={navRef} className="main-navigation" aria-label="Main navigation">
@@ -102,31 +111,88 @@ export default function Navbar() {
               <Link href="/#products" className="product-panel-all" onClick={() => setProductOpen(false)}>Explore all pathways <ArrowRight size={15} /></Link>
             </div>}
           </div>
-          {navLinks.map((link) => <Link key={link.href} href={link.href} className="nav-link">{link.label}</Link>)}
+          {portalLinks.map((link) => (
+            <Link key={link.href} href={link.href} className="nav-link flex items-center gap-1.5">
+              <span>{link.label}</span>
+              {'badge' in link && (
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#0F9D9A]/20 text-[#00DCCE]">
+                  {link.badge}
+                </span>
+              )}
+            </Link>
+          ))}
         </div>
         <div className="desktop-navigation nav-actions">
-          <Link href="/#contact" className="nav-link">Contact</Link>
-          {isIamAuthenticated && iamUser ? (
-            <div className="flex items-center gap-2">
-              <a
-                href="http://localhost:5173/dashboard"
-                className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/20 text-white text-xs font-semibold flex items-center gap-2 transition-all"
-                title="Open IAM RBAC Management Console (Port 5173)"
-              >
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="font-bold">{iamUser.username}</span>
-                <span className="text-[10px] text-[#00DCCE] font-mono uppercase">({currentUser.role})</span>
-              </a>
-              <button
-                type="button"
-                onClick={() => logoutIAM()}
-                className="text-xs text-gray-400 hover:text-white px-2 py-1 transition-colors cursor-pointer"
-                title="Sign out of IAM session"
-              >
-                Sign out
-              </button>
-            </div>
-          ) : (
+          {/* Quick Active Persona Switcher */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowRoleSwitcher(!showRoleSwitcher)}
+              className="px-2.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-white/90 flex items-center gap-2 cursor-pointer transition-colors"
+              title="Click to switch between Doctor and Patient demo profiles"
+            >
+              <span className={`w-2 h-2 rounded-full ${isDoctor ? 'bg-[#00DCCE]' : isPatient ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+              <span className="font-semibold text-[11px] truncate max-w-[120px]">{currentUser?.name || 'Guest'}</span>
+              <span className="text-[10px] text-teal-300 font-mono uppercase">({currentUser?.role})</span>
+              <ChevronDown size={12} className="text-white/60" />
+            </button>
+
+            {showRoleSwitcher && (
+              <div className="absolute right-0 mt-2 w-64 rounded-2xl bg-[#0B1724] border border-white/15 shadow-2xl p-2 z-50 animate-in fade-in text-xs">
+                <div className="px-3 py-2 text-[10px] uppercase font-bold text-gray-400 tracking-wider border-b border-white/10">
+                  Select Active Persona
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    switchPersona('doc-01');
+                    setShowRoleSwitcher(false);
+                  }}
+                  className={`w-full text-left p-2.5 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer ${
+                    currentUser?.id === 'doc-01' ? 'bg-[#0F9D9A]/20 text-white' : 'text-gray-300 hover:bg-white/5'
+                  }`}
+                >
+                  <span className="text-base">🩺</span>
+                  <div>
+                    <div className="font-bold text-white">Dr. Elena Vance, MD</div>
+                    <div className="text-[10px] text-teal-400">Doctor · Unlocks Doctor Portal</div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    switchPersona('pat-01');
+                    setShowRoleSwitcher(false);
+                  }}
+                  className={`w-full text-left p-2.5 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer ${
+                    currentUser?.id === 'pat-01' ? 'bg-[#0F9D9A]/20 text-white' : 'text-gray-300 hover:bg-white/5'
+                  }`}
+                >
+                  <span className="text-base">❤️</span>
+                  <div>
+                    <div className="font-bold text-white">Alex Taylor</div>
+                    <div className="text-[10px] text-emerald-400">Patient · Unlocks Patient Portal</div>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Direct Role Portal CTA */}
+          {isDoctor && (
+            <Link href="/doctor" className="button-primary nav-cta !bg-[#0F9D9A] hover:!bg-[#0D8B88]" title="Open Doctor Clinical Workstation">
+              Doctor Portal <ArrowRight size={15} />
+            </Link>
+          )}
+
+          {isPatient && (
+            <Link href="/emr" className="button-primary nav-cta !bg-[#0F9D9A] hover:!bg-[#0D8B88]" title="Open Patient Health Portal">
+              Patient Portal <ArrowRight size={15} />
+            </Link>
+          )}
+
+          {!isDoctor && !isPatient && (
             <Link href={LOGIN_URL} className="button-primary nav-cta" title="Sign in to the MiPAAS platform">
               Login <ArrowRight size={15} />
             </Link>
@@ -138,8 +204,14 @@ export default function Navbar() {
         <div className="mobile-navigation-header"><span className="brand"><span className="brand-mark">M</span><strong>MiPAAS</strong></span><button type="button" aria-label="Close menu" onClick={closeMobile}><X size={25} /></button></div>
         <button type="button" className="mobile-pathway-toggle" aria-expanded={mobileProductsOpen} aria-controls="mobile-pathways" onClick={() => setMobileProductsOpen(!mobileProductsOpen)}>Clinical pathways <ChevronDown size={20} className={mobileProductsOpen ? 'rotate-180' : ''} /></button>
         {mobileProductsOpen && <div id="mobile-pathways" className="mobile-pathways">{navProductList.map((item) => <Link key={item.id} href={item.href} onClick={closeMobile}><span>{item.name}{item.status && item.status !== 'active' && <small>Temporarily unavailable</small>}</span><span>{item.modality}</span></Link>)}</div>}
-        <div className="mobile-nav-links">{navLinks.map((link) => <Link key={link.href} href={link.href} onClick={closeMobile}>{link.label}<ArrowRight size={18} /></Link>)}</div>
-        <Link href={LOGIN_URL} onClick={closeMobile} className="button-primary">Login to MiPAAS <ArrowRight size={17} /></Link>
+        <div className="mobile-nav-links">{portalLinks.map((link) => <Link key={link.href} href={link.href} onClick={closeMobile}>{link.label}<ArrowRight size={18} /></Link>)}</div>
+        {isDoctor ? (
+          <Link href="/doctor" onClick={closeMobile} className="button-primary">Doctor Portal <ArrowRight size={17} /></Link>
+        ) : isPatient ? (
+          <Link href="/emr" onClick={closeMobile} className="button-primary">Patient Portal <ArrowRight size={17} /></Link>
+        ) : (
+          <Link href={LOGIN_URL} onClick={closeMobile} className="button-primary">Login to MiPAAS <ArrowRight size={17} /></Link>
+        )}
       </div>}
     </nav>
   );

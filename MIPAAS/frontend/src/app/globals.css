@@ -22,8 +22,8 @@ html {
 
 body {
   font-family: 'Inter', sans-serif;
-  background-color: var(--color-bg-primary);
-  color: white;
+  background-color: #f8fafc;
+  color: #0f172a;
   overflow-x: hidden;
 }
 
@@ -268,12 +268,12 @@ body {
   50% { transform: translateY(-8px); }
 }
 
-:root { color-scheme: dark; }
+:root { color-scheme: light; }
 button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
-:focus-visible { outline: 2px solid #98AED9; outline-offset: 5px; }
-::selection { background: #008280; color: #fff; }
+:focus-visible { outline: 2px solid #2563eb; outline-offset: 4px; }
+::selection { background: #2563eb; color: #fff; }
 .site-container { width: 100%; max-width: 1360px; margin-inline: auto; padding-inline: 32px; }
 .eyebrow { display: flex; align-items: center; gap: 10px; color: #91C6C0; font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; margin-bottom: 22px; }
 .eyebrow-line { display: inline-block; width: 24px; height: 1px; background: #91C6C0; flex-shrink: 0; }

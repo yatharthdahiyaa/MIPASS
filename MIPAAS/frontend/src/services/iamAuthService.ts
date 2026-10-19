@@ -202,7 +202,19 @@ export const iamAuthService = {
     if (iamUser.isRoot || rolesLower.includes('root') || rolesLower.includes('admin')) {
       mappedRole = 'admin';
     } else if (
-      rolesLower.some((r) => r.includes('rad') || r.includes('doctor') || r.includes('physician'))
+      rolesLower.some((r) => r.includes('patient')) ||
+      iamUser.username.toLowerCase().includes('patient') ||
+      iamUser.email.toLowerCase().includes('alex.taylor')
+    ) {
+      mappedRole = 'patient';
+    } else if (
+      rolesLower.some((r) => r.includes('doctor') || r.includes('physician') || r.includes('clinician')) ||
+      iamUser.username.toLowerCase().includes('doctor') ||
+      iamUser.username.toLowerCase().includes('elena')
+    ) {
+      mappedRole = 'doctor';
+    } else if (
+      rolesLower.some((r) => r.includes('rad'))
     ) {
       mappedRole = 'radiologist';
     } else if (

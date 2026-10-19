@@ -2,9 +2,9 @@ import type { Metadata } from 'next';
 import OpenEMRHub from '@/components/emr/OpenEMRHub';
 
 export const metadata: Metadata = {
-  title: 'MiPAAS OpenEMR Management System · Master Patient Index & FHIR R4',
+  title: 'CareNest Patient Health Portal · Appointments, Records & Care Plan',
   description:
-    'Comprehensive OpenEMR clinical management hub: Master Patient Index (MPI), DICOM tag reconciliation, radiology procedure orders worklist, clinical encounters, and HL7 FHIR R4 interoperability.',
+    'Patient healthcare portal: View health vitals, upcoming doctor appointments, interactive care plan, active prescriptions, and doctor visit summaries.',
 };
 
 export default function OpenEMRPage() {
