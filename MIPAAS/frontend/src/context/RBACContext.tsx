@@ -304,7 +304,7 @@ export function RBACProvider({ children }: { children: React.ReactNode }) {
       value={{
         currentUser,
         currentRole: currentUser.role,
-        availableRoles: ['radiologist', 'technician', 'researcher', 'admin', 'auditor'],
+        availableRoles: ['doctor', 'patient', 'radiologist', 'technician', 'researcher', 'admin', 'auditor'],
         switchRole,
         switchPersona,
         hasPermission,

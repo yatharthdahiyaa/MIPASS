@@ -38,7 +38,6 @@ from app.database import (
     get_db,
     get_db_stats,
     init_db,
-    seed_database,
 )
 from app.services.openemr.service import OpenEMRManagementService
 from app.services.eka_portal import EkaCarePortalService
@@ -50,7 +49,6 @@ def app_instance():
     app = create_app("testing")
     with app.app_context():
         init_db(drop_first=True)
-        seed_database(overwrite=True)
         yield app
 
 
@@ -76,8 +74,8 @@ class TestCentralDatabaseCore:
         assert "clinical_patients" in stats["tables"]
         assert "family_members" in stats["tables"]
         assert "diagnostic_jobs" in stats["tables"]
-        assert stats["tables"]["users"] > 0
-        assert stats["tables"]["clinical_patients"] > 0
+        assert stats["tables"]["users"] == 0
+        assert stats["tables"]["clinical_patients"] == 0
 
     def test_iam_models_crud(self, app_instance):
         with get_db() as db:
@@ -266,11 +264,9 @@ class TestDatabaseAdminAPIEndpoints:
         assert "tables" in payload
         assert payload["tables"]["users"] > 0
 
-    def test_post_database_seed_endpoint(self, client):
+    def test_post_database_seed_endpoint_is_removed(self, client):
         res = client.post("/api/v1/database/seed", json={"overwrite": False})
-        assert res.status_code == 200
-        data = res.get_json()
-        assert data["success"] is True
+        assert res.status_code == 404
 
     def test_post_database_init_endpoint(self, client):
         res = client.post("/api/v1/database/init", json={"drop_first": False})

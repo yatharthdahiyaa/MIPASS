@@ -418,7 +418,7 @@ export default function TopBar() {
 
                 <div className="border-t border-white/10 pt-2">
                   <a
-                    href="/login"
+                    href="/"
                     className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
                   >
                     <LogOut className="w-3.5 h-3.5" />

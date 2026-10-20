@@ -18,7 +18,7 @@ realPrisma
   })
   .catch((err) => {
     console.warn(
-      '⚠️ [Prisma] PostgreSQL not reachable at localhost:5432. Switching to Resilient Memory Store with seeded AWS accounts (Root & alice.dev).'
+      '⚠️ [Prisma] PostgreSQL not reachable at localhost:5432. Switching to empty in-memory store; no accounts are available until the database is up.'
     );
     useFallback = true;
   });
@@ -86,8 +86,21 @@ const mockPrisma: any = {
       return memoryStore.attachUserRelations(u, include);
     },
     findFirst: async ({ where, include }: any) => {
+      if (where?.OR && Array.isArray(where.OR)) {
+        for (const cond of where.OR) {
+          const subMatch = memoryStore.users.find((x) => {
+            if (cond.email && x.email.toLowerCase() !== cond.email.toLowerCase()) return false;
+            if (cond.username && x.username.toLowerCase() !== cond.username.toLowerCase()) return false;
+            if (cond.isRoot !== undefined && x.isRoot !== cond.isRoot) return false;
+            if (cond.id && x.id !== cond.id) return false;
+            return true;
+          });
+          if (subMatch) return memoryStore.attachUserRelations(subMatch, include);
+        }
+      }
+
       const match = memoryStore.users.find((x) => {
-        if (where.email && x.email !== where.email) return false;
+        if (where.email && x.email.toLowerCase() !== where.email.toLowerCase()) return false;
         if (where.isRoot !== undefined && x.isRoot !== where.isRoot) return false;
         if (where.id && x.id !== where.id) return false;
         if (where.accountId && x.accountId !== where.accountId) return false;
@@ -169,10 +182,27 @@ const mockPrisma: any = {
         ) || null
       );
     },
-    findMany: async ({ where }: any) => {
+    findMany: async ({ where, include }: any) => {
       let list = [...memoryStore.roles];
       if (where?.accountId) list = list.filter((r) => r.accountId === where.accountId);
-      return list;
+      return list.map((r) => {
+        const rps = memoryStore.rolePolicies
+          .filter((rp) => rp.roleId === r.id)
+          .map((rp) => ({
+            ...rp,
+            policy: memoryStore.policies.find((p) => p.id === rp.policyId) || { id: rp.policyId, name: 'Policy', description: '' },
+          }));
+        const userRolesCount = memoryStore.userRoles.filter((ur) => ur.roleId === r.id).length;
+        const groupRolesCount = memoryStore.groupRoles.filter((gr) => gr.roleId === r.id).length;
+        return {
+          ...r,
+          rolePolicies: rps,
+          _count: {
+            userRoles: userRolesCount,
+            groupRoles: groupRolesCount,
+          },
+        };
+      });
     },
     create: async ({ data }: any) => {
       const newRole = {
@@ -227,7 +257,12 @@ const mockPrisma: any = {
     findMany: async ({ where }: any) => {
       let list = [...memoryStore.policies];
       if (where?.accountId) list = list.filter((p) => p.accountId === where.accountId);
-      return list;
+      return list.map((p) => ({
+        ...p,
+        _count: {
+          rolePolicies: memoryStore.rolePolicies.filter((rp) => rp.policyId === p.id).length,
+        },
+      }));
     },
     create: async ({ data }: any) => {
       const newPolicy = {

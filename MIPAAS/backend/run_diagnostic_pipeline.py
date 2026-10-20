@@ -224,20 +224,19 @@ def run_pipeline(
         detected_body_part = "CHEST"
 
     # Compatibility matching
-    compatibility_score = 0.98 if (detected_body_part == selected_service_info["target_anatomy"] or selected_service_info["expected_modality"] in ("CXR", "DX")) else 0.85
-    is_compatible = True
+    is_compatible = (
+        detected_body_part == selected_service_info["target_anatomy"]
+        or selected_service_info["expected_modality"] in (detected_modality, "CXR", "DX")
+    )
+    compatibility_score = 1.0 if is_compatible else 0.0
 
-    # Retrieve non-biasing synthetic patient EHR context
-    synthetic_ehr_context = {
+    patient_context = {
         "patient_pseudonym": patient_id,
-        "age": dicom_meta.get("patient_age", "54Y") if is_dicom else "54Y",
-        "gender": dicom_meta.get("patient_sex", "Other") if is_dicom else "Other",
-        "verified_allergies": ["Penicillin G (Cutaneous)", "Iodinated Radiographic Contrast (Mild)"],
-        "chronic_conditions": ["Type 2 Diabetes Mellitus (Controlled, HbA1c 6.8%)", "Mild Chronic Bronchitis"],
-        "prior_imaging_records": [
-            {"date": "2025-08-14", "modality": "Chest PA", "status": "Normal Baseline, No Consolidation"},
-            {"date": "2024-11-02", "modality": "Plantar Thermogram", "status": "Symmetric, ΔT < 0.4°C"}
-        ],
+        "age": dicom_meta.get("patient_age") if is_dicom else None,
+        "gender": dicom_meta.get("patient_sex") if is_dicom else None,
+        "verified_allergies": [],
+        "chronic_conditions": [],
+        "prior_imaging_records": [],
         "non_biasing_enforcement": "EHR context isolated from raw neural network convolution weights to prevent diagnostic confirmation bias."
     }
 
@@ -252,7 +251,7 @@ def run_pipeline(
         "compatibility_match": is_compatible,
         "compatibility_confidence": compatibility_score,
         "clinical_context_retrieved": True,
-        "patient_context": synthetic_ehr_context,
+        "patient_context": patient_context,
         "decision": "compatible",
         "duration_ms": round((time.time() - t0) * 1000, 2),
     }

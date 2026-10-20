@@ -39,7 +39,6 @@ from app.database.session import (
     get_session_factory,
     init_db,
 )
-from app.database.seed import seed_database
 
 __all__ = [
     # Database Core
@@ -48,7 +47,6 @@ __all__ = [
     "get_db",
     "get_session_factory",
     "init_db",
-    "seed_database",
     "check_db_health",
     "get_db_stats",
     "get_database_url",

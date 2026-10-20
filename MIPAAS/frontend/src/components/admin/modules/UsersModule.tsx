@@ -24,6 +24,7 @@ import {
   X,
 } from 'lucide-react';
 import { BUILT_IN_ROLES } from '@/utils/multiLevelRbacDefaults';
+import { iamAuthService } from '@/services/iamAuthService';
 
 interface UserRecord {
   id: string;
@@ -120,6 +121,29 @@ export default function UsersModule() {
   useEffect(() => {
     const loadBackendUsers = async () => {
       try {
+        // 1. Try live IAM-RBAC backend on port 5000 first
+        const iamRes = await iamAuthService.listUsers().catch(() => null);
+        if (iamRes?.success && Array.isArray(iamRes.data) && iamRes.data.length > 0) {
+          const mapped: UserRecord[] = iamRes.data.map((u: any) => ({
+            id: u.id,
+            name: u.username
+              .split('.')
+              .map((part: string) => part.charAt(0).toUpperCase() + part.slice(1))
+              .join(' '),
+            email: u.email,
+            role: (u.roles || []).map((r: any) => r.name || r).join(', ') || (u.isRoot ? 'Root Superuser' : 'IAM User'),
+            scope: (u.isRoot ? 'platform' : 'organisation') as PermissionScope,
+            siteName: 'AWS Healthcare Cloud (aws-demo)',
+            mfaEnabled: Boolean(u.isMfaEnabled),
+            ssoGroup: u.isRoot ? 'AWS-Root-Admins' : 'IAM-RBAC-Active',
+            lastLogin: u.isLocked ? 'Account Locked' : 'Active Session',
+            status: u.isSuspended ? 'suspended' : 'active',
+          }));
+          setUsers(mapped);
+          return;
+        }
+
+        // 2. Fallback to port 8080 or local proxy
         const response = await fetch('http://localhost:8080/api/v1/rbac/users', {
           headers: {
             Accept: 'application/json',

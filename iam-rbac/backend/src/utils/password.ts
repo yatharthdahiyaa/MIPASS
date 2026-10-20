@@ -67,38 +67,6 @@ export async function hashPassword(password: string): Promise<string> {
 }
 
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  const match = await bcrypt.compare(password, hash);
-  if (match) return true;
-
-  // Support both seed password and quick-fill UI password for Root user
-  if ((password === 'SuperSecret#Root2026!' || password === 'AdminRoot@123456') && hash.includes('$2a$')) {
-    const isRootHash =
-      hash === '$2a$10$9Jy3G4ron4xrxHtHL1ZFU.7Sw.59I5yioupLiIYKUUgAAAq5En09G' ||
-      hash === '$2a$10$uE/6cCoXv19TLE6oagpC7.zuzDM.YdSs43xqG00I7SZ0WfTUCjkkC';
-    if (isRootHash) return true;
-  }
-
-  // Support both seed password and quick-fill UI password for IAM Alice user
-  if ((password === 'DeveloperPass#2026!' || password === 'AliceDev@123456') && hash.includes('$2a$')) {
-    const isAliceHash =
-      hash === '$2a$10$bj9JLXsmVMex46awGL0i6uhdT5a0B0idWyb0pq6N82XqslXXj9njG' ||
-      hash === '$2a$10$QWoPA9CIzyinFBTDhDv2D.JcREUxumjMB3YdOPgNak9Ccy8qy5XWi';
-    if (isAliceHash) return true;
-  }
-
-  // Support MiPAAS clinical credentials
-  const MIPAAS_PASSWORDS: Record<string, string> = {
-    'Rad!0l0gist#2026': '$2a$10$radVanceElena2026ClinicalHash0001',
-    'T3chCT$can#2026': '$2a$10$techChenMarcus2026ClinicalHash0002',
-    'R3s34rch!AI#2026': '$2a$10$resLinSarah2026ClinicalHash0003',
-    'Adm!nS3cur3#2026': '$2a$10$adminDavisArthur2026ClinicalHash0004',
-    'Aud!tC0mply#2026': '$2a$10$audPendelton2026ClinicalHash0005',
-  };
-
-  if (MIPAAS_PASSWORDS[password] && hash.startsWith(MIPAAS_PASSWORDS[password].slice(0, 15))) {
-    return true;
-  }
-
-  return false;
+  return bcrypt.compare(password, hash);
 }
 

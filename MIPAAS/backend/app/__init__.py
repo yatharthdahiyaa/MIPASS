@@ -58,10 +58,8 @@ def create_app(config_name: str | None = None) -> Flask:
 
     # Initialize Central Database
     try:
-        from app.database import init_db, seed_database
+        from app.database import init_db
         init_db()
-        if app.config.get("DATABASE_AUTO_SEED", True):
-            seed_database(overwrite=False)
         logger.info("central_database_ready")
     except Exception as exc:
         logger.warning("central_database_init_warning", error=str(exc))

@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useRBAC } from '@/context/RBACContext';
 import {
   Users,
@@ -11,6 +12,7 @@ import {
   Search,
   Plus,
   ArrowRight,
+  ArrowLeft,
   AlertTriangle,
   CheckCircle2,
   Clock,
@@ -52,7 +54,8 @@ import {
   QrCode,
   Syringe,
   Smile,
-  HelpCircle
+  HelpCircle,
+  LogOut,
 } from 'lucide-react';
 
 interface PatientProfile {
@@ -118,8 +121,19 @@ const CURRENT_PATIENT: PatientProfile = {
 };
 
 export default function OpenEMRHub() {
-  const { currentUser, switchPersona } = useRBAC();
-  const isPatient = currentUser?.role === 'patient';
+  const router = useRouter();
+  const { currentUser, switchPersona, logout, logoutIAM, isIamAuthenticated, iamUser } = useRBAC();
+  const isPatient = currentUser?.role === 'patient' || (isIamAuthenticated && iamUser?.roles?.some((r) => r.toLowerCase().includes('patient')));
+
+  const handleSignOut = async () => {
+    try {
+      await logoutIAM();
+    } catch {
+      // Continue cleanup even if network request fails
+    }
+    logout();
+    router.push('/');
+  };
 
   // Navigation tabs matching CareNest layout:
   // Overview, Appointments, Health Records, Medications, Test Results, Messages, Settings
@@ -127,7 +141,11 @@ export default function OpenEMRHub() {
     'overview' | 'appointments' | 'records' | 'medications' | 'results' | 'messages' | 'settings'
   >('overview');
 
-  const patient = CURRENT_PATIENT;
+  const patient = {
+    ...CURRENT_PATIENT,
+    name: currentUser?.name || iamUser?.username || CURRENT_PATIENT.name,
+    email: currentUser?.email || iamUser?.email || CURRENT_PATIENT.email,
+  };
   const [searchQuery, setSearchQuery] = useState('');
   const [notification, setNotification] = useState<string | null>(null);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -485,6 +503,14 @@ export default function OpenEMRHub() {
             </Link>
 
             <Link
+              href="/login"
+              className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-semibold text-sm transition-all flex items-center justify-center gap-2"
+            >
+              <LogOut className="w-4 h-4 text-slate-600" />
+              <span>Sign In with Different Account</span>
+            </Link>
+
+            <Link
               href="/"
               className="block text-xs text-slate-400 hover:text-slate-600 font-medium pt-2"
             >
@@ -536,6 +562,17 @@ export default function OpenEMRHub() {
               </button>
             </div>
 
+            {/* Back to Patient Portal Link in Sidebar */}
+            <div className="px-4 pt-3 pb-1">
+              <Link
+                href="/patient"
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-[#0F9D9A] bg-teal-50/70 hover:bg-teal-100 border border-teal-200/60 transition-all cursor-pointer"
+              >
+                <ArrowLeft className="w-4 h-4 text-[#0F9D9A]" />
+                <span>Back to Patient Portal</span>
+              </Link>
+            </div>
+
             {/* Navigation Menu */}
             <nav className="p-4 space-y-1.5">
               {[
@@ -574,6 +611,26 @@ export default function OpenEMRHub() {
                 );
               })}
             </nav>
+
+            {/* Quick Navigation & Sign Out */}
+            <div className="px-4 pt-2 pb-1 border-t border-[#F0F4F8] mt-2 space-y-1">
+              <Link
+                href="/patient"
+                className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-xs text-teal-700 bg-teal-50/70 hover:bg-teal-100 transition-all cursor-pointer"
+              >
+                <Sparkles className="w-4 h-4 text-[#0F9D9A]" />
+                <span>Diagnostic System</span>
+              </Link>
+
+              <button
+                type="button"
+                onClick={handleSignOut}
+                className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-xs text-rose-600 bg-rose-50/50 hover:bg-rose-100 transition-all cursor-pointer"
+              >
+                <LogOut className="w-4 h-4 text-rose-600" />
+                <span>Sign Out</span>
+              </button>
+            </div>
           </div>
 
           {/* Bottom Card: "Your health matters" matching screenshot */}
@@ -611,7 +668,7 @@ export default function OpenEMRHub() {
         <div className="flex-1 flex flex-col h-screen overflow-y-auto">
           {/* Top Header */}
           <header className="sticky top-0 z-20 h-20 bg-white/90 backdrop-blur-md border-b border-[#E7EEF4] px-4 sm:px-8 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3 flex-1 max-w-xl">
+            <div className="flex items-center gap-2.5 sm:gap-3 flex-1 max-w-xl">
               <button
                 type="button"
                 onClick={() => setMobileMenuOpen(true)}
@@ -620,6 +677,18 @@ export default function OpenEMRHub() {
               >
                 <Users className="w-5 h-5" />
               </button>
+
+              {/* Prominent Back Button to Return to Patient Portal */}
+              <Link
+                href="/patient"
+                id="emr-back-to-patient-btn"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-teal-50 hover:bg-teal-100 text-[#0F9D9A] border border-teal-200/80 font-bold text-xs sm:text-sm transition-all shadow-2xs shrink-0 cursor-pointer"
+                title="Back to Patient Diagnostic Portal"
+              >
+                <ArrowLeft className="w-4 h-4 text-[#0F9D9A]" />
+                <span className="hidden sm:inline">Back to Patient Portal</span>
+                <span className="sm:hidden">Back</span>
+              </Link>
 
               {/* Patient Search Input */}
               <div className="relative w-full">
@@ -634,8 +703,9 @@ export default function OpenEMRHub() {
               </div>
             </div>
 
-            {/* Header Right Actions: Notifications & Personal Profile */}
-            <div className="flex items-center gap-3 sm:gap-4">
+            {/* Header Right Actions: Notifications, Profile, and Sign Out */}
+            <div className="flex items-center gap-2 sm:gap-3">
+
               {/* Notification Bell */}
               <button
                 type="button"
@@ -683,6 +753,14 @@ export default function OpenEMRHub() {
                     </div>
 
                     <div className="space-y-1">
+                      <Link
+                        href="/patient"
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-teal-700 hover:bg-teal-50 font-medium cursor-pointer"
+                      >
+                        <Sparkles className="w-4 h-4 text-[#0F9D9A]" />
+                        <span>Diagnostic System</span>
+                      </Link>
+
                       <button
                         type="button"
                         onClick={() => {
@@ -720,7 +798,17 @@ export default function OpenEMRHub() {
                       </button>
                     </div>
 
-                    <div className="pt-2 mt-2 border-t border-slate-100">
+                    <div className="pt-2 mt-2 border-t border-slate-100 space-y-1">
+                      <button
+                        type="button"
+                        id="emr-dropdown-signout-btn"
+                        onClick={handleSignOut}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-rose-600 hover:bg-rose-50 font-semibold cursor-pointer"
+                      >
+                        <LogOut className="w-4 h-4 text-rose-600" />
+                        <span>Sign Out</span>
+                      </button>
+
                       <Link
                         href="/"
                         className="w-full flex items-center justify-center gap-1.5 py-1.5 text-slate-400 hover:text-slate-600 font-semibold text-[11px]"
@@ -731,6 +819,18 @@ export default function OpenEMRHub() {
                   </div>
                 )}
               </div>
+
+              {/* Direct Header Sign Out Icon-Only Button */}
+              <button
+                type="button"
+                id="emr-header-signout-btn"
+                onClick={handleSignOut}
+                className="w-10 h-10 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 hover:text-rose-700 transition-all cursor-pointer shadow-xs flex items-center justify-center shrink-0"
+                title="Sign Out"
+                aria-label="Sign Out"
+              >
+                <LogOut className="w-4 h-4 text-rose-600" />
+              </button>
             </div>
           </header>
 
@@ -741,6 +841,18 @@ export default function OpenEMRHub() {
                ============================================================== */}
             {activeTab === 'overview' && (
               <div className="space-y-6">
+                {/* Back Link Breadcrumb */}
+                <div>
+                  <Link
+                    href="/patient"
+                    id="emr-welcome-back-link"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 text-[#0F9D9A] text-xs font-semibold border border-teal-200/70 transition-colors"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <span>Back to Diagnostic System</span>
+                  </Link>
+                </div>
+
                 {/* 1. Welcome Section */}
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                   <div>

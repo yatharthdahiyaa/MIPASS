@@ -21,7 +21,7 @@ export async function listPolicies(req: AuthenticatedRequest, res: Response): Pr
     description: p.description,
     isSystem: p.isSystem,
     document: p.document,
-    attachedRolesCount: p._count.rolePolicies,
+    attachedRolesCount: p._count?.rolePolicies || 0,
     createdAt: p.createdAt,
   }));
 

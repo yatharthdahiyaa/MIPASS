@@ -37,6 +37,7 @@ import {
   RefreshCw,
   LogOut,
   ExternalLink,
+  Activity,
 } from 'lucide-react';
 
 /* ── Interfaces ── */
@@ -356,8 +357,8 @@ const INITIAL_MESSAGES: ClinicalMessage[] = [
 ];
 
 export default function DoctorPortal() {
-  const { currentUser, switchPersona, logout } = useRBAC();
-  const isDoctor = currentUser?.role === 'doctor' || currentUser?.role === 'radiologist';
+  const { currentUser, switchPersona, logout, logoutIAM } = useRBAC();
+  const isDoctor = currentUser?.role === 'doctor' || currentUser?.role === 'radiologist' || currentUser?.role === 'admin';
 
   const [activeNav, setActiveNav] = useState('dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -865,9 +866,14 @@ export default function DoctorPortal() {
 
                       <button
                         type="button"
-                        onClick={() => {
+                        onClick={async () => {
+                          try {
+                            await logoutIAM();
+                          } catch {
+                            // continue cleanup
+                          }
                           logout();
-                          window.location.href = '/login';
+                          window.location.href = '/';
                         }}
                         className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-rose-600 hover:bg-rose-50 font-medium cursor-pointer"
                       >
