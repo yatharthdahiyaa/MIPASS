@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import DeveloperPortal from '@/components/personas/DeveloperPortal';
+import RoleGate from '@/components/auth/RoleGate';
 
 export const metadata: Metadata = {
   title: 'MiPAAS Developer Hub · Sandbox, APIs, SDKs & Webhooks',
@@ -8,5 +9,13 @@ export const metadata: Metadata = {
 };
 
 export default function DeveloperPage() {
-  return <DeveloperPortal />;
+  return (
+    <RoleGate
+      allowedRoles={['admin', 'researcher', 'technician']}
+      title="Developer Hub"
+      description="Sandbox tokens, SDKs, and webhook configuration are restricted to authorized integration roles."
+    >
+      <DeveloperPortal />
+    </RoleGate>
+  );
 }

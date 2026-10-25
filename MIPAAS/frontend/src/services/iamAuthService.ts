@@ -4,6 +4,7 @@
  */
 
 import { Permission, Role, ROLE_DEFINITIONS, UserProfile } from '@/types/rbac';
+import { DEMO_AUTH_ENABLED } from '@/lib/demoMode';
 
 export interface IamUserResult {
   id: string;
@@ -225,11 +226,15 @@ export const iamAuthService = {
         throw err;
       }
 
-      // Offline / sandbox fallback validation for development
+      if (!DEMO_AUTH_ENABLED) {
+        throw new Error('The authentication service is unavailable. Please try again shortly.');
+      }
+
+      // Explicit demo-mode fallback. Never used when demo auth is disabled.
       const targetId = payload.identifier.toLowerCase().trim();
-      const isPatMatch = payload.role === 'patient' && (targetId.includes('patient') || targetId.includes('alex.taylor') || targetId.includes('carenest') || targetId.length > 0) && (payload.password === 'Patient#2026' || payload.password.length >= 6);
-      const isDocMatch = payload.role === 'doctor' && (targetId.includes('doctor') || targetId.includes('elena.vance') || targetId.includes('mipaas') || targetId.length > 0) && (payload.password === 'Doctor#2026' || payload.password.length >= 6);
-      const isAdminMatch = payload.role === 'admin' && (targetId.includes('admin') || targetId.includes('arthur.davis') || targetId.includes('root') || targetId.length > 0) && (payload.password === 'Adm!nS3cur3#2026' || payload.password === 'AdminRoot@123456' || payload.password.length >= 6);
+      const isPatMatch = payload.role === 'patient' && (targetId.includes('patient') || targetId.includes('carenest') || targetId.length > 0) && (payload.password === 'Patient#2026' || payload.password.length >= 6);
+      const isDocMatch = payload.role === 'doctor' && (targetId.includes('doctor') || targetId.includes('physician') || targetId.includes('mipaas') || targetId.length > 0) && (payload.password === 'Doctor#2026' || payload.password.length >= 6);
+      const isAdminMatch = payload.role === 'admin' && (targetId.includes('admin') || targetId.includes('root') || targetId.length > 0) && (payload.password === 'Adm!nS3cur3#2026' || payload.password === 'AdminRoot@123456' || payload.password.length >= 6);
 
       if (isPatMatch || isDocMatch || isAdminMatch) {
         const fallbackUsers: Record<string, IamUserResult> = {
@@ -238,8 +243,8 @@ export const iamAuthService = {
             accountId: '123456789012',
             accountName: 'CareNest Health System',
             accountAlias: 'carenest-health',
-            username: targetId.includes('@') ? targetId.split('@')[0] : (targetId || 'alex.taylor'),
-            email: targetId.includes('@') ? targetId : 'alex.taylor@carenest.health',
+            username: targetId.includes('@') ? targetId.split('@')[0] : (targetId || 'patient.user'),
+            email: targetId.includes('@') ? targetId : `${targetId || 'patient'}@carenest.health`,
             isRoot: false,
             roles: ['Patient'],
             permissions: ['results:read', 'phi:read'],
@@ -249,8 +254,8 @@ export const iamAuthService = {
             accountId: '123456789012',
             accountName: 'CareNest Hospital Network',
             accountAlias: 'carenest-health',
-            username: targetId.includes('@') ? targetId.split('@')[0] : (targetId || 'elena.vance'),
-            email: targetId.includes('@') ? targetId : 'elena.vance@mipaas.health',
+            username: targetId.includes('@') ? targetId.split('@')[0] : (targetId || 'doctor.user'),
+            email: targetId.includes('@') ? targetId : `${targetId || 'doctor'}@mipaas.health`,
             isRoot: false,
             roles: ['Doctor', 'Clinician'],
             permissions: ['jobs:read', 'results:read', 'reports:sign', 'reports:export', 'phi:read'],
@@ -316,7 +321,11 @@ export const iamAuthService = {
         throw err;
       }
 
-      // Offline resilient registration fallback
+      if (!DEMO_AUTH_ENABLED) {
+        throw new Error('The registration service is unavailable. Please try again shortly.');
+      }
+
+      // Explicit demo-mode registration fallback.
       const fallbackUser: IamUserResult = {
         id: 'pat-' + Date.now().toString(36),
         accountId: '123456789012',
@@ -451,14 +460,13 @@ export const iamAuthService = {
       mappedRole = 'admin';
     } else if (
       rolesLower.some((r) => r.includes('patient')) ||
-      iamUser.username.toLowerCase().includes('patient') ||
-      iamUser.email.toLowerCase().includes('alex.taylor')
+      iamUser.username.toLowerCase().includes('patient')
     ) {
       mappedRole = 'patient';
     } else if (
       rolesLower.some((r) => r.includes('doctor') || r.includes('physician') || r.includes('clinician')) ||
       iamUser.username.toLowerCase().includes('doctor') ||
-      iamUser.username.toLowerCase().includes('elena')
+      iamUser.username.toLowerCase().includes('doc')
     ) {
       mappedRole = 'doctor';
     } else if (

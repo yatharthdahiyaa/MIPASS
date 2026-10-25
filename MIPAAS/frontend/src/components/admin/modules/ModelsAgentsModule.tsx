@@ -22,11 +22,13 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import SensitiveActionModal from '../common/SensitiveActionModal';
+import AdminNotice from '../common/AdminNotice';
 
 export default function ModelsAgentsModule() {
   const { activeOrg, hasPermission, addAuditLog } = useMultiLevelAdmin();
 
   const [activeTab, setActiveTab] = useState<'models' | 'agents'>('models');
+  const [notice, setNotice] = useState<string | null>(null);
 
   // Diagnostic Models Catalogue
   const [models, setModels] = useState<ModelCatalogueItem[]>([
@@ -378,7 +380,7 @@ export default function ModelsAgentsModule() {
           isOpen={thresholdModalOpen}
           onClose={() => setThresholdModalOpen(false)}
           onConfirm={(reason) => {
-            alert(`Threshold change proposed for ${selectedModel.name}. Routed to Clinical Governance for second sign-off.`);
+            setNotice(`Threshold change proposed for ${selectedModel.name}. Routed to clinical governance for second sign-off.`);
             addAuditLog({
               action: 'thresholds:propose',
               resource: 'thresholds',
@@ -392,6 +394,8 @@ export default function ModelsAgentsModule() {
           isDestructive={false}
         />
       )}
+
+      <AdminNotice message={notice} onDismiss={() => setNotice(null)} />
     </div>
   );
 }

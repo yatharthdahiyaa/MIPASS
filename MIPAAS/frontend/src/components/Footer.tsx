@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { Activity } from 'lucide-react';
+import { useIndicLanguage } from '@/context/IndicLanguageContext';
 
 const footerLinks: Record<string, { label: string; href?: string }[]> = {
   Products: [
@@ -18,28 +19,29 @@ const footerLinks: Record<string, { label: string; href?: string }[]> = {
   Company: [
     { label: 'About Us', href: '#features' },
     { label: 'Our Impact', href: '#product' },
-    { label: 'Careers', href: '#pricing' },
-    { label: 'News & Press', href: '#pricing' },
     { label: 'Contact Us', href: '#contact' },
   ],
   Resources: [
     { label: 'Evidence Library', href: '#pricing' },
     { label: 'Case Studies', href: '#product' },
-    { label: 'Blog & Insights', href: '#pricing' },
-    { label: 'API Documentation', href: '/doctor' },
+    { label: 'API Documentation', href: '/developer' },
     { label: 'Clinical Admin Portal', href: '/admin' },
-  ],
-  Legal: [
-    { label: 'Privacy Policy', href: '#' },
-    { label: 'Terms of Service', href: '#' },
-    { label: 'Cookie Policy', href: '#' },
-    { label: 'GDPR Compliance', href: '#' },
   ],
 };
 
-const socialResources = ['LinkedIn', 'Twitter', 'YouTube'];
-
 export default function Footer() {
+  const { t } = useIndicLanguage();
+
+  const getCategoryTitle = (category: string) => {
+    switch (category) {
+      case 'Products': return t('footer_products', 'Products');
+      case 'Company': return t('footer_company', 'Company');
+      case 'Resources': return t('footer_resources', 'Resources');
+      case 'Legal': return t('footer_legal', 'Legal');
+      default: return category;
+    }
+  };
+
   return (
     <footer id="contact" className="scroll-mt-28 border-t border-slate-200 bg-slate-900 text-slate-300">
       <div className="site-container py-16">
@@ -49,23 +51,18 @@ export default function Footer() {
               <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-sm">
                 <Activity className="w-4 h-4 stroke-[2.5]" />
               </div>
-              <span className="text-xl font-black text-white tracking-tight">MIPASS</span>
+              <span className="text-xl font-black text-white tracking-tight">MiPAAS</span>
             </div>
             <p className="max-w-sm text-sm leading-relaxed text-slate-400">
-              MIPASS is on a mission to provide accessible, affordable, & timely AI assistance to healthcare professionals worldwide.
+              {t('footer_mission', 'MiPAAS is on a mission to provide accessible, affordable, & timely AI assistance to healthcare professionals worldwide.')}
             </p>
-            <ul className="mt-6 flex flex-wrap gap-x-4 gap-y-2 text-xs text-slate-400">
-              {socialResources.map((name) => (
-                <li key={name} className="hover:text-white transition-colors cursor-pointer font-medium">
-                  {name}
-                </li>
-              ))}
-            </ul>
           </div>
 
           {Object.entries(footerLinks).map(([category, links]) => (
             <div key={category}>
-              <h3 className="mb-4 text-xs font-bold uppercase tracking-wider text-white">{category}</h3>
+              <h3 className="mb-4 text-xs font-bold uppercase tracking-wider text-white">
+                {getCategoryTitle(category)}
+              </h3>
               <ul className="space-y-2.5 text-xs text-slate-400">
                 {links.map((link) => (
                   <li key={link.label}>
@@ -84,7 +81,7 @@ export default function Footer() {
         </div>
 
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-8 border-t border-slate-800 text-xs text-slate-500">
-          <p>© {new Date().getFullYear()} MIPASS Healthcare Technologies Inc. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} MiPAAS Healthcare Technologies Inc. {t('footer_rights', 'All rights reserved.')}</p>
           <p>Built for the people behind every diagnosis.</p>
         </div>
       </div>

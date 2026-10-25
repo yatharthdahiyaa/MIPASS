@@ -4,9 +4,11 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { ArrowRight, Search, ShieldAlert, Activity, Layers } from 'lucide-react';
 import { useServices } from '@/context/ServicesContext';
+import { useIndicLanguage } from '@/context/IndicLanguageContext';
 
 export default function PathwaysSection() {
   const { homepageServices, isLoading } = useServices();
+  const { t } = useIndicLanguage();
   const [query, setQuery] = useState('');
   const [modality, setModality] = useState('All pathways');
   const modalities = ['All pathways', ...new Set(homepageServices.map((service) => service.modality))];
@@ -21,13 +23,13 @@ export default function PathwaysSection() {
         {/* Section Intro */}
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 mb-10">
           <div>
-            <p className="eyebrow mb-2 !text-blue-600 font-bold text-xs uppercase tracking-wider">Clinical pathways</p>
+            <p className="eyebrow mb-2 !text-blue-600 font-bold text-xs uppercase tracking-wider">{t('pathways_eyebrow')}</p>
             <h2 id="pathways-heading" className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight leading-tight">
-              The right insight.<br />For the next step in care.
+              {t('pathways_title_part1')}<br />{t('pathways_title_part2')}
             </h2>
           </div>
           <p className="text-slate-600 text-sm sm:text-base max-w-md leading-relaxed">
-            Explore imaging and decision-support tools across oncology, cardiology, neurology, and global health. Start with the pathway that fits your workflow.
+            {t('pathways_desc')}
           </p>
         </div>
 
@@ -40,20 +42,20 @@ export default function PathwaysSection() {
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search by specialty or scan type..."
+              placeholder={t('pathways_search_placeholder')}
               className="bg-transparent text-slate-800 text-sm w-full focus:outline-none placeholder:text-slate-400"
             />
           </label>
 
           <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-            <span>Scan type:</span>
+            <span>{t('pathways_scan_type')}</span>
             <select
               value={modality}
               onChange={(event) => setModality(event.target.value)}
               className="h-12 bg-white border border-slate-200 rounded-xl px-4 text-slate-800 text-xs sm:text-sm focus:outline-none focus:border-blue-500 shadow-xs cursor-pointer"
             >
               {modalities.map((item) => (
-                <option key={item}>{item}</option>
+                <option key={item} value={item}>{item === 'All pathways' ? t('pathways_all') : item}</option>
               ))}
             </select>
           </label>
@@ -62,7 +64,7 @@ export default function PathwaysSection() {
         <p className="text-xs text-slate-500 mb-6 font-medium" role="status">
           {isLoading && homepageServices.length === 0
             ? 'Loading clinical pathways…'
-            : `${cards.length} ${cards.length === 1 ? 'pathway' : 'pathways'} available to explore`}
+            : `${cards.length} ${t('pathways_available_suffix')}`}
         </p>
 
         {/* Pathways Card Grid */}

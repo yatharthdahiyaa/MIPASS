@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useMultiLevelAdmin } from '@/context/MultiLevelAdminContext';
+import AdminNotice from '../common/AdminNotice';
 import {
   ArrowDownRight,
   BarChart3,
@@ -16,6 +17,8 @@ import {
 
 export default function BillingModule() {
   const { activeOrg, hasPermission } = useMultiLevelAdmin();
+
+  const [notice, setNotice] = useState<string | null>(null);
 
   const [invoices] = useState([
     {
@@ -53,7 +56,7 @@ export default function BillingModule() {
         </div>
 
         <button
-          onClick={() => alert('GST Invoicing tax statement downloaded.')}
+          onClick={() => setNotice('GST invoicing tax statement downloaded.')}
           className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium"
         >
           <Download className="w-3.5 h-3.5 text-teal-400" />
@@ -147,6 +150,8 @@ export default function BillingModule() {
           </div>
         </div>
       </div>
+
+      <AdminNotice message={notice} onDismiss={() => setNotice(null)} />
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { useMultiLevelAdmin } from '@/context/MultiLevelAdminContext';
 import { PermissionScope } from '@/types/multiLevelRbac';
 import DataTable, { Column } from '../common/DataTable';
 import ScopeBadge from '../common/ScopeBadge';
+import AdminNotice from '../common/AdminNotice';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -195,6 +196,7 @@ export default function UsersModule() {
   }, [activeSite]);
 
   const [selectedUser, setSelectedUser] = useState<UserRecord | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
@@ -421,7 +423,7 @@ export default function UsersModule() {
 
               <button
                 onClick={() => {
-                  alert(`Terminated all active tokens for ${selectedUser.email}`);
+                  setNotice(`Terminated all active sessions for ${selectedUser.email}.`);
                   addAuditLog({
                     action: 'sessions:revoke',
                     resource: 'users',
@@ -551,6 +553,8 @@ export default function UsersModule() {
           </div>
         </div>
       )}
+
+      <AdminNotice message={notice} onDismiss={() => setNotice(null)} />
     </div>
   );
 }

@@ -116,6 +116,7 @@ export default function DiabeticFootEnhanced() {
     try {
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('serviceId', 'diabetic-foot');
       setUploadPct(65);
       setUploadPhase('processing');
 

@@ -74,7 +74,7 @@ iam-rbac/
 ├── backend/
 │   ├── prisma/
 │   │   ├── schema.prisma            # 13 tables (Account, User, Role, Policy, AuditLog, etc.)
-│   │   └── seed.ts                  # Seeds root@aws-example.com, roles, policies, sample user
+│   │   └── seed.ts                  # Seeds system roles and policies
 │   ├── src/
 │   │   ├── config/                  # Prisma client and Zod env validation
 │   │   ├── controllers/             # Auth, Users, Roles, Policies, Groups, Audit controllers
@@ -167,7 +167,7 @@ createdb iam_rbac
    npx prisma migrate dev --name init
    ```
 
-4. Seed the database with default roles, policies, and Root account:
+4. Seed the AWS-style system policies and roles (identities only if configured via `SEED_*` env vars):
    ```bash
    npm run prisma:seed
    ```
@@ -196,14 +196,23 @@ createdb iam_rbac
 
 ---
 
-## Default Seeded Accounts
+## Identities
 
-The seed script creates the following pre-configured identities:
+No identities are created by default. The seed script loads AWS-style system
+policies and roles, and provisions an account plus root user only when you
+supply them through the environment:
 
-| Account Type | Identifier / Email | Account Alias | Password | Roles |
-|---|---|---|---|---|
-| **Root User** | `root@aws-example.com` | `aws-demo` | `SuperSecret#Root2026!` | `Root` (Unrestricted) |
-| **IAM User** | `alice.dev` | `aws-demo` | `DeveloperPass#2026!` | `Developer` |
+```bash
+SEED_ACCOUNT_ID=123456789012 \
+SEED_ACCOUNT_NAME="Your Organization" \
+SEED_ACCOUNT_ALIAS=your-alias \
+SEED_ROOT_EMAIL=admin@your-org.example \
+SEED_ROOT_PASSWORD='change-me' \
+npm run prisma:seed
+```
+
+Without those variables the seed creates no accounts or users. Registering a
+patient likewise requires an account to exist first.
 
 ---
 

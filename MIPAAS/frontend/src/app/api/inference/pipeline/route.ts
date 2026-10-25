@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
     const serviceId = (formData.get("serviceId") as string) || "qxr";
-    const patientId = (formData.get("patientId") as string) || "MIP-8842-X";
+    const patientId = (formData.get("patientId") as string) || "ANON-PATIENT";
     const isSample = formData.get("isSample") === "true";
 
     // Path to the backend pipeline script
@@ -77,12 +77,25 @@ export async function POST(req: NextRequest) {
         } catch {}
       }
 
-      // Find the JSON output from stdout
-      const lines = stdout.trim().split("\n");
-      const jsonLine = lines.find((line) => line.trim().startsWith("{") && line.trim().endsWith("}")) || lines[lines.length - 1];
+      // Find the JSON output from stdout robustly
+      const jsonStart = stdout.indexOf("{");
+      const jsonEnd = stdout.lastIndexOf("}");
+
+      if (jsonStart === -1 || jsonEnd === -1) {
+        return NextResponse.json(
+          {
+            status: "error",
+            message: "Failed to locate JSON output from pipeline engine.",
+            raw: stdout,
+            stderr: stderr,
+          },
+          { status: 500 }
+        );
+      }
 
       try {
-        const parsed = JSON.parse(jsonLine.trim());
+        const jsonStr = stdout.substring(jsonStart, jsonEnd + 1);
+        const parsed = JSON.parse(jsonStr);
         return NextResponse.json(parsed);
       } catch (jsonErr) {
         return NextResponse.json(

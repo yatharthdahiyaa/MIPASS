@@ -123,3 +123,14 @@ Python/
 
 # Qoder
 .qoder/
+
+# Scratch & local dev artifacts
+*.log
+dev-server.log
+.ux-audit/
+**/.ux-audit/
+torchxrayvision_repo/
+**/torchxrayvision_repo/
+torchxrayvision_results.json
+uploaded_cxr.jpg
+user_cxr.jpg

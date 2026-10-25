@@ -13,7 +13,10 @@ import base64
 from datetime import datetime
 import io
 import os
+import sys
 from typing import Any, Dict, List, Optional, Tuple
+
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 import numpy as np
 import pydicom
@@ -22,6 +25,31 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import structlog
+
+from app.services.patient_report import build_patient_report, patient_report_to_text
+from app.services.saliency_zones import (
+    annotate_heatmap_with_zones,
+    compute_zone_analysis,
+)
+
+try:
+    orig_register_fake = torch.library.register_fake
+    def safe_register_fake(op_name, *args, **kwargs):
+        try:
+            dec = orig_register_fake(op_name, *args, **kwargs)
+            def wrapped_dec(f):
+                try: return dec(f)
+                except: return f
+            return wrapped_dec
+        except: return lambda f: f
+    torch.library.register_fake = safe_register_fake
+except Exception:
+    pass
+
+_XRV_REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "torchxrayvision_repo"))
+if _XRV_REPO not in sys.path:
+    sys.path.insert(0, _XRV_REPO)
+import torchxrayvision as xrv
 
 logger = structlog.get_logger()
 
@@ -118,37 +146,44 @@ class TrainedDenseNet121(nn.Module):
 
 CHEST_CLASSES = [
     "Atelectasis",
-    "Cardiomegaly",
-    "Effusion",
-    "Infiltration",
-    "Mass",
-    "Nodule",
-    "Pneumonia",
-    "Pneumothorax",
     "Consolidation",
+    "Infiltration",
+    "Pneumothorax",
     "Edema",
     "Emphysema",
     "Fibrosis",
+    "Effusion",
+    "Pneumonia",
     "Pleural_Thickening",
+    "Cardiomegaly",
+    "Nodule",
+    "Mass",
     "Hernia",
+    "Lung Lesion",
+    "Fracture",
+    "Lung Opacity",
+    "Enlarged Cardiomediastinum",
 ]
 
-# Calibrated decision thresholds from NIH ChestX-ray14 validation study
 CHEST_THRESHOLDS = {
-    "Atelectasis": 0.28,
-    "Cardiomegaly": 0.25,
-    "Effusion": 0.30,
-    "Infiltration": 0.32,
-    "Mass": 0.18,
-    "Nodule": 0.15,
-    "Pneumonia": 0.22,
-    "Pneumothorax": 0.20,
-    "Consolidation": 0.26,
-    "Edema": 0.22,
-    "Emphysema": 0.16,
-    "Fibrosis": 0.18,
-    "Pleural_Thickening": 0.24,
-    "Hernia": 0.12,
+    "Atelectasis": 0.0742,
+    "Consolidation": 0.0383,
+    "Infiltration": 0.0981,
+    "Pneumothorax": 0.0098,
+    "Edema": 0.0236,
+    "Emphysema": 0.0022,
+    "Fibrosis": 0.0101,
+    "Effusion": 0.1032,
+    "Pneumonia": 0.0568,
+    "Pleural_Thickening": 0.0268,
+    "Cardiomegaly": 0.0503,
+    "Nodule": 0.0240,
+    "Mass": 0.0194,
+    "Hernia": 0.0429,
+    "Lung Lesion": 0.0534,
+    "Fracture": 0.0360,
+    "Lung Opacity": 0.2020,
+    "Enlarged Cardiomediastinum": 0.0502,
 }
 
 PATHOLOGY_DESCRIPTIONS = {
@@ -166,39 +201,115 @@ PATHOLOGY_DESCRIPTIONS = {
     "Fibrosis": "Chronic pulmonary interstitial scarring with reticular interstitial markings.",
     "Pleural_Thickening": "Fibrotic or inflammatory thickening of visceral or parietal pleura.",
     "Hernia": "Diaphragmatic herniation of abdominal viscera into thoracic cavity.",
+    "Lung Lesion": "Circumscribed abnormal lung tissue density requiring surveillance.",
+    "Fracture": "Disruption of cortical continuity in ribs, clavicle, or thoracic skeleton.",
+    "Lung Opacity": "Radiopaque clouding or airspace density in lung fields.",
+    "Enlarged Cardiomediastinum": "Widening of the cardiomediastinal contour suggestive of adenopathy or vascular enlargement.",
 }
 
+# TorchXRayVision's DenseNet applies op_norm(), which maps each pathology's
+# raw operating point to exactly 0.5.  The raw CHEST_THRESHOLDS above must
+# therefore NOT be compared against the model output directly.
+CHEST_OPERATING_THRESHOLD = 0.5
+
+# PPV80 thresholds from torchxrayvision's densenet121-res224-all, already
+# mapped through op_norm().  A finding above these values has the model's
+# high-specificity operating point (~80% PPV on the training distribution).
+# Source: torchxrayvision/models.py model_urls["densenet121-res224-all"].
+CHEST_HIGH_CONFIDENCE_THRESHOLDS = {
+    "Atelectasis": 0.8526,
+    "Consolidation": 0.9420,
+    "Infiltration": 0.9584,
+    "Pneumothorax": 0.8246,
+    "Edema": 0.8398,
+    "Emphysema": 0.7300,
+    "Fibrosis": 0.8622,
+    "Effusion": 0.7841,
+    "Pneumonia": 0.9936,
+    "Pleural_Thickening": 0.8047,
+    "Cardiomegaly": 0.8226,
+    "Nodule": 0.8900,
+    "Mass": 0.9646,
+    "Hernia": 0.9668,
+    "Lung Lesion": 0.8304,
+    "Fracture": 0.8209,
+    "Lung Opacity": 0.7595,
+    "Enlarged Cardiomediastinum": 0.9205,
+}
+
+CRITICAL_CHEST_FINDINGS = {"Pneumothorax", "Edema", "Mass", "Enlarged Cardiomediastinum"}
+
+
+def classify_chest_probabilities(
+    probs: np.ndarray,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Classify op_norm model outputs into high-confidence / indeterminate / low tiers.
+
+    Returns (all_results, positive_findings, indeterminate_findings).  Only
+    high-confidence findings are treated as "positive" in the report.  This is
+    deliberately conservative: a finding between the operating point (0.5) and
+    the PPV80 point is reported as borderline, not as a diagnosis.
+    """
+    all_results: List[Dict[str, Any]] = []
+    positive: List[Dict[str, Any]] = []
+    indeterminate: List[Dict[str, Any]] = []
+
+    for i, name in enumerate(CHEST_CLASSES):
+        prob = float(probs[i])
+        high_thresh = CHEST_HIGH_CONFIDENCE_THRESHOLDS.get(name, 0.90)
+        if prob >= high_thresh:
+            tier = "high"
+            tier_label = "High-confidence finding"
+            is_positive = True
+        elif prob >= CHEST_OPERATING_THRESHOLD:
+            tier = "indeterminate"
+            tier_label = "Borderline — needs clinical correlation"
+            is_positive = False
+        else:
+            tier = "low"
+            tier_label = "Below threshold"
+            is_positive = False
+
+        info = {
+            "name": name,
+            "probability": round(prob, 4),
+            "percentage": round(prob * 100, 1),
+            "threshold": high_thresh,
+            "threshold_percentage": round(high_thresh * 100, 1),
+            "operating_threshold": CHEST_OPERATING_THRESHOLD,
+            "operating_threshold_percentage": CHEST_OPERATING_THRESHOLD * 100,
+            "positive": is_positive,
+            "tier": tier,
+            "tier_label": tier_label,
+            "above_operating_point": prob >= CHEST_OPERATING_THRESHOLD,
+            "description": PATHOLOGY_DESCRIPTIONS.get(name, ""),
+        }
+        all_results.append(info)
+        if tier == "high":
+            positive.append(info)
+        elif tier == "indeterminate":
+            indeterminate.append(info)
+
+    all_results.sort(key=lambda x: x["probability"], reverse=True)
+    positive.sort(key=lambda x: x["probability"], reverse=True)
+    indeterminate.sort(key=lambda x: x["probability"], reverse=True)
+    return all_results, positive, indeterminate
+
+
 # ─────────────────────────────────────────────────────────────
-# 2. MODEL CACHE (STRICT TRAINED MODELS ONLY)
+# 2. MODEL CACHE (TORCHXRAYVISION PRE-TRAINED MODELS)
 # ─────────────────────────────────────────────────────────────
 _LOADED_MODELS: Dict[str, Any] = {}
 
 
-def get_trained_densenet121() -> TrainedDenseNet121:
-    """Load DenseNet-121 strictly from trained checkpoint. Fail if not found."""
+def get_trained_densenet121() -> Any:
+    """Load DenseNet-121 pre-trained model from TorchXRayVision (densenet121-res224-all)."""
     if "densenet121" in _LOADED_MODELS:
         return _LOADED_MODELS["densenet121"]
 
-    checkpoint_path = os.path.join(
-        os.path.dirname(__file__), "..", "..", "..", "MODELS", "shreya", "models", "best_densenet121.pth"
-    )
-    checkpoint_path = os.path.abspath(checkpoint_path)
-
-    if not os.path.exists(checkpoint_path) or os.path.getsize(checkpoint_path) < 1000:
-        raise RuntimeError(
-            f"Required trained model weights not found at: {checkpoint_path}. "
-            f"Fallback models are strictly prohibited."
-        )
-
-    model = TrainedDenseNet121(num_classes=14, in_channels=1)
-    ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-    state_dict = ckpt.get("model_state_dict", ckpt)
-    if any(k.startswith("module.") for k in state_dict):
-        state_dict = {k.replace("module.", "", 1): v for k, v in state_dict.items()}
-
-    res = model.load_state_dict(state_dict, strict=True)
-    logger.info("trained_densenet121_loaded_strictly", result=str(res), path=checkpoint_path)
+    model = xrv.models.DenseNet(weights="densenet121-res224-all")
     model.eval()
+    logger.info("torchxrayvision_densenet121_loaded_successfully", weights="densenet121-res224-all")
     _LOADED_MODELS["densenet121"] = model
     return model
 
@@ -313,7 +424,7 @@ def preprocess_dicom_array(ds: pydicom.Dataset) -> Tuple[np.ndarray, np.ndarray]
     """Extract, orient, window and normalize DICOM pixel array for model and preview.
     
     Returns:
-        normalized_224: float32 array [224, 224] for model input
+        normalized_224: float32 array [224, 224] in range [-1024, 1024] for model input
         display_img: uint8 array [H, W] for web preview rendering
     """
     arr = ds.pixel_array.astype(np.float32)
@@ -336,10 +447,13 @@ def preprocess_dicom_array(ds: pydicom.Dataset) -> Tuple[np.ndarray, np.ndarray]
     else:
         display_norm = np.zeros_like(arr, dtype=np.uint8)
 
-    # Resize to [224, 224] for neural network input
-    pil_img = Image.fromarray(display_norm)
-    resized_pil = pil_img.resize((224, 224), Image.Resampling.BILINEAR)
-    arr_224 = np.array(resized_pil, dtype=np.float32) / 255.0
+    # Normalize to [-1024, 1024] and interpolate to [224, 224] for TorchXRayVision
+    maxval = float(np.max(arr)) if np.max(arr) > 0 else 255.0
+    img_norm = xrv.datasets.normalize(arr, maxval=maxval)
+    t = torch.from_numpy(img_norm).unsqueeze(0).unsqueeze(0)
+    if t.shape[-2:] != (224, 224):
+        t = F.interpolate(t, size=(224, 224), mode="bilinear", align_corners=False)
+    arr_224 = t.squeeze().cpu().numpy()
 
     return arr_224, display_norm
 
@@ -361,20 +475,23 @@ def preprocess_standard_image(file_bytes: bytes) -> Tuple[np.ndarray, np.ndarray
 
     display_norm = np.array(gray_pil, dtype=np.uint8)
 
-    # Resize to [224, 224] for neural network input
-    resized_pil = gray_pil.resize((224, 224), Image.Resampling.BILINEAR)
-    arr_224 = np.array(resized_pil, dtype=np.float32) / 255.0
+    # Normalize to [-1024, 1024] using torchxrayvision and interpolate to [224, 224]
+    img_array = np.array(gray_pil, dtype=np.float32)
+    img_norm = xrv.datasets.normalize(img_array, maxval=255.0)
+    t = torch.from_numpy(img_norm).unsqueeze(0).unsqueeze(0)
+    if t.shape[-2:] != (224, 224):
+        t = F.interpolate(t, size=(224, 224), mode="bilinear", align_corners=False)
+    arr_224 = t.squeeze().cpu().numpy()
 
     return arr_224, display_norm, w, h
 
 
 def array_to_base64_png(img_array: np.ndarray) -> str:
-    """Convert numpy uint8 image array to data:image/png;base64 string."""
+    """Convert numpy uint8 image array to pure base64 string."""
     pil = Image.fromarray(img_array)
     buf = io.BytesIO()
     pil.save(buf, format="PNG")
-    b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-    return f"data:image/png;base64,{b64}"
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
 
 
 def compute_gradcam(
@@ -383,60 +500,49 @@ def compute_gradcam(
     target_class_idx: int,
     display_img: np.ndarray,
 ) -> Tuple[np.ndarray, str]:
-    """Compute Grad-CAM attention heatmap overlay on real DICOM image."""
-    gradients = []
-    activations = []
+    """Compute Grad-CAM attention heatmap overlay on real X-ray image."""
+    model.eval()
+    features = model.features(tensor)
+    features_clone = features.clone()
+    features_clone.retain_grad()
 
-    def backward_hook(module, grad_input, grad_output):
-        gradients.append(grad_output[0].detach())
+    out = F.relu(features_clone, inplace=False)
+    out = F.adaptive_avg_pool2d(out, (1, 1)).view(out.size(0), -1)
+    logits = model.classifier(out)
 
-    def forward_hook(module, input, output):
-        activations.append(output.detach())
+    score = logits[0, target_class_idx]
+    score.backward()
 
-    target_layer = model.features.norm5
-    h_fwd = target_layer.register_forward_hook(forward_hook)
-    h_bwd = target_layer.register_full_backward_hook(backward_hook)
+    grads = features_clone.grad[0]  # [C, H, W]
+    acts = features[0].detach()    # [C, H, W]
+    weights = grads.mean(dim=(1, 2), keepdim=True)
+    cam = (weights * acts).sum(dim=0).clamp(min=0).cpu().numpy()
 
-    try:
-        model.zero_grad()
-        logits = model(tensor)
-        score = logits[0, target_class_idx]
-        score.backward()
+    if cam.max() > cam.min():
+        cam = (cam - cam.min()) / (cam.max() - cam.min() + 1e-8)
+    else:
+        cam = np.zeros_like(cam)
 
-        grads = gradients[0][0]  # [C, H, W]
-        acts = activations[0][0]   # [C, H, W]
-        weights = grads.mean(dim=(1, 2), keepdim=True)
-        cam = (weights * acts).sum(dim=0).clamp(min=0).cpu().numpy()
+    # Upsample CAM to display image size
+    cam_pil = Image.fromarray((cam * 255).astype(np.uint8)).resize(
+        (display_img.shape[1], display_img.shape[0]), Image.Resampling.BICUBIC
+    )
+    cam_up = np.array(cam_pil, dtype=np.float32) / 255.0
 
-        if cam.max() > cam.min():
-            cam = (cam - cam.min()) / (cam.max() - cam.min() + 1e-8)
-        else:
-            cam = np.zeros_like(cam)
+    # Turbo/Jet colormap mapping in pure numpy
+    # Red = high attention, Blue = low attention
+    r = np.clip(1.5 - np.abs(cam_up * 4.0 - 3.0), 0, 1)
+    g = np.clip(1.5 - np.abs(cam_up * 4.0 - 2.0), 0, 1)
+    b = np.clip(1.5 - np.abs(cam_up * 4.0 - 1.0), 0, 1)
+    heatmap_rgb = np.stack([r, g, b], axis=-1) * 255.0
 
-        # Upsample CAM to display image size
-        cam_pil = Image.fromarray((cam * 255).astype(np.uint8)).resize(
-            (display_img.shape[1], display_img.shape[0]), Image.Resampling.BICUBIC
-        )
-        cam_up = np.array(cam_pil, dtype=np.float32) / 255.0
+    # Alpha blend with original grayscale image
+    gray_rgb = np.stack([display_img] * 3, axis=-1).astype(np.float32)
+    alpha = 0.45 * np.expand_dims(cam_up, -1)
+    blended = np.clip(gray_rgb * (1.0 - alpha) + heatmap_rgb * alpha, 0, 255).astype(np.uint8)
 
-        # Turbo/Jet colormap mapping in pure numpy
-        # Red = high attention, Blue = low attention
-        r = np.clip(1.5 - np.abs(cam_up * 4.0 - 3.0), 0, 1)
-        g = np.clip(1.5 - np.abs(cam_up * 4.0 - 2.0), 0, 1)
-        b = np.clip(1.5 - np.abs(cam_up * 4.0 - 1.0), 0, 1)
-        heatmap_rgb = np.stack([r, g, b], axis=-1) * 255.0
-
-        # Alpha blend with original grayscale image
-        gray_rgb = np.stack([display_img] * 3, axis=-1).astype(np.float32)
-        alpha = 0.45 * np.expand_dims(cam_up, -1)
-        blended = np.clip(gray_rgb * (1.0 - alpha) + heatmap_rgb * alpha, 0, 255).astype(np.uint8)
-
-        overlay_b64 = array_to_base64_png(blended)
-        return cam_up, overlay_b64
-
-    finally:
-        h_fwd.remove()
-        h_bwd.remove()
+    overlay_b64 = array_to_base64_png(blended)
+    return cam_up, overlay_b64
 
 
 # ─────────────────────────────────────────────────────────────
@@ -492,121 +598,199 @@ def analyze_dicom_image(file_bytes: bytes, filename: str = "") -> Dict[str, Any]
     # Model input tensor [1, 1, 224, 224]
     tensor = torch.from_numpy(norm_224).unsqueeze(0).unsqueeze(0).requires_grad_(True)
 
-    # Forward pass
-    logits = model(tensor)
-    probs = torch.sigmoid(logits).squeeze().detach().numpy()
+    # Forward pass - TorchXRayVision DenseNet returns op_norm-calibrated scores
+    probs = model(tensor).squeeze().detach().cpu().numpy()
 
-    # 4. Evaluate all 14 thoracic disease categories against calibrated thresholds
-    pathology_results: List[Dict[str, Any]] = []
-    positive_findings: List[Dict[str, Any]] = []
+    # 4. Evaluate all thoracic disease categories with the correct calibrated
+    # operating point (op_norm maps each raw threshold to 0.5).
+    pathology_results, positive_findings, indeterminate_findings = (
+        classify_chest_probabilities(probs)
+    )
 
-    for i, name in enumerate(CHEST_CLASSES):
-        prob = float(probs[i])
-        thresh = CHEST_THRESHOLDS.get(name, 0.25)
-        is_pos = prob >= thresh
-        info = {
-            "name": name,
-            "probability": round(prob, 4),
-            "percentage": round(prob * 100, 1),
-            "threshold": thresh,
-            "threshold_percentage": round(thresh * 100, 1),
-            "positive": is_pos,
-            "description": PATHOLOGY_DESCRIPTIONS.get(name, ""),
-        }
-        pathology_results.append(info)
-        if is_pos:
-            positive_findings.append(info)
-
-    # Sort descending by probability
-    pathology_results.sort(key=lambda x: x["probability"], reverse=True)
-    positive_findings.sort(key=lambda x: x["probability"], reverse=True)
-
-    # Determine Top / Primary Diagnosis
+    no_high_confidence = len(positive_findings) == 0
     if positive_findings:
         primary = positive_findings[0]
-        primary_name = primary["name"]
-        primary_prob = primary["probability"]
-        target_idx = CHEST_CLASSES.index(primary_name)
+        candidate = None
+    elif indeterminate_findings:
+        # Highest borderline signal.  This is NOT a diagnosis; it is used to
+        # explain the image and to pick a class for Grad-CAM.
+        candidate = indeterminate_findings[0]
+        primary = candidate
     else:
+        candidate = None
         primary = pathology_results[0]
-        primary_name = primary["name"]
-        primary_prob = primary["probability"]
-        target_idx = CHEST_CLASSES.index(primary_name)
 
-    # Severity classification
-    if primary_prob >= 0.50 or any(p["name"] in ("Pneumothorax", "Edema", "Mass") and p["positive"] for p in positive_findings):
-        severity = "CRITICAL"
-        urgency = "STAT Emergency Intervention / Radiologist Confirmation Needed"
-    elif positive_findings:
-        severity = "HIGH"
-        urgency = "Abnormal Findings Present — Priority Diagnostic Review"
-    elif primary_prob >= 0.15:
+    primary_name = primary["name"]
+    primary_prob = primary["probability"]
+    target_idx = CHEST_CLASSES.index(primary_name)
+    candidate_name = candidate["name"] if candidate else None
+    candidate_prob = candidate["probability"] if candidate else None
+
+    # Severity classification is driven by high-confidence findings only.
+    if positive_findings:
+        critical_present = any(
+            p["name"] in CRITICAL_CHEST_FINDINGS for p in positive_findings
+        )
+        if critical_present or primary_prob >= 0.90:
+            severity = "CRITICAL"
+            urgency = "STAT Emergency Intervention / Radiologist Confirmation Needed"
+        else:
+            severity = "HIGH"
+            urgency = "Abnormal Findings Present — Priority Diagnostic Review"
+    elif indeterminate_findings:
         severity = "MODERATE"
         urgency = "Borderline Indeterminate Attenuation — Clinical Correlation Advised"
     else:
         severity = "NORMAL"
         urgency = "No Definite Acute Cardiopulmonary Abnormality Detected"
 
-    # 5. Compute Grad-CAM on top class
+    # 5. Compute Grad-CAM on the top class, then turn it into a zone report.
+    saliency_analysis: Optional[Dict[str, Any]] = None
+    annotated_heatmap_b64 = preview_b64
     try:
-        _, heatmap_b64 = compute_gradcam(model, tensor, target_idx, display_img)
+        cam_up, heatmap_b64 = compute_gradcam(model, tensor, target_idx, display_img)
+        saliency_analysis = compute_zone_analysis(cam_up, "qxr")
+        annotated_heatmap_b64 = annotate_heatmap_with_zones(
+            heatmap_b64, saliency_analysis
+        )
     except Exception as e:
         logger.warning("gradcam_computation_warning", error=str(e))
         heatmap_b64 = preview_b64
 
     # 6. Radiologist Evidence & Recommendations
-    recommendations = []
-    if severity in ("CRITICAL", "HIGH"):
-        recommendations.append(f"Immediate clinical correlation for acute {primary_name.lower()}.")
+    recommendations: List[str] = []
+    if positive_findings:
+        recommendations.append(
+            f"Immediate clinical correlation for acute {primary_name.lower()}."
+        )
         if primary_name in ("Consolidation", "Pneumonia", "Infiltration"):
-            recommendations.append("Obtain microbiological sputum cultures and initiate targeted empiric antimicrobial therapy if clinically febrile.")
-            recommendations.append("Follow-up radiographic examination in 4 to 6 weeks to confirm resolution and exclude underlying endobronchial lesion.")
+            recommendations.append(
+                "Obtain microbiological sputum cultures and initiate targeted empiric antimicrobial therapy if clinically febrile."
+            )
+            recommendations.append(
+                "Follow-up radiographic examination in 4 to 6 weeks to confirm resolution and exclude underlying endobronchial lesion."
+            )
         elif primary_name in ("Mass", "Nodule"):
-            recommendations.append("Contrast-enhanced high-resolution computed tomography (HRCT) of chest recommended for 3D nodule volumetry and Fleischner criteria staging.")
-            recommendations.append("Pulmonology / Thoracic Oncology consultation for potential PET-CT or CT-guided transthoracic biopsy.")
+            recommendations.append(
+                "Contrast-enhanced high-resolution computed tomography (HRCT) of chest recommended for 3D nodule volumetry and Fleischner criteria staging."
+            )
+            recommendations.append(
+                "Pulmonology / Thoracic Oncology consultation for potential PET-CT or CT-guided transthoracic biopsy."
+            )
         elif primary_name == "Pneumothorax":
-            recommendations.append("STAT surgical evaluation for urgent tube thoracostomy / needle decompression if tension physiology present.")
+            recommendations.append(
+                "STAT surgical evaluation for urgent tube thoracostomy / needle decompression if tension physiology present."
+            )
         elif primary_name in ("Cardiomegaly", "Edema"):
-            recommendations.append("Urgent echocardiogram to evaluate left ventricular ejection fraction and pulmonary artery systolic pressures.")
-            recommendations.append("Intravenous loop diuretic administration and telemetry monitoring.")
+            recommendations.append(
+                "Urgent echocardiogram to evaluate left ventricular ejection fraction and pulmonary artery systolic pressures."
+            )
+            recommendations.append(
+                "Intravenous loop diuretic administration and telemetry monitoring."
+            )
         elif primary_name == "Effusion":
-            recommendations.append("Diagnostic thoracentesis with pleural fluid analysis (protein, LDH, cell count, pH, cytology).")
+            recommendations.append(
+                "Diagnostic thoracentesis with pleural fluid analysis (protein, LDH, cell count, pH, cytology)."
+            )
+    elif indeterminate_findings:
+        recommendations.append(
+            "No high-confidence abnormality. Correlate the borderline signal with symptoms and prior imaging."
+        )
+        recommendations.append(
+            "Consider a follow-up radiograph or CT only if clinically indicated; avoid treating the AI score alone."
+        )
     else:
         recommendations.append("Routine follow-up per institutional standard of care.")
-        recommendations.append("Compare with prior chest radiographs if historical studies become available.")
+        recommendations.append(
+            "Compare with prior chest radiographs if historical studies become available."
+        )
 
-    # 7. Summary Narrative
+    # 7. Structured plain-language patient report
+    patient_report = build_patient_report(
+        service_name="qXR – Chest X-Ray AI",
+        modality=metadata.get("modality", "CXR"),
+        primary_name=primary_name if positive_findings else candidate_name,
+        primary_prob=primary_prob if positive_findings else candidate_prob,
+        severity=severity,
+        zone_analysis=saliency_analysis,
+        positive_findings=positive_findings,
+        indeterminate_findings=indeterminate_findings,
+        quality_grade="UNKNOWN",
+        recommendations=recommendations,
+        demo_mode=False,
+        model_availability={
+            "available": True,
+            "mode": "real",
+            "model": "TorchXRayVision DenseNet-121 (densenet121-res224-all)",
+            "message": "Real pretrained chest X-ray model loaded.",
+        },
+        service_id="qxr",
+    )
+    patient_report_text = patient_report_to_text(patient_report)
+
+    # 8. Summary narrative (clinician-facing)
     if positive_findings:
-        pos_names = ", ".join([p["name"] for p in positive_findings])
+        pos_names = ", ".join([f"{p['name']} ({p['percentage']}%)" for p in positive_findings])
         clinical_summary = (
-            f"Automated neural network inspection identified significant positive radiological findings for {pos_names}. "
-            f"The primary abnormality is {primary_name} ({primary['percentage']}% model confidence vs. calibrated threshold {primary['threshold_percentage']}%). "
-            f"Attention concentration map highlights parenchyma opacification in the indicated pulmonary zones."
+            f"Automated neural network inspection identified high-confidence radiological "
+            f"findings for {pos_names}. The primary abnormality is {primary_name} "
+            f"({primary['percentage']}% model score; high-confidence cutoff "
+            f"{primary['threshold_percentage']}%). "
+            f"Grad-CAM attention was localized to the {saliency_analysis.get('dominant_zone_label', 'reported zone') if saliency_analysis else 'reported zone'}."
+        )
+    elif indeterminate_findings:
+        clinical_summary = (
+            f"Automated neural network screening found no high-confidence abnormality. "
+            f"The top borderline candidate is {candidate_name} at {candidate['percentage']}%, "
+            f"which is above the operating point (50%) but below the high-confidence cutoff "
+            f"({candidate['threshold_percentage']}%). This should not be treated as a diagnosis."
         )
     else:
         clinical_summary = (
-            f"Automated neural network screening indicates no high-probability pathology surpassing decision cutoffs. "
-            f"Top attenuated candidate is {primary_name} at {primary['percentage']}%, well below diagnostic threshold ({primary['threshold_percentage']}%). "
-            f"Lung fields appear grossly clear without evidence of focal consolidation, pneumothorax, or acute congestion."
+            "Automated neural network screening found no high-confidence abnormality. "
+            f"The highest raw score was {primary_name} at {primary['percentage']}%, below "
+            "the operating point. No focal consolidation, pneumothorax, or acute congestion "
+            "was identified by this model."
         )
 
     return {
         "status": "success",
         "is_fallback": False,
-        "model_architecture": "DenseNet-121",
-        "model_version": "NIH ChestX-ray14 Trained v1.0",
+        "model_architecture": "TorchXRayVision DenseNet-121",
+        "model_version": "densenet121-res224-all",
         "checkpoint_verified": True,
+        "demo_mode": False,
+        "model_availability": {
+            "available": True,
+            "mode": "real",
+            "model": "TorchXRayVision DenseNet-121 (densenet121-res224-all)",
+            "message": "Real pretrained chest X-ray model loaded.",
+        },
         "dicom_metadata": metadata,
         "preview_image": preview_b64,
         "heatmap_image": heatmap_b64,
-        "primary_diagnosis": primary_name,
+        "heatmap_annotated_b64": annotated_heatmap_b64,
+        "saliency_analysis": saliency_analysis,
+        "primary_diagnosis": primary_name if positive_findings else "No high-confidence abnormality detected",
+        "candidate_diagnosis": candidate_name,
         "confidence": primary_prob,
         "confidence_percentage": round(primary_prob * 100, 1),
+        "confidence_label": (
+            "High-confidence finding"
+            if positive_findings
+            else ("Borderline candidate — not a diagnosis" if candidate else "Top score — below threshold")
+        ),
+        "no_high_confidence_finding": no_high_confidence,
         "severity": severity,
         "urgency": urgency,
         "pathologies": pathology_results,
+        "all_pathologies": pathology_results,
         "positive_findings": positive_findings,
+        "indeterminate_findings": indeterminate_findings,
         "clinical_summary": clinical_summary,
+        "patient_report": patient_report,
+        "patient_report_text": patient_report_text,
         "recommended_actions": recommendations,
         "disclaimer": "Diagnostic Decision Support Tool for certified medical personnel only. Not a standalone autonomous diagnostic device.",
     }
+

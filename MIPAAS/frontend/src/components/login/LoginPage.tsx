@@ -5,7 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useRBAC } from '@/context/RBACContext';
 import { iamAuthService } from '@/services/iamAuthService';
-import { CLINICAL_PERSONAS, type Role } from '@/types/rbac';
+import { DEMO_AUTH_ENABLED } from '@/lib/demoMode';
+import { CLINICAL_PERSONAS, type Role, type UserProfile, ROLE_DEFINITIONS } from '@/types/rbac';
 import {
   ShieldAlert,
   ShieldCheck,
@@ -48,11 +49,11 @@ const AWS = {
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { switchPersona, loginWithIAM, currentUser } = useRBAC();
+  const { switchPersona, loginWithIAM, loginWithCustomProfile, currentUser } = useRBAC();
 
   const [darkMode, setDarkMode] = useState(false);
   const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [userType, setUserType] = useState<'root' | 'iam'>('root');
+  const [userType, setUserType] = useState<'root' | 'iam'>('iam');
 
   // Step 1 identifiers
   const [email, setEmail] = useState('');
@@ -91,13 +92,13 @@ export default function LoginPage() {
       const lowerName = (userName || '').toLowerCase();
       const lowerRole = (role || '').toLowerCase();
 
-      if (lowerRole === 'patient' || lowerEmail.includes('alex.taylor') || lowerName.includes('patient')) {
+      if (lowerRole === 'patient' || lowerName.includes('patient')) {
         return '/patient';
       }
-      if (lowerRole === 'doctor' || lowerEmail.includes('elena.vance') || lowerName.includes('doctor')) {
+      if (lowerRole === 'doctor' || lowerName.includes('doctor') || lowerName.includes('physician')) {
         return '/doctor';
       }
-      if (lowerRole === 'admin' || lowerEmail.includes('root') || lowerEmail.includes('arthur.davis') || lowerName.includes('admin') || lowerName.includes('root')) {
+      if (lowerRole === 'admin' || lowerEmail.includes('root') || lowerName.includes('admin') || lowerName.includes('root')) {
         return '/admin';
       }
       if (lowerRole === 'technician') {
@@ -111,52 +112,6 @@ export default function LoginPage() {
     [explicitRedirect]
   );
 
-  /* ── 1-Click Fast Persona Login ── */
-  const handleFastLogin = useCallback(
-    async (roleKey: 'doctor' | 'patient' | 'admin' | 'radiologist' | 'technician') => {
-      setError(null);
-      setLoading(true);
-
-      let personaId = 'doc-01';
-      let dest = '/doctor';
-      let title = 'Doctor Clinical Portal';
-
-      if (roleKey === 'doctor') {
-        personaId = 'doc-01';
-        dest = resolvePortalPath('doctor');
-        title = 'CareNest Doctor Portal';
-      } else if (roleKey === 'patient') {
-        personaId = 'pat-01';
-        dest = resolvePortalPath('patient');
-        title = 'CareNest Patient Portal';
-      } else if (roleKey === 'admin') {
-        personaId = 'admin-01';
-        dest = resolvePortalPath('admin');
-        title = 'MiPAAS Enterprise Administration';
-      } else if (roleKey === 'radiologist') {
-        personaId = 'rad-01';
-        dest = '/lung-cancer';
-        title = 'Thoracic Imaging Workstation';
-      } else if (roleKey === 'technician') {
-        personaId = 'tech-01';
-        dest = '/lung-cancer';
-        title = 'CT Imaging Technologist Workstation';
-      }
-
-      setRedirectTarget(dest);
-      setTargetRoleTitle(title);
-
-      await new Promise((resolve) => setTimeout(resolve, 600));
-
-      switchPersona(personaId);
-      setLoginSuccess(true);
-
-      setTimeout(() => {
-        router.push(dest);
-      }, 1200);
-    },
-    [resolvePortalPath, switchPersona, router]
-  );
 
   /* ── STEP 1: Submit Identifier ── */
   const handleStep1 = async (e: React.FormEvent) => {
@@ -245,22 +200,27 @@ export default function LoginPage() {
         return;
       }
 
-      // Client-side fallback authentication
+      if (!DEMO_AUTH_ENABLED) {
+        throw new Error('Authentication service is unavailable. Check your connection or contact your administrator.');
+      }
+
+      // Explicit demo-mode fallback authentication
       const idStr = (userType === 'root' ? email : username).toLowerCase().trim();
+      const rawIdentifier = (userType === 'root' ? email : username).trim();
 
       let matchedRole: Role = 'doctor';
       let matchedPersonaId = 'doc-01';
 
-      if (idStr.includes('patient') || idStr.includes('alex.taylor')) {
+      if (idStr.includes('patient')) {
         matchedRole = 'patient';
         matchedPersonaId = 'pat-01';
-      } else if (idStr.includes('doctor') || idStr.includes('elena.vance') || idStr.includes('vance')) {
+      } else if (idStr.includes('doctor') || idStr.includes('physician') || idStr.includes('doc')) {
         matchedRole = 'doctor';
         matchedPersonaId = 'doc-01';
-      } else if (idStr.includes('admin') || idStr.includes('root') || idStr.includes('arthur.davis') || userType === 'root') {
+      } else if (idStr.includes('admin') || idStr.includes('root') || userType === 'root') {
         matchedRole = 'admin';
         matchedPersonaId = 'admin-01';
-      } else if (idStr.includes('tech') || idStr.includes('marcus.chen')) {
+      } else if (idStr.includes('tech')) {
         matchedRole = 'technician';
         matchedPersonaId = 'tech-01';
       } else if (idStr.includes('rad')) {
@@ -268,8 +228,28 @@ export default function LoginPage() {
         matchedPersonaId = 'rad-01';
       }
 
-      // Check password matching if standard demo password is used or allow sign in
-      switchPersona(matchedPersonaId);
+      // Authenticate as a user preserving their actual name & email
+      const baseName = rawIdentifier.includes('@')
+        ? rawIdentifier.split('@')[0]
+        : rawIdentifier;
+      const displayName = baseName
+        .split('.')
+        .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+        .join(' ') || 'Authenticated User';
+
+      const customProfile: UserProfile = {
+        id: `usr-${Date.now().toString(36)}`,
+        name: displayName,
+        email: rawIdentifier.includes('@') ? rawIdentifier : `${rawIdentifier}@carenest.health`,
+        role: matchedRole,
+        roleTitle: ROLE_DEFINITIONS[matchedRole].title,
+        department: matchedRole === 'patient' ? 'Primary Care' : 'Clinical Practice',
+        organization: accountName || 'CareNest Health System',
+        permissions: ROLE_DEFINITIONS[matchedRole].permissions,
+      };
+
+      loginWithCustomProfile(customProfile);
+
       const targetPath = resolvePortalPath(matchedRole, email, username);
       setRedirectTarget(targetPath);
       setTargetRoleTitle(matchedRole === 'doctor' ? 'CareNest Doctor Portal' : matchedRole === 'patient' ? 'CareNest Patient Portal' : 'Admin Console');
@@ -305,12 +285,14 @@ export default function LoginPage() {
         setRedirectTarget(targetPath);
         setLoginSuccess(true);
         setTimeout(() => router.push(targetPath), 1200);
-      } else {
-        // Fallback completion
+      } else if (DEMO_AUTH_ENABLED) {
+        // Explicit demo-mode fallback completion
         const targetPath = resolvePortalPath(userType === 'root' ? 'admin' : 'doctor');
         setRedirectTarget(targetPath);
         setLoginSuccess(true);
         setTimeout(() => router.push(targetPath), 1200);
+      } else {
+        setError('Invalid verification code. Please try again.');
       }
     } catch (err: unknown) {
       setError((err instanceof Error ? err.message : String(err)) || 'Invalid MFA authentication code. Please try again.');
@@ -390,6 +372,11 @@ export default function LoginPage() {
                 : 'bg-white border-[#D5DBDB]'
             }`}
           >
+            {DEMO_AUTH_ENABLED && (
+              <div className="mb-5 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] font-medium text-amber-900">
+                Demo environment: credentials are simulated and no real patient data should be entered.
+              </div>
+            )}
             {/* ── SUCCESS STATE ── */}
             {loginSuccess ? (
               <div className="text-center py-6 space-y-4 animate-in fade-in duration-300">
@@ -540,7 +527,7 @@ export default function LoginPage() {
                           <input
                             type="text"
                             required
-                            placeholder="doctor.vance or patient.taylor"
+                            placeholder="Enter your IAM username or email"
                             value={username}
                             onChange={(e) => {
                               setUsername(e.target.value);
@@ -565,107 +552,6 @@ export default function LoginPage() {
                       <span>{loading ? 'Verifying identifier...' : 'Next'}</span>
                       <ArrowRight className="w-4 h-4" />
                     </button>
-
-                    {/* ═══════════════════════════════════════════════════════
-                        FAST DIRECT LOGIN: DOCTOR, PATIENT, ADMIN
-                       ═══════════════════════════════════════════════════════ */}
-                    <div className="pt-4 border-t border-gray-200 dark:border-gray-700/80">
-                      <div className="flex items-center justify-between mb-2.5">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                          1-Click Fast Portal Access
-                        </span>
-                        <span className="text-[10px] text-[#0073BB] dark:text-sky-400 font-semibold">
-                          IAM RBAC Verified
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                        {/* Doctor Portal Button */}
-                        <button
-                          type="button"
-                          onClick={() => handleFastLogin('doctor')}
-                          className="p-2.5 rounded-lg border border-teal-200 dark:border-teal-800/60 bg-teal-50/50 dark:bg-teal-950/20 hover:border-teal-400 dark:hover:border-teal-600 text-left transition-all cursor-pointer group"
-                        >
-                          <div className="flex items-center gap-1.5 font-bold text-teal-700 dark:text-teal-300 text-xs">
-                            <Stethoscope className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
-                            <span>Doctor Portal</span>
-                          </div>
-                          <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 truncate">
-                            Dr. Elena Vance, MD
-                          </div>
-                        </button>
-
-                        {/* Patient Portal Button */}
-                        <button
-                          type="button"
-                          onClick={() => handleFastLogin('patient')}
-                          className="p-2.5 rounded-lg border border-rose-200 dark:border-rose-800/60 bg-rose-50/50 dark:bg-rose-950/20 hover:border-rose-400 dark:hover:border-rose-600 text-left transition-all cursor-pointer group"
-                        >
-                          <div className="flex items-center gap-1.5 font-bold text-rose-700 dark:text-rose-300 text-xs">
-                            <Heart className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
-                            <span>Patient Portal</span>
-                          </div>
-                          <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 truncate">
-                            Alex Taylor
-                          </div>
-                        </button>
-
-                        {/* Admin Portal Button */}
-                        <button
-                          type="button"
-                          onClick={() => handleFastLogin('admin')}
-                          className="p-2.5 rounded-lg border border-amber-200 dark:border-amber-800/60 bg-amber-50/50 dark:bg-amber-950/20 hover:border-[#FF9900] text-left transition-all cursor-pointer group"
-                        >
-                          <div className="flex items-center gap-1.5 font-bold text-amber-700 dark:text-amber-300 text-xs">
-                            <Shield className="w-3.5 h-3.5 text-amber-600 dark:text-[#FF9900] shrink-0" />
-                            <span>Admin Portal</span>
-                          </div>
-                          <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 truncate">
-                            Arthur Davis · Root
-                          </div>
-                        </button>
-                      </div>
-
-                      {/* Autofill chip row */}
-                      <div className="flex flex-wrap gap-1.5 pt-2 text-[10px] text-gray-500">
-                        <span className="self-center">Fill credentials:</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setUserType('iam');
-                            setAccountIdOrAlias('aws-prod');
-                            setUsername('doctor.vance');
-                            setPassword('Doctor#2026');
-                          }}
-                          className="px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-inherit cursor-pointer font-medium"
-                        >
-                          doctor.vance
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setUserType('iam');
-                            setAccountIdOrAlias('aws-prod');
-                            setUsername('patient.taylor');
-                            setPassword('Patient#2026');
-                          }}
-                          className="px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-inherit cursor-pointer font-medium"
-                        >
-                          patient.taylor
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setUserType('root');
-                            setEmail('root@aws-example.com');
-                            setPassword('AdminRoot@123456');
-                          }}
-                          className="px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-inherit cursor-pointer font-medium"
-                        >
-                          root@aws-example.com
-                        </button>
-                      </div>
-                    </div>
                   </form>
                 )}
 
@@ -707,21 +593,23 @@ export default function LoginPage() {
                     <div className="space-y-1.5">
                       <div className="flex justify-between items-center">
                         <label className="font-bold text-inherit">Password</label>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (userType === 'root' || email.includes('admin') || username.includes('admin')) {
-                              setPassword('AdminRoot@123456');
-                            } else if (username.includes('patient') || email.includes('patient')) {
-                              setPassword('Patient#2026');
-                            } else {
-                              setPassword('Doctor#2026');
-                            }
-                          }}
-                          className="text-[#0073BB] dark:text-sky-400 hover:underline text-[11px] font-semibold cursor-pointer"
-                        >
-                          ⚡ Autofill demo password
-                        </button>
+                        {DEMO_AUTH_ENABLED && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (userType === 'root' || email.includes('admin') || username.includes('admin')) {
+                                setPassword('AdminRoot@123456');
+                              } else if (username.includes('patient') || email.includes('patient')) {
+                                setPassword('Patient#2026');
+                              } else {
+                                setPassword('Doctor#2026');
+                              }
+                            }}
+                            className="text-[#0073BB] dark:text-sky-400 hover:underline text-[11px] font-semibold cursor-pointer"
+                          >
+                            Autofill demo password
+                          </button>
+                        )}
                       </div>
 
                       <div className="relative">
@@ -886,7 +774,7 @@ export default function LoginPage() {
           <a href="#" className="hover:underline">RBAC Policy Documentation</a>
         </div>
         <div>
-          © 2026, Amazon Web Services, Inc. or its affiliates. All rights reserved. Powered by MiPAAS IAM-RBAC.
+          © 2026 MiPAAS Health Cloud. All rights reserved. IAM-RBAC clinical access.
         </div>
       </footer>
     </div>

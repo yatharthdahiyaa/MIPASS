@@ -121,6 +121,7 @@ export default function SkinCancerEnhanced() {
     try {
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('serviceId', 'skin-cancer');
       setUploadPct(65);
       setUploadPhase('processing');
 

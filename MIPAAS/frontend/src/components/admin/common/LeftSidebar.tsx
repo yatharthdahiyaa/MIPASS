@@ -1,5 +1,6 @@
 import React from 'react';
 import { useMultiLevelAdmin } from '@/context/MultiLevelAdminContext';
+import { useIndicLanguage } from '@/context/IndicLanguageContext';
 import { Resource } from '@/types/multiLevelRbac';
 import {
   Activity,
@@ -53,6 +54,7 @@ export default function LeftSidebar() {
     activeRole,
     statAlerts,
   } = useMultiLevelAdmin();
+  const { t } = useIndicLanguage();
 
   const sections: NavSection[] = [
     {
@@ -228,13 +230,14 @@ export default function LeftSidebar() {
               <div key={sIdx}>
                 {!sidebarCollapsed && (
                   <div className="px-3 pb-1.5 text-[10px] font-bold text-gray-500 uppercase tracking-wider">
-                    {language === 'HI' ? section.titleHi : section.title}
+                    {t(section.title, language === 'HI' ? section.titleHi : section.title)}
                   </div>
                 )}
                 <div className="space-y-1">
                   {visibleItems.map((item) => {
                     const Icon = item.icon;
                     const isActive = activeModule === item.id;
+                    const itemDisplayLabel = t(item.label, language === 'HI' ? item.labelHi : item.label);
 
                     return (
                       <button
@@ -243,7 +246,7 @@ export default function LeftSidebar() {
                           setActiveModule(item.id);
                           setMobileDrawerOpen(false);
                         }}
-                        title={sidebarCollapsed ? (language === 'HI' ? item.labelHi : item.label) : undefined}
+                        title={sidebarCollapsed ? itemDisplayLabel : undefined}
                         className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
                           isActive
                             ? 'bg-gradient-to-r from-teal-500/20 to-teal-500/5 text-teal-300 font-semibold border border-teal-500/30 shadow-sm'
@@ -253,7 +256,7 @@ export default function LeftSidebar() {
                         <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-teal-400' : 'text-gray-400'}`} />
                         {!sidebarCollapsed && (
                           <div className="flex-1 flex items-center justify-between truncate text-left">
-                            <span className="truncate">{language === 'HI' ? item.labelHi : item.label}</span>
+                            <span className="truncate">{itemDisplayLabel}</span>
                             {item.badge && (
                               <span
                                 className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-full"

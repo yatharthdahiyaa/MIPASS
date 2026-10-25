@@ -26,10 +26,90 @@ interface ServiceGuardProps {
 
 export default function ServiceGuard({ serviceId, children }: ServiceGuardProps) {
   const { getService, toggleServiceStatus, activeServices, isLoading } = useServices();
-  const { hasRole, currentUser, setRBACModalOpen } = useRBAC();
+  const { hasRole, currentUser, isAuthenticated, setRBACModalOpen } = useRBAC();
 
   const service = getService(serviceId);
   const isAdmin = hasRole('admin');
+
+  // 1. Mandatory Clinical Access Gate: Users MUST sign in to access diagnostic pathways
+  if (!isLoading && (!isAuthenticated || !currentUser?.id)) {
+    return (
+      <div className="min-h-screen bg-[#060D14] text-slate-100 flex flex-col justify-between selection:bg-[#00DCCE] selection:text-black">
+        {/* Top Bar */}
+        <header className="border-b border-white/10 bg-[#081520]/80 backdrop-blur-md px-6 py-4">
+          <div className="max-w-6xl mx-auto flex items-center justify-between">
+            <Link href="/" className="flex items-center gap-2.5 group">
+              <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-[#00DCCE] to-[#008280] flex items-center justify-center font-bold text-white shadow-md group-hover:scale-105 transition-transform">
+                M
+              </div>
+              <div className="flex flex-col">
+                <span className="text-white font-bold text-lg leading-none">MiPAAS</span>
+                <span className="text-[9px] uppercase tracking-wider text-gray-400">Healthcare AI</span>
+              </div>
+            </Link>
+
+            <Link
+              href={`/login?redirect=/${serviceId}`}
+              className="px-4 py-1.5 rounded-lg bg-gradient-to-r from-[#00DCCE] to-[#008280] text-black font-bold text-xs shadow hover:brightness-110 transition-all flex items-center gap-1.5"
+            >
+              <Lock className="w-3.5 h-3.5" />
+              <span>Sign In</span>
+            </Link>
+          </div>
+        </header>
+
+        {/* Main Security Gate */}
+        <main className="flex-1 max-w-2xl mx-auto px-6 py-16 flex flex-col items-center justify-center text-center">
+          <div className="relative mb-6">
+            <div className="absolute inset-0 rounded-full bg-teal-500/20 blur-xl animate-pulse" />
+            <div className="relative h-20 w-20 rounded-2xl bg-gradient-to-br from-[#00DCCE]/20 to-teal-900/30 border border-[#00DCCE]/30 flex items-center justify-center text-[#00DCCE] shadow-2xl">
+              <Lock className="w-10 h-10" />
+            </div>
+          </div>
+
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-teal-500/10 border border-teal-500/30 text-[#00DCCE] text-xs font-semibold uppercase tracking-wider mb-4">
+            <ShieldAlert className="w-3.5 h-3.5" />
+            <span>Protected Clinical Pathway · Sign In Required</span>
+          </div>
+
+          <h1 className="text-3xl sm:text-4xl font-black text-white tracking-tight mb-3">
+            {service?.name || 'Clinical Diagnostic Pathway'}
+          </h1>
+
+          <p className="text-slate-300 text-sm sm:text-base leading-relaxed mb-8 max-w-lg">
+            Direct access to AI inference models, PACS DICOM upload pipelines, and diagnostic evaluations is restricted. Please sign in to your medical provider or patient account to access this pathway.
+          </p>
+
+          <div className="flex flex-col sm:flex-row items-center gap-3 w-full max-w-md">
+            <Link
+              href={`/login?redirect=/${serviceId}`}
+              className="w-full sm:flex-1 py-3 px-5 rounded-xl bg-gradient-to-r from-[#00DCCE] to-[#008280] text-black font-bold text-sm shadow-xl hover:brightness-110 transition-all flex items-center justify-center gap-2"
+            >
+              <Lock className="w-4 h-4" />
+              <span>Sign In to Access Pathway</span>
+            </Link>
+            <Link
+              href="/login"
+              className="w-full sm:flex-1 py-3 px-5 rounded-xl bg-white/5 hover:bg-white/10 text-white border border-white/15 font-semibold text-sm transition-all flex items-center justify-center"
+            >
+              <span>Create Account</span>
+            </Link>
+          </div>
+
+          <Link
+            href="/"
+            className="mt-6 text-xs text-slate-400 hover:text-white transition-colors"
+          >
+            &larr; Return to MiPAAS Home
+          </Link>
+        </main>
+
+        <footer className="border-t border-white/10 bg-[#081520]/80 py-4 text-center text-xs text-slate-500">
+          MiPAAS HIPAA-Compliant Healthcare AI Platform
+        </footer>
+      </div>
+    );
+  }
 
   // If still loading or service not found or active, show children
   if (isLoading || !service || service.status === 'active') {
@@ -80,7 +160,7 @@ export default function ServiceGuard({ serviceId, children }: ServiceGuardProps)
     );
   }
 
-  // For regular public visitors: show full-screen maintenance / closed screen
+  // For maintenance / closed screen
   return (
     <div className="min-h-screen bg-[#060D14] text-slate-100 flex flex-col justify-between selection:bg-[#00DCCE] selection:text-black">
       {/* Top Bar */}
@@ -97,7 +177,9 @@ export default function ServiceGuard({ serviceId, children }: ServiceGuardProps)
           </Link>
 
           <div className="flex items-center gap-3 text-xs">
-            <span className="text-gray-400 hidden sm:inline">Role: {currentUser?.roleTitle || 'Public Guest'}</span>
+            {currentUser?.name && (
+              <span className="text-gray-400 hidden sm:inline">Signed in: {currentUser.name} ({currentUser.role})</span>
+            )}
             <button
               type="button"
               onClick={() => setRBACModalOpen(true)}

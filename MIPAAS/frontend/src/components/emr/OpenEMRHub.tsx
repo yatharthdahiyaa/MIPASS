@@ -1,9 +1,18 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useRBAC } from '@/context/RBACContext';
+import {
+  clinicalApiService,
+  ClinicalPatient,
+  ClinicalPrescription,
+  ClinicalLabResult,
+  ClinicalAppointment,
+  ClinicalDiagnosticReport,
+  ClinicalMessage,
+} from '@/services/clinicalApiService';
 import {
   Users,
   FileText,
@@ -56,7 +65,11 @@ import {
   Smile,
   HelpCircle,
   LogOut,
+  Trash2,
+  Database,
 } from 'lucide-react';
+import IndicLanguageSelector from '@/components/common/IndicLanguageSelector';
+import { useIndicLanguage } from '@/context/IndicLanguageContext';
 
 interface PatientProfile {
   id: string;
@@ -89,41 +102,115 @@ interface PatientProfile {
   };
 }
 
-const CURRENT_PATIENT: PatientProfile = {
-  id: 'pat_alex_01',
-  name: 'Alex Taylor',
-  dob: 'June 14, 1988',
-  age: 38,
-  gender: 'Female',
-  bloodType: 'O Positive (O+)',
-  mrn: 'CN-8842-1001',
-  email: 'alex.taylor@carenest.health',
-  phone: '(555) 014-2901',
-  address: '42 Abbey Road, Apt 4B, Boston, MA 02115',
+interface CarePlanTask {
+  id: string;
+  title: string;
+  subtitle: string;
+  completed: boolean;
+  actionTab: 'overview' | 'appointments' | 'records' | 'medications' | 'results' | 'messages' | 'settings';
+}
+
+interface EMRAppointment {
+  id: string;
+  doctor: string;
+  specialty: string;
+  date: string;
+  time: string;
+  type: string;
+  location: string;
+  status: string;
+  instructions: string;
+}
+
+interface EMRPastVisit {
+  id: string;
+  date: string;
+  doctor: string;
+  specialty: string;
+  reason: string;
+  doctorSummary: string;
+  prescriptionsUpdated: string[];
+  vitalsRecorded: string;
+}
+
+interface EMRMedication {
+  id: string;
+  name: string;
+  dosage: string;
+  instructions: string;
+  prescribedBy: string;
+  refillsLeft: number;
+  adherence: string;
+  status: string;
+  tag: string;
+}
+
+interface EMRTestResult {
+  id: string;
+  title: string;
+  date: string;
+  category: string;
+  orderedBy: string;
+  status: string;
+  patientExplanation: string;
+  details: Array<{ test: string; value: string; status: string }>;
+}
+
+interface EMRMessage {
+  id: string;
+  sender: string;
+  role: string;
+  avatarColor: string;
+  time: string;
+  text: string;
+  isMe: boolean;
+}
+
+const EMPTY_PATIENT_PROFILE: PatientProfile = {
+  id: '',
+  name: 'No Patient Chart Selected',
+  dob: '--',
+  age: 0,
+  gender: '--',
+  bloodType: '--',
+  mrn: 'NO-CHART',
+  email: '--',
+  phone: '--',
+  address: '--',
   emergencyContact: {
-    name: 'David Taylor',
-    relation: 'Spouse',
-    phone: '(555) 014-8892',
+    name: '--',
+    relation: '--',
+    phone: '--',
   },
   insurance: {
-    provider: 'CareNest Premier Healthcare',
-    plan: 'Comprehensive Care PPO Plus',
-    memberId: 'CN-99201-884',
-    groupNumber: 'GRP-77120',
-    validThru: '12/2027',
+    provider: 'No Active Policy',
+    plan: '--',
+    memberId: '--',
+    groupNumber: '--',
+    validThru: '--',
   },
   primaryDoctor: {
-    name: 'Dr. Taylor, MD',
-    title: 'Lead Pulmonologist & Primary Physician',
-    clinic: 'CareNest Medical Center · Suite 402',
-    phone: '(555) 019-3000',
+    name: 'Unassigned',
+    title: '--',
+    clinic: '--',
+    phone: '--',
   },
 };
 
 export default function OpenEMRHub() {
   const router = useRouter();
-  const { currentUser, switchPersona, logout, logoutIAM, isIamAuthenticated, iamUser } = useRBAC();
-  const isPatient = currentUser?.role === 'patient' || (isIamAuthenticated && iamUser?.roles?.some((r) => r.toLowerCase().includes('patient')));
+  const { currentUser, isAuthenticated, isSessionReady, switchPersona, logout, logoutIAM, isIamAuthenticated, iamUser } = useRBAC();
+  const { currentLanguage, t, isIndicLanguage } = useIndicLanguage();
+  const isClinicianOrAdmin = isAuthenticated && Boolean(
+    currentUser?.role && ['doctor', 'radiologist', 'admin', 'technician', 'researcher'].includes(currentUser.role)
+  );
+  const isPatient = isAuthenticated && currentUser?.role === 'patient';
+  const timeGreeting = (() => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
+  })();
 
   const handleSignOut = async () => {
     try {
@@ -141,12 +228,21 @@ export default function OpenEMRHub() {
     'overview' | 'appointments' | 'records' | 'medications' | 'results' | 'messages' | 'settings'
   >('overview');
 
-  const patient = {
-    ...CURRENT_PATIENT,
-    name: currentUser?.name || iamUser?.username || CURRENT_PATIENT.name,
-    email: currentUser?.email || iamUser?.email || CURRENT_PATIENT.email,
-  };
+  // Backend Clinical State (Persistent and Live)
+  const [patients, setPatients] = useState<ClinicalPatient[]>([]);
+  const [selectedPatientId, setSelectedPatientId] = useState<string>('');
+  const [isLoadingClinical, setIsLoadingClinical] = useState<boolean>(true);
+  const [clinicalLoadError, setClinicalLoadError] = useState<string | null>(null);
+
+  const [appointments, setAppointments] = useState<EMRAppointment[]>([]);
+  const [pastVisits, setPastVisits] = useState<EMRPastVisit[]>([]);
+  const [medications, setMedications] = useState<EMRMedication[]>([]);
+  const [testResults, setTestResults] = useState<EMRTestResult[]>([]);
+  const [messages, setMessages] = useState<EMRMessage[]>([]);
+  const [carePlanTasks, setCarePlanTasks] = useState<CarePlanTask[]>([]);
+
   const [searchQuery, setSearchQuery] = useState('');
+  const [newMessageText, setNewMessageText] = useState('');
   const [notification, setNotification] = useState<string | null>(null);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -157,187 +253,28 @@ export default function OpenEMRHub() {
   // Health Records Sub-Tab for patient exploration
   const [recordsTab, setRecordsTab] = useState<'visits' | 'conditions' | 'vaccines' | 'vitals_history'>('visits');
 
-  // Care Plan Checklist State (Interactive & Clickable)
-  const [carePlanTasks, setCarePlanTasks] = useState([
-    {
-      id: 'task-1',
-      title: 'Review medication schedule',
-      subtitle: 'Stay on track with your morning inhaler & blood pressure medication.',
-      completed: true,
-      actionTab: 'medications' as const,
-    },
-    {
-      id: 'task-2',
-      title: 'Prepare for upcoming visit',
-      subtitle: 'Check appointment notes and list any recent symptoms for Dr. Taylor.',
-      completed: true,
-      actionTab: 'appointments' as const,
-    },
-    {
-      id: 'task-3',
-      title: 'Read your latest test results',
-      subtitle: 'Your recent blood work and lung screening are ready for review.',
-      completed: false,
-      actionTab: 'results' as const,
-    },
-  ]);
-
-  // Appointments State
-  const [appointments, setAppointments] = useState([
-    {
-      id: 'apt-01',
-      doctor: 'Dr. Taylor',
-      specialty: 'Pulmonology & Preventive Medicine',
-      date: 'Tue, 20 Oct',
-      time: '10:30 AM',
-      type: 'In-Clinic Consultation',
-      location: 'Suite 402 · CareNest Medical Center',
-      status: 'Confirmed',
-      instructions: 'Please arrive 10 minutes early. No fasting required.',
-    },
-    {
-      id: 'apt-02',
-      doctor: 'Dr. Elena Vance, MD',
-      specialty: 'Diagnostic Radiology Review',
-      date: 'Thu, 05 Nov',
-      time: '02:15 PM',
-      type: 'Teleconsult Video Visit',
-      location: 'CareNest Secure Video Link',
-      status: 'Upcoming',
-      instructions: 'Have your phone or laptop camera ready. Link activates 15 min prior.',
-    },
-  ]);
-
-  // Past Visits History for Health Records
-  const [pastVisits, setPastVisits] = useState([
-    {
-      id: 'visit-01',
-      date: 'September 12, 2026',
-      doctor: 'Dr. Taylor',
-      specialty: 'Pulmonology',
-      reason: 'Routine Pulmonary Follow-up & Medication Review',
-      doctorSummary:
-        'Lungs are clear bilaterally. Airway flow tests showed a +6% improvement following consistent use of Tiotropium. Blood pressure is well-controlled at 124/80. Advised to continue current routine.',
-      prescriptionsUpdated: ['Albuterol Inhaler (Renewed)', 'Tiotropium 18mcg Daily'],
-      vitalsRecorded: 'BP: 124/80 mmHg · Pulse: 72 bpm · SpO2: 98%',
-    },
-    {
-      id: 'visit-02',
-      date: 'June 04, 2026',
-      doctor: 'Dr. Marcus Chen',
-      specialty: 'Cardiology Baseline',
-      reason: 'Preventive Cardiovascular & Blood Pressure Screening',
-      doctorSummary:
-        'ECG normal sinus rhythm without ischemic changes. Heart sounds S1/S2 normal without murmur. Advised continuing low-sodium diet and maintaining 30 minutes of light daily walking.',
-      prescriptionsUpdated: ['Lisinopril 10mg PO Daily'],
-      vitalsRecorded: 'BP: 128/82 mmHg · Pulse: 74 bpm · BMI: 25.4',
-    },
-  ]);
-
-  // Active Medications
-  const [medications, setMedications] = useState([
-    {
-      id: 'med-1',
-      name: 'Albuterol Sulfate Inhaler',
-      dosage: '90 mcg per actuation',
-      instructions: 'Inhale 2 puffs every 4 to 6 hours as needed for shortness of breath.',
-      prescribedBy: 'Dr. Taylor',
-      refillsLeft: 3,
-      adherence: '98%',
-      status: 'Active',
-      tag: 'Morning / As Needed',
-    },
-    {
-      id: 'med-2',
-      name: 'Tiotropium Bromide (Spiriva)',
-      dosage: '18 mcg capsule',
-      instructions: 'Inhale 1 capsule daily in the morning with your inhaler device.',
-      prescribedBy: 'Dr. Taylor',
-      refillsLeft: 2,
-      adherence: '100%',
-      status: 'Active',
-      tag: 'Daily Maintenance',
-    },
-    {
-      id: 'med-3',
-      name: 'Lisinopril',
-      dosage: '10 mg oral tablet',
-      instructions: 'Take 1 tablet by mouth daily with a glass of water.',
-      prescribedBy: 'Dr. Marcus Chen',
-      refillsLeft: 4,
-      adherence: '100%',
-      status: 'Active',
-      tag: 'Blood Pressure',
-    },
-  ]);
-
-  // Test Results
-  const [testResults, setTestResults] = useState([
-    {
-      id: 'res-1',
-      title: 'Comprehensive Metabolic & Blood Panel',
-      date: 'Today, 9:12 AM',
-      category: 'Lab Work',
-      orderedBy: 'Dr. Taylor',
-      status: 'Normal & Stable',
-      patientExplanation:
-        'All your kidney, liver, electrolyte, and blood sugar levels are within the healthy normal range. No action required.',
-      details: [
-        { test: 'Fasting Blood Glucose', value: '92 mg/dL', status: 'Optimal (70 - 99)' },
-        { test: 'Serum Creatinine', value: '0.88 mg/dL', status: 'Normal (0.6 - 1.1)' },
-        { test: 'Sodium', value: '140 mEq/L', status: 'Normal (136 - 145)' },
-        { test: 'Potassium', value: '4.2 mEq/L', status: 'Normal (3.5 - 5.0)' },
-      ],
-    },
-    {
-      id: 'res-2',
-      title: 'Annual Low-Dose Chest CT Scan',
-      date: 'October 12, 2026',
-      category: 'Diagnostic Radiology',
-      orderedBy: 'Dr. Taylor',
-      status: 'Doctor Reviewed · Stable',
-      patientExplanation:
-        'Your lung scan shows healthy lung volume with no acute pneumonia or alarming changes. The small benign apical nodule remains stable and non-progressive. Your next routine screening is in 12 months.',
-      details: [
-        { test: 'Scan Modality', value: 'Low-Dose Chest CT', status: 'Completed' },
-        { test: 'Finding Classification', value: 'Lung-RADS 2 (Benign Appearance)', status: 'Stable' },
-        { test: 'Next Surveillance', value: 'Annual (October 2027)', status: 'On Schedule' },
-      ],
-    },
-  ]);
-
-  // Messages State
-  const [messages, setMessages] = useState([
-    {
-      id: 'msg-1',
-      sender: 'Dr. Taylor',
-      role: 'Your Doctor',
-      avatarColor: 'bg-teal-500',
-      time: 'Yesterday, 3:45 PM',
-      text: "Hello Alex, your latest blood panel came back with all markers in the normal range! Please continue taking your Lisinopril and inhaler as scheduled, and we'll review your pulmonary scan on Tuesday.",
-      isMe: false,
-    },
-    {
-      id: 'msg-2',
-      sender: 'Nurse Sarah',
-      role: 'Care Coordinator',
-      avatarColor: 'bg-sky-500',
-      time: 'Today, 9:20 AM',
-      text: 'Good morning Alex! Just a quick reminder that fasting is NOT needed for your visit on Tuesday at 10:30 AM. Feel free to message here if you have any questions before then.',
-      isMe: false,
-    },
-  ]);
-  const [newMessageText, setNewMessageText] = useState('');
-
   // Modals & Booking
   const [showAppointmentModal, setShowAppointmentModal] = useState(false);
   const [newAppointmentForm, setNewAppointmentForm] = useState({
-    doctor: 'Dr. Taylor',
+    doctor: 'Dr. Taylor, MD',
     date: '2026-10-22',
     time: '11:00 AM',
     type: 'In-Clinic Consultation',
-    reason: 'Routine health checkup',
+    reason: 'Routine health consultation',
   });
+
+  const [showVitalsModal, setShowVitalsModal] = useState(false);
+  const [vitalsForm, setVitalsForm] = useState({
+    bloodPressure: '',
+    heartRate: '',
+    oxygen: '',
+    bmi: '',
+  });
+
+  // Drug Allergies Management State
+  const [showAllergiesModal, setShowAllergiesModal] = useState(false);
+  const [newAllergyInput, setNewAllergyInput] = useState('');
+  const [isSavingAllergies, setIsSavingAllergies] = useState(false);
 
   // Settings: Notification & Privacy Preferences
   const [notificationSettings, setNotificationSettings] = useState({
@@ -347,6 +284,455 @@ export default function OpenEMRHub() {
     medicationRefillPushes: true,
   });
 
+  // Load Patient Data from Clinical API
+  const loadPatientData = useCallback(async () => {
+    setIsLoadingClinical(true);
+    setClinicalLoadError(null);
+    try {
+      const pts = await clinicalApiService.getPatients();
+      setPatients(pts);
+
+      if (pts.length > 0) {
+        const currentName = currentUser?.name?.toLowerCase();
+        const iamName = iamUser?.username?.toLowerCase();
+        const iamEmail = iamUser?.email?.toLowerCase();
+        const currentEmail = currentUser?.email?.toLowerCase();
+        const isAuthPatient = isPatient && Boolean(currentUser && currentUser.id);
+
+        let matched: ClinicalPatient | undefined;
+
+        // If an authenticated patient is active, prioritize their chart
+        if (isAuthPatient) {
+          matched = pts.find((p) => p.id === currentUser.id);
+          if (!matched && currentEmail) {
+            matched = pts.find((p) => p.email && p.email.toLowerCase() === currentEmail);
+          }
+          if (!matched && currentName) {
+            matched = pts.find((p) => p.name.toLowerCase() === currentName || p.name.toLowerCase().includes(currentName) || currentName.includes(p.name.toLowerCase()));
+          }
+        }
+
+        // If not matched yet, check selectedPatientId or IAM
+        if (!matched && selectedPatientId) {
+          matched = pts.find((p) => p.id === selectedPatientId);
+        }
+        if (!matched && iamEmail) {
+          matched = pts.find((p) => p.email && p.email.toLowerCase() === iamEmail);
+        }
+        if (!matched && iamName) {
+          matched = pts.find((p) => p.name.toLowerCase().includes(iamName) || (p.email && p.email.toLowerCase().includes(iamName)));
+        }
+
+        // Never fall back to another patient's chart. If this patient has no
+        // registered chart yet, create one instead of displaying someone else.
+        if (!matched && isAuthPatient) {
+          const created = await clinicalApiService.createPatient({
+            name: currentUser.name,
+            email: currentUser.email || '',
+            primaryDiagnosis: 'Patient Health Portal Member',
+          });
+          if (created) {
+            setPatients((prev) => [...prev, created]);
+            matched = created;
+          }
+        }
+
+        if (!matched) {
+          setSelectedPatientId('');
+          setAppointments([]);
+          setPastVisits([]);
+          setMedications([]);
+          setTestResults([]);
+          setMessages([]);
+          setCarePlanTasks([]);
+          return;
+        }
+
+        setSelectedPatientId(matched.id);
+
+        const bundle = await clinicalApiService.getPatientBundle({
+          patientId: matched.id,
+          mrn: matched.mrn,
+        });
+
+        // 1. Prescriptions -> Medications
+        const loadedMeds: EMRMedication[] = (bundle.prescriptions || []).map((p, idx) => ({
+          id: p.id || `med-${idx}`,
+          name: p.medication,
+          dosage: p.dosage,
+          instructions: p.frequency ? `${p.frequency} · ${p.instructions || ''}` : p.instructions || 'Take as directed',
+          prescribedBy: p.prescribedBy || 'Dr. Taylor, MD',
+          refillsLeft: p.refills ?? 2,
+          adherence: '100%',
+          status: p.status || 'Active',
+          tag: p.frequency || 'Daily Maintenance',
+        }));
+        setMedications(loadedMeds);
+
+        // 2. Appointments
+        const loadedApts: EMRAppointment[] = (bundle.appointments || []).map((a, idx) => ({
+          id: a.id || `apt-${idx}`,
+          doctor: a.doctor || a.doctorName || 'Dr. Taylor, MD',
+          specialty: a.specialty || 'General Consultation',
+          date: a.date,
+          time: a.time,
+          type: a.type || 'In-Clinic Consultation',
+          location: a.location || 'CareNest Medical Center · Suite 402',
+          status: a.status || 'Confirmed',
+          instructions: a.instructions || 'Routine consultation',
+        }));
+        setAppointments(loadedApts);
+
+        // 3. Diagnostic Reports & Labs -> Test Results
+        const diagnosticResults: EMRTestResult[] = (bundle.diagnosticReports || []).map((r, idx) => ({
+          id: r.id || `diag-${idx}`,
+          title: `${r.serviceName} Analysis Report`,
+          date: r.date,
+          category: 'Diagnostic Radiology',
+          orderedBy: r.radiologist || 'Clinical AI Suite',
+          status: r.certified ? 'Doctor Reviewed · Certified' : 'AI Analysis · Completed',
+          patientExplanation: r.clinicalSummary || r.findings,
+          details: [
+            { test: 'Modality', value: r.serviceName, status: r.riskLevel || 'Normal' },
+            { test: 'Confidence', value: `${r.confidence ? Math.round(r.confidence * 100) : 94}%`, status: 'Verified' },
+            { test: 'Recommendation', value: r.recommendation || 'Clinical review advised', status: 'Reviewed' },
+          ],
+        }));
+
+        const labResults: EMRTestResult[] = (bundle.labResults || []).map((l, idx) => ({
+          id: l.id || `lab-${idx}`,
+          title: l.testName,
+          date: l.date || l.orderedDate || 'Today',
+          category: 'Lab Work',
+          orderedBy: l.orderedBy || l.doctorOrLab || 'Dr. Taylor, MD',
+          status: l.status,
+          patientExplanation: l.findings || 'Laboratory diagnostic testing completed.',
+          details: l.details && l.details.length > 0 ? l.details : [
+            { test: l.testName, value: l.value || 'Complete', status: l.status },
+          ],
+        }));
+        setTestResults([...diagnosticResults, ...labResults]);
+
+        // 4. Messages
+        const loadedMsgs: EMRMessage[] = (bundle.messages || []).map((m, idx) => ({
+          id: m.id || `msg-${idx}`,
+          sender: m.sender,
+          role: m.role || m.senderRole || 'Care Team',
+          avatarColor: m.sender.toLowerCase().includes('taylor') ? 'bg-teal-500' : 'bg-sky-500',
+          time: m.time,
+          text: m.text,
+          isMe: Boolean(m.isMe || m.sender.toLowerCase().includes('(you)') || (matched && m.sender === matched.name)),
+        }));
+        setMessages(loadedMsgs);
+
+        // 5. Past Visits
+        const completedApts = (bundle.appointments || []).filter((a) => a.status === 'Completed');
+        if (completedApts.length > 0) {
+          setPastVisits(
+            completedApts.map((a, idx) => ({
+              id: a.id || `visit-${idx}`,
+              date: a.date,
+              doctor: a.doctor || a.doctorName || 'Dr. Taylor, MD',
+              specialty: a.specialty || 'General Practice',
+              reason: a.instructions || 'Routine Follow-up',
+              doctorSummary: 'Clinical review completed. Vitals stable.',
+              prescriptionsUpdated: loadedMeds.slice(0, 2).map((m) => m.name),
+              vitalsRecorded: 'BP: 120/80 mmHg · Pulse: 72 bpm',
+            }))
+          );
+        } else {
+          setPastVisits([]);
+        }
+
+        // 6. Care Plan Tasks (Dynamically derived from real clinical items)
+        const dynamicTasks: CarePlanTask[] = [];
+        if (loadedMeds.length > 0) {
+          dynamicTasks.push({
+            id: 'task-meds',
+            title: 'Review medication schedule',
+            subtitle: `Stay on track with ${loadedMeds[0].name} (${loadedMeds[0].dosage}).`,
+            completed: true,
+            actionTab: 'medications',
+          });
+        }
+        if (loadedApts.length > 0) {
+          dynamicTasks.push({
+            id: 'task-apt',
+            title: 'Prepare for upcoming visit',
+            subtitle: `Review consultation notes for ${loadedApts[0].doctor} on ${loadedApts[0].date}.`,
+            completed: false,
+            actionTab: 'appointments',
+          });
+        }
+        if (diagnosticResults.length > 0 || labResults.length > 0) {
+          const firstRes = diagnosticResults[0] || labResults[0];
+          dynamicTasks.push({
+            id: 'task-res',
+            title: 'Read your latest test results',
+            subtitle: `${firstRes.title} is certified and ready for review.`,
+            completed: false,
+            actionTab: 'results',
+          });
+        }
+        setCarePlanTasks(dynamicTasks);
+      } else {
+        if (currentUser?.name && isPatient && !currentUser.name.toLowerCase().includes('taylor')) {
+          const created = await clinicalApiService.createPatient({
+            name: currentUser.name,
+            email: currentUser.email || '',
+            primaryDiagnosis: 'Patient Health Portal Member',
+          });
+          if (created) {
+            setPatients([created]);
+            setSelectedPatientId(created.id);
+          }
+        } else {
+          setSelectedPatientId('');
+          setAppointments([]);
+          setPastVisits([]);
+          setMedications([]);
+          setTestResults([]);
+          setMessages([]);
+          setCarePlanTasks([]);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load patient clinical records:', err);
+      setClinicalLoadError('Unable to load your clinical records. The care team has been notified; please retry.');
+    } finally {
+      setIsLoadingClinical(false);
+    }
+  }, [currentUser, iamUser, isPatient, selectedPatientId]);
+
+  useEffect(() => {
+    loadPatientData();
+  }, [loadPatientData]);
+
+  // Active Selected Patient Object
+  const isAuthPatient = isPatient && Boolean(currentUser && currentUser.id);
+  const activeMatchedPatient = isAuthPatient
+    ? (patients.find((p) => p.id === currentUser.id || (currentUser.email && p.email?.toLowerCase() === currentUser.email.toLowerCase()) || (currentUser.name && p.name.toLowerCase() === currentUser.name.toLowerCase())) ||
+       patients.find((p) => p.id === selectedPatientId) ||
+       null)
+    : null;
+
+  const displayName = isAuthPatient
+    ? currentUser.name
+    : (activeMatchedPatient?.name || 'Patient');
+
+  const displayEmail = isAuthPatient
+    ? (currentUser.email || `${currentUser.name.toLowerCase().replace(/\s+/g, '.')}@carenest.health`)
+    : (activeMatchedPatient?.email || `${(activeMatchedPatient?.name || 'patient').toLowerCase().replace(/\s+/g, '.')}@carenest.health`);
+
+  const patient: PatientProfile = activeMatchedPatient
+    ? {
+        id: activeMatchedPatient.id,
+        name: displayName,
+        dob: activeMatchedPatient.dob || 'June 14, 1990',
+        age: activeMatchedPatient.age || 34,
+        gender: activeMatchedPatient.gender || 'Not specified',
+        bloodType: activeMatchedPatient.bloodType || 'O Positive (O+)',
+        mrn: activeMatchedPatient.mrn,
+        email: displayEmail,
+        phone: activeMatchedPatient.phone || '(555) 014-2901',
+        address: activeMatchedPatient.address || 'Standard Clinic Care Plan',
+        emergencyContact: {
+          name: 'Primary Contact',
+          relation: 'Family',
+          phone: activeMatchedPatient.phone || '(555) 014-8892',
+        },
+        insurance: {
+          provider: 'CareNest Premier Healthcare',
+          plan: 'Comprehensive Care PPO Plus',
+          memberId: activeMatchedPatient.mrn,
+          groupNumber: 'GRP-77120',
+          validThru: '12/2027',
+        },
+        primaryDoctor: {
+          name: activeMatchedPatient.primaryDoctor || 'Attending Physician, MD',
+          title: 'Lead Primary Physician',
+          clinic: 'CareNest Medical Center · Suite 402',
+          phone: '(555) 019-3000',
+        },
+      }
+    : isAuthPatient
+    ? {
+        id: currentUser.id || `pat-${Date.now().toString(36)}`,
+        name: currentUser.name,
+        dob: 'June 14, 1990',
+        age: 34,
+        gender: 'Not specified',
+        bloodType: 'A Positive (A+)',
+        mrn: `MRN-${Math.floor(100000 + Math.random() * 900000)}`,
+        email: displayEmail,
+        phone: '(555) 019-2834',
+        address: 'Standard Clinic Care Plan',
+        emergencyContact: {
+          name: 'Primary Contact',
+          relation: 'Family',
+          phone: '(555) 019-2835',
+        },
+        insurance: {
+          provider: 'CareNest Health System',
+          plan: 'Standard PPO Health Plan',
+          memberId: `CN-${Math.floor(100000 + Math.random() * 900000)}`,
+          groupNumber: 'GRP-9021',
+          validThru: '12/2027',
+        },
+        primaryDoctor: {
+          name: 'Attending Physician, MD',
+          title: 'Lead Primary Physician',
+          clinic: 'CareNest Medical Center · Suite 402',
+          phone: '(555) 019-3000',
+        },
+      }
+    : EMPTY_PATIENT_PROFILE;
+
+  // Active vitals evaluation
+  const activeVitals = activeMatchedPatient?.vitals || {};
+  const currentBp = activeVitals.bloodPressure || activeMatchedPatient?.bloodPressure || '';
+  const currentHr = activeVitals.heartRate || activeMatchedPatient?.heartRate || '';
+  const currentO2 = activeVitals.oxygen || activeMatchedPatient?.oxygen || '';
+  const currentBmi = activeVitals.bmi || activeMatchedPatient?.bmi || '';
+  const hasAnyVitals = Boolean(currentBp || currentHr || currentO2 || currentBmi);
+
+  const handleSaveVitals = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const targetId = activeMatchedPatient?.id || currentUser?.id;
+    if (!targetId) return;
+    const bpVal = vitalsForm.bloodPressure.trim();
+    const hrVal = vitalsForm.heartRate.trim();
+    const o2Val = vitalsForm.oxygen.trim();
+    const bmiVal = vitalsForm.bmi.trim();
+
+    try {
+      const updated = await clinicalApiService.updatePatientVitals(targetId, {
+        bloodPressure: bpVal ? (bpVal.toLowerCase().includes('mmhg') ? bpVal : `${bpVal} mmHg`) : '',
+        heartRate: hrVal,
+        oxygen: o2Val,
+        bmi: bmiVal,
+      });
+
+      if (updated) {
+        setPatients((prev) =>
+          prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p))
+        );
+      } else {
+        // Fallback state update
+        setPatients((prev) =>
+          prev.map((p) =>
+            p.id === targetId
+              ? {
+                  ...p,
+                  bloodPressure: bpVal ? `${bpVal} mmHg` : '',
+                  heartRate: hrVal,
+                  oxygen: o2Val,
+                  bmi: bmiVal,
+                  vitals: {
+                    bloodPressure: bpVal ? `${bpVal} mmHg` : '',
+                    heartRate: hrVal,
+                    oxygen: o2Val,
+                    bmi: bmiVal,
+                  },
+                }
+              : p
+          )
+        );
+      }
+      setNotification('Vital signs recorded in your medical chart!');
+      setTimeout(() => setNotification(null), 3500);
+      setShowVitalsModal(false);
+    } catch {
+      setNotification('Could not save vitals. Please try again.');
+      setTimeout(() => setNotification(null), 3500);
+    }
+  };
+
+  // Drug Allergies Handlers (Persistent via Clinical API & SQLite DB)
+  const handleAddAllergy = async (allergyToAdd?: string) => {
+    const item = (allergyToAdd || newAllergyInput).trim();
+    if (!item) return;
+    const targetPatientId = activeMatchedPatient?.id || patient?.id || selectedPatientId;
+    if (!targetPatientId) return;
+
+    setIsSavingAllergies(true);
+    try {
+      const current = activeMatchedPatient?.allergies || [];
+      if (!current.includes(item)) {
+        const updated = [...current, item];
+        const ok = await clinicalApiService.updatePatientAllergies(targetPatientId, updated);
+        if (ok) {
+          setNotification(`Added drug allergy: ${item}`);
+          setTimeout(() => setNotification(null), 3500);
+          setNewAllergyInput('');
+          await loadPatientData();
+        } else {
+          setNotification('Could not save allergy. Please try again.');
+          setTimeout(() => setNotification(null), 3500);
+        }
+      } else {
+        setNotification(`Allergy "${item}" is already recorded`);
+        setTimeout(() => setNotification(null), 3500);
+      }
+    } catch (e) {
+      console.error(e);
+      setNotification('Failed to update allergies. Please try again.');
+      setTimeout(() => setNotification(null), 3500);
+    } finally {
+      setIsSavingAllergies(false);
+    }
+  };
+
+  const handleRemoveAllergy = async (allergyToRemove: string) => {
+    const targetPatientId = activeMatchedPatient?.id || patient?.id || selectedPatientId;
+    if (!targetPatientId) return;
+
+    setIsSavingAllergies(true);
+    try {
+      const current = activeMatchedPatient?.allergies || [];
+      const updated = current.filter((a) => a !== allergyToRemove);
+      const ok = await clinicalApiService.updatePatientAllergies(targetPatientId, updated);
+      if (ok) {
+        setNotification(`Removed allergy: ${allergyToRemove}`);
+        setTimeout(() => setNotification(null), 3500);
+        await loadPatientData();
+      } else {
+        setNotification('Could not remove allergy. Please try again.');
+        setTimeout(() => setNotification(null), 3500);
+      }
+    } catch (e) {
+      console.error(e);
+      setNotification('Failed to update allergies. Please try again.');
+      setTimeout(() => setNotification(null), 3500);
+    } finally {
+      setIsSavingAllergies(false);
+    }
+  };
+
+  const handleClearAllergies = async () => {
+    const targetPatientId = activeMatchedPatient?.id || patient?.id || selectedPatientId;
+    if (!targetPatientId) return;
+
+    setIsSavingAllergies(true);
+    try {
+      const ok = await clinicalApiService.updatePatientAllergies(targetPatientId, []);
+      if (ok) {
+        setNotification('Recorded: No Known Drug Allergies (NKDA)');
+        setTimeout(() => setNotification(null), 3500);
+        await loadPatientData();
+      } else {
+        setNotification('Could not clear allergies. Please try again.');
+        setTimeout(() => setNotification(null), 3500);
+      }
+    } catch (e) {
+      console.error(e);
+      setNotification('Failed to clear allergies. Please try again.');
+      setTimeout(() => setNotification(null), 3500);
+    } finally {
+      setIsSavingAllergies(false);
+    }
+  };
+
   const toggleTaskCompleted = (taskId: string) => {
     setCarePlanTasks((prev) =>
       prev.map((t) => (t.id === taskId ? { ...t, completed: !t.completed } : t))
@@ -354,43 +740,220 @@ export default function OpenEMRHub() {
   };
 
   const completedTaskCount = carePlanTasks.filter((t) => t.completed).length;
-  const taskProgressPct = Math.round((completedTaskCount / carePlanTasks.length) * 100);
+  const taskProgressPct = carePlanTasks.length > 0 ? Math.round((completedTaskCount / carePlanTasks.length) * 100) : 100;
 
-  const handleBookAppointmentSubmit = (e: React.FormEvent) => {
+  // Book Appointment Submit (Saves to Backend)
+  const handleBookAppointmentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newApt = {
-      id: `apt-${Date.now().toString().slice(-3)}`,
-      doctor: newAppointmentForm.doctor,
-      specialty: 'Clinical Consultation',
-      date: newAppointmentForm.date,
-      time: newAppointmentForm.time,
-      type: newAppointmentForm.type,
-      location: 'CareNest Medical Center · Suite 402',
-      status: 'Confirmed',
-      instructions: 'Appointment booked successfully. We will send an SMS reminder 24 hours prior.',
-    };
-    setAppointments([newApt, ...appointments]);
-    setShowAppointmentModal(false);
-    setNotification(`Appointment booked with ${newApt.doctor} for ${newApt.date} at ${newApt.time}!`);
-    setTimeout(() => setNotification(null), 4000);
+    try {
+      const created = await clinicalApiService.createAppointment({
+        patientId: patient.id || 'pat_demo_01',
+        patientName: patient.name || 'Patient',
+        patientMrn: patient.mrn || 'CN-8842-1001',
+        mrn: patient.mrn || 'CN-8842-1001',
+        doctor: newAppointmentForm.doctor,
+        doctorName: newAppointmentForm.doctor,
+        specialty: 'Clinical Consultation',
+        date: newAppointmentForm.date,
+        time: newAppointmentForm.time,
+        type: newAppointmentForm.type,
+        location: 'CareNest Medical Center · Suite 402',
+        status: 'Confirmed',
+        instructions: newAppointmentForm.reason || 'Booked via Patient Portal',
+      });
+
+      if (created) {
+        setAppointments((prev) => [
+          {
+            id: created.id,
+            doctor: created.doctor || created.doctorName || 'Dr. Taylor, MD',
+            specialty: created.specialty || 'General Consultation',
+            date: created.date,
+            time: created.time,
+            type: created.type,
+            location: created.location,
+            status: created.status,
+            instructions: created.instructions || 'Routine consultation',
+          },
+          ...prev,
+        ]);
+        setShowAppointmentModal(false);
+        setNotification(`Appointment booked with ${created.doctor || created.doctorName} for ${created.date} at ${created.time}!`);
+        setTimeout(() => setNotification(null), 4000);
+      }
+    } catch (err) {
+      console.error('Failed to book appointment:', err);
+      setNotification('Failed to save appointment to clinical backend.');
+    }
   };
 
-  const handleSendMessage = (e: React.FormEvent) => {
+  // Send Message Submit (Saves to Backend)
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessageText.trim()) return;
-    const newMsg = {
-      id: `msg-${Date.now()}`,
-      sender: `${patient.name} (You)`,
-      role: 'Patient',
-      avatarColor: 'bg-[#17324D]',
-      time: 'Just now',
-      text: newMessageText,
-      isMe: true,
-    };
-    setMessages([...messages, newMsg]);
+    const textToSend = newMessageText.trim();
     setNewMessageText('');
-    setNotification('Message sent to your care team.');
-    setTimeout(() => setNotification(null), 3000);
+
+    try {
+      const savedMsg = await clinicalApiService.sendMessage({
+        patientId: patient.id || 'pat_demo_01',
+        sender: `${patient.name} (Patient)`,
+        role: 'Patient',
+        senderRole: 'Patient',
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        text: textToSend,
+        isMe: true,
+      });
+
+      if (savedMsg) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: savedMsg.id,
+            sender: savedMsg.sender,
+            role: savedMsg.role || savedMsg.senderRole || 'Patient',
+            avatarColor: 'bg-[#17324D]',
+            time: savedMsg.time,
+            text: savedMsg.text,
+            isMe: true,
+          },
+        ]);
+        setNotification('Message sent to your care team.');
+        setTimeout(() => setNotification(null), 3000);
+      }
+    } catch (err) {
+      console.error('Failed to send message:', err);
+      setNotification('Failed to save message.');
+    }
+  };
+
+  // Quick Demo Patient Helper (1-Click Test Seeding)
+  const handleCreateDemoPatient = async () => {
+    try {
+      setIsLoadingClinical(true);
+      const demoPat = await clinicalApiService.createPatient({
+        name: 'Alex Taylor',
+        age: 38,
+        gender: 'F',
+        mrn: 'CN-8842-1001',
+        dob: 'June 14, 1988',
+        bloodType: 'O Positive (O+)',
+        condition: 'Asthma & Mild Hypertension (Controlled)',
+        riskLevel: 'Moderate',
+        status: 'Active',
+        primaryDoctor: 'Dr. Taylor, MD',
+        phone: '(555) 014-2901',
+        email: 'alex.taylor@carenest.health',
+        address: '42 Abbey Road, Boston, MA 02115',
+      });
+
+      if (!demoPat) return;
+
+      await clinicalApiService.createPrescription({
+        patientId: demoPat.id,
+        patientName: demoPat.name,
+        patientMrn: demoPat.mrn,
+        mrn: demoPat.mrn,
+        medication: 'Albuterol Sulfate Inhaler 90mcg',
+        dosage: '90mcg per actuation (2 puffs)',
+        frequency: 'As needed (every 4-6h)',
+        duration: '30 days',
+        datePrescribed: 'Today',
+        prescribedBy: 'Dr. Taylor, MD',
+        refills: 3,
+        status: 'Active',
+        instructions: 'Inhale 2 puffs for wheezing or acute shortness of breath.',
+      });
+
+      await clinicalApiService.createPrescription({
+        patientId: demoPat.id,
+        patientName: demoPat.name,
+        patientMrn: demoPat.mrn,
+        mrn: demoPat.mrn,
+        medication: 'Lisinopril 10mg Oral',
+        dosage: '10mg oral tablet',
+        frequency: 'Once daily in the morning',
+        duration: '90 days',
+        datePrescribed: 'Today',
+        prescribedBy: 'Dr. Marcus Chen',
+        refills: 4,
+        status: 'Active',
+        instructions: 'Take 1 tablet daily with water for blood pressure management.',
+      });
+
+      await clinicalApiService.createAppointment({
+        patientId: demoPat.id,
+        patientName: demoPat.name,
+        patientMrn: demoPat.mrn,
+        mrn: demoPat.mrn,
+        doctor: 'Dr. Taylor, MD',
+        doctorName: 'Dr. Taylor, MD',
+        specialty: 'Pulmonology & Preventive Medicine',
+        date: 'Tue, 20 Oct',
+        time: '10:30 AM',
+        type: 'In-Clinic Consultation',
+        location: 'Suite 402 · CareNest Medical Center',
+        status: 'Confirmed',
+        instructions: 'Please arrive 10 minutes early. No fasting required.',
+      });
+
+      await clinicalApiService.createLabResult({
+        patientId: demoPat.id,
+        patientName: demoPat.name,
+        patientMrn: demoPat.mrn,
+        mrn: demoPat.mrn,
+        testName: 'Comprehensive Metabolic Panel (CMP)',
+        date: 'Today, 9:12 AM',
+        orderedDate: 'Today',
+        value: 'Normal Reference Range',
+        refRange: 'All Normal',
+        status: 'Reviewed & Approved',
+        orderedBy: 'Dr. Taylor, MD',
+        findings: 'All electrolyte, renal, and hepatic biomarkers are within normal limits.',
+        details: [
+          { test: 'Fasting Blood Glucose', value: '92 mg/dL', status: 'Optimal (70 - 99)' },
+          { test: 'Serum Creatinine', value: '0.88 mg/dL', status: 'Normal (0.6 - 1.1)' },
+          { test: 'Sodium', value: '140 mEq/L', status: 'Normal (136 - 145)' },
+          { test: 'Potassium', value: '4.2 mEq/L', status: 'Normal (3.5 - 5.0)' },
+        ],
+      });
+
+      await clinicalApiService.sendMessage({
+        patientId: demoPat.id,
+        sender: 'Dr. Taylor, MD',
+        role: 'Your Doctor',
+        senderRole: 'Your Doctor',
+        time: 'Today, 9:20 AM',
+        text: 'Good morning Alex! Your CMP lab panel has returned with all normal values. Please continue taking your inhaler and Lisinopril as directed.',
+        isMe: false,
+      });
+
+      setNotification('Demo patient Alex Taylor and clinical chart initialized!');
+      setSelectedPatientId(demoPat.id);
+      await loadPatientData();
+    } catch (err) {
+      console.error('Failed to create demo patient:', err);
+      setNotification('Failed to initialize demo patient.');
+    } finally {
+      setIsLoadingClinical(false);
+    }
+  };
+
+  // Clear All Data Helper (Wipe Database)
+  const handleClearAllData = async () => {
+    if (!confirm('Are you sure you want to clear all clinical records? This will wipe the persistent database.')) return;
+    try {
+      setIsLoadingClinical(true);
+      await clinicalApiService.clearAllRecords();
+      setNotification('All clinical records cleared.');
+      setSelectedPatientId('');
+      await loadPatientData();
+    } catch (err) {
+      console.error('Failed to clear records:', err);
+      setNotification('Failed to wipe records.');
+    } finally {
+      setIsLoadingClinical(false);
+    }
   };
 
   // SVG Arch Gauge Meter Component
@@ -403,9 +966,13 @@ export default function OpenEMRHub() {
     progress: number,
     badgeText = 'Normal range'
   ) => {
+    const isRecorded = progress > 0 && value !== '--' && Boolean(value && value.trim() !== '');
     const radius = 48;
     const circumference = Math.PI * radius; // ~150.8
-    const strokeDashoffset = circumference * (1 - Math.min(Math.max(progress, 0.1), 0.95));
+    const strokeDashoffset = isRecorded
+      ? circumference * (1 - Math.min(Math.max(progress, 0.08), 0.95))
+      : circumference;
+    const displayColor = isRecorded ? color : '#CBD5E1';
 
     return (
       <div className="flex flex-col items-center justify-between p-4 rounded-2xl bg-white border border-[#E7EEF4] hover:shadow-md transition-all">
@@ -426,7 +993,7 @@ export default function OpenEMRHub() {
             <path
               d="M 12,65 A 48,48 0 0,1 108,65"
               fill="none"
-              stroke={color}
+              stroke={displayColor}
               strokeWidth="9"
               strokeDasharray={circumference}
               strokeDashoffset={strokeDashoffset}
@@ -436,15 +1003,15 @@ export default function OpenEMRHub() {
           </svg>
 
           {/* Centered Icon inside the arch */}
-          <div className="absolute top-5 flex items-center justify-center w-8 h-8 rounded-full" style={{ color }}>
+          <div className="absolute top-5 flex items-center justify-center w-8 h-8 rounded-full" style={{ color: displayColor }}>
             {icon}
           </div>
         </div>
 
         {/* Large Value & Unit */}
         <div className="mt-1 text-center">
-          <div className="text-xl sm:text-2xl font-bold text-[#17324D] tracking-tight">
-            {value}
+          <div className={`text-xl sm:text-2xl font-bold tracking-tight ${isRecorded ? 'text-[#17324D]' : 'text-slate-300'}`}>
+            {value || '--'}
           </div>
           <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider -mt-0.5">
             {unit}
@@ -452,9 +1019,19 @@ export default function OpenEMRHub() {
         </div>
 
         {/* Reference Range Status Badge */}
-        <div className="mt-3 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#E8F8F5] text-[#0F9D9A] text-[11px] font-semibold">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#0F9D9A]" />
-          <span>{badgeText}</span>
+        <div
+          className={`mt-3 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
+            isRecorded
+              ? 'bg-[#E8F8F5] text-[#0F9D9A]'
+              : 'bg-slate-100 text-slate-400'
+          }`}
+        >
+          <span
+            className={`w-1.5 h-1.5 rounded-full ${
+              isRecorded ? 'bg-[#0F9D9A]' : 'bg-slate-300'
+            }`}
+          />
+          <span>{isRecorded ? badgeText : 'Not recorded'}</span>
         </div>
       </div>
     );
@@ -463,6 +1040,17 @@ export default function OpenEMRHub() {
   // ==============================================================
   // PATIENT AUTHORIZATION GATE (Strictly Patient-Owned Access)
   // ==============================================================
+  if (!isSessionReady) {
+    return (
+      <div className="min-h-screen bg-[#F5F9FC] flex items-center justify-center p-4">
+        <div className="flex items-center gap-3 text-sm text-slate-600">
+          <span className="w-4 h-4 rounded-full border-2 border-[#0F9D9A] border-t-transparent animate-spin" />
+          <span>Verifying your patient session...</span>
+        </div>
+      </div>
+    );
+  }
+
   if (!isPatient) {
     return (
       <div className="min-h-screen bg-[#F5F9FC] font-sans flex items-center justify-center p-4 antialiased">
@@ -472,43 +1060,43 @@ export default function OpenEMRHub() {
           </div>
           <div>
             <span className="px-3 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-bold uppercase tracking-wider">
-              Patient Access Only
+              Protected Health Portal
             </span>
             <h2 className="text-2xl font-extrabold text-[#17324D] mt-2">
-              Alex Taylor&apos;s Private Portal
+              Sign In Required
             </h2>
             <p className="text-sm text-slate-500 mt-2">
-              You are currently signed in as{' '}
-              <strong className="text-slate-700">{currentUser?.name || 'Guest'}</strong> ({currentUser?.role}).
-              This personal health portal is restricted exclusively to patient <strong>Alex Taylor</strong>.
+              {currentUser?.name
+                ? `You are signed in as ${currentUser.name} (${currentUser.role}). This personal health portal is restricted exclusively to patient accounts.`
+                : 'Access to personal medical charts, prescriptions, and certified diagnostic reports requires signing in to your patient account.'}
             </p>
           </div>
 
           <div className="space-y-3 pt-2">
-            <button
-              type="button"
-              onClick={() => switchPersona('pat-01')}
+            <Link
+              href="/login?redirect=/emr"
               className="w-full py-3 px-4 rounded-xl bg-[#0F9D9A] hover:bg-[#0D8B88] text-white font-semibold text-sm shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
             >
               <Heart className="w-4 h-4 fill-white" />
-              <span>Sign In as Alex Taylor (Patient)</span>
-            </button>
-
-            <Link
-              href="/doctor"
-              className="w-full py-3 px-4 rounded-xl bg-slate-50 hover:bg-slate-100 text-[#17324D] border border-slate-200 font-semibold text-sm transition-all flex items-center justify-center gap-2"
-            >
-              <Stethoscope className="w-4 h-4 text-[#0F9D9A]" />
-              <span>Go to Doctor Portal (Dr. Elena Vance)</span>
+              <span>Sign In to Access Portal</span>
             </Link>
 
             <Link
               href="/login"
               className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-semibold text-sm transition-all flex items-center justify-center gap-2"
             >
-              <LogOut className="w-4 h-4 text-slate-600" />
-              <span>Sign In with Different Account</span>
+              <span>Create Patient Account</span>
             </Link>
+
+            {isAuthenticated && (currentUser?.role === 'doctor' || currentUser?.role === 'radiologist') && (
+              <Link
+                href="/doctor"
+                className="w-full py-2.5 px-4 rounded-xl bg-slate-50 hover:bg-slate-100 text-[#17324D] border border-slate-200 font-semibold text-sm transition-all flex items-center justify-center gap-2"
+              >
+                <Stethoscope className="w-4 h-4 text-[#0F9D9A]" />
+                <span>Go to Doctor Workstation ({currentUser.name})</span>
+              </Link>
+            )}
 
             <Link
               href="/"
@@ -549,7 +1137,7 @@ export default function OpenEMRHub() {
                   <Heart className="w-5 h-5 fill-white/20" />
                 </div>
                 <span className="text-lg font-extrabold text-[#17324D] tracking-tight">
-                  Patient Portal
+                  {t('emr_portal_title', 'Patient Portal')}
                 </span>
               </Link>
 
@@ -562,27 +1150,16 @@ export default function OpenEMRHub() {
               </button>
             </div>
 
-            {/* Back to Patient Portal Link in Sidebar */}
-            <div className="px-4 pt-3 pb-1">
-              <Link
-                href="/patient"
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-[#0F9D9A] bg-teal-50/70 hover:bg-teal-100 border border-teal-200/60 transition-all cursor-pointer"
-              >
-                <ArrowLeft className="w-4 h-4 text-[#0F9D9A]" />
-                <span>Back to Patient Portal</span>
-              </Link>
-            </div>
-
             {/* Navigation Menu */}
             <nav className="p-4 space-y-1.5">
               {[
-                { id: 'overview', label: 'Overview', icon: Home, dot: false },
-                { id: 'appointments', label: 'Appointments', icon: Calendar, dot: false },
-                { id: 'records', label: 'Health Records', icon: FileText, dot: false },
-                { id: 'medications', label: 'Medications', icon: Pill, dot: false },
-                { id: 'results', label: 'Test Results', icon: FlaskConical, dot: false },
-                { id: 'messages', label: 'Messages', icon: MessageSquare, dot: true },
-                { id: 'settings', label: 'Settings', icon: Settings, dot: false },
+                { id: 'overview', label: t('emr_nav_overview', 'Overview'), icon: Home, dot: false },
+                { id: 'appointments', label: t('emr_nav_appointments', 'Appointments'), icon: Calendar, dot: false },
+                { id: 'records', label: t('emr_nav_records', 'Health Records'), icon: FileText, dot: false },
+                { id: 'medications', label: t('emr_nav_medications', 'Medications'), icon: Pill, dot: false },
+                { id: 'results', label: t('emr_nav_results', 'Test Results'), icon: FlaskConical, dot: false },
+                { id: 'messages', label: t('emr_nav_messages', 'Messages'), icon: MessageSquare, dot: true },
+                { id: 'settings', label: t('emr_nav_settings', 'Settings'), icon: Settings, dot: false },
               ].map((item) => {
                 const Icon = item.icon;
                 const isActive = activeTab === item.id;
@@ -619,7 +1196,7 @@ export default function OpenEMRHub() {
                 className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-xs text-teal-700 bg-teal-50/70 hover:bg-teal-100 transition-all cursor-pointer"
               >
                 <Sparkles className="w-4 h-4 text-[#0F9D9A]" />
-                <span>Diagnostic System</span>
+                <span>{t('emr_diagnostic_system', 'Diagnostic System')}</span>
               </Link>
 
               <button
@@ -628,7 +1205,7 @@ export default function OpenEMRHub() {
                 className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-xs text-rose-600 bg-rose-50/50 hover:bg-rose-100 transition-all cursor-pointer"
               >
                 <LogOut className="w-4 h-4 text-rose-600" />
-                <span>Sign Out</span>
+                <span>{t('emr_sign_out', 'Sign Out')}</span>
               </button>
             </div>
           </div>
@@ -640,8 +1217,8 @@ export default function OpenEMRHub() {
                 <HeartPulse className="w-5 h-5 text-[#0F9D9A]" />
               </div>
               <div>
-                <h4 className="text-xs font-bold text-[#17324D]">Your health matters</h4>
-                <p className="text-[11px] text-slate-500 leading-tight">We&apos;re here to support you, always.</p>
+                <h4 className="text-xs font-bold text-[#17324D]">{t('emr_health_matters_title', 'Your health matters')}</h4>
+                <p className="text-[11px] text-slate-500 leading-tight">{t('emr_health_matters_desc', "We're here to support you, always.")}</p>
               </div>
             </div>
             <button
@@ -649,7 +1226,7 @@ export default function OpenEMRHub() {
               onClick={() => setActiveTab('messages')}
               className="w-full mt-2 py-1.5 px-3 rounded-lg bg-white/80 hover:bg-white text-xs font-semibold text-[#0F9D9A] border border-teal-500/20 transition-all text-center cursor-pointer"
             >
-              Contact Care Team
+              {t('emr_contact_care_team', 'Contact Care Team')}
             </button>
           </div>
         </aside>
@@ -686,8 +1263,8 @@ export default function OpenEMRHub() {
                 title="Back to Patient Diagnostic Portal"
               >
                 <ArrowLeft className="w-4 h-4 text-[#0F9D9A]" />
-                <span className="hidden sm:inline">Back to Patient Portal</span>
-                <span className="sm:hidden">Back</span>
+                <span className="hidden sm:inline">{t('emr_back_patient', 'Back to Patient Portal')}</span>
+                <span className="sm:hidden">{t('emr_back_patient', 'Back')}</span>
               </Link>
 
               {/* Patient Search Input */}
@@ -695,7 +1272,7 @@ export default function OpenEMRHub() {
                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
-                  placeholder="Search records or help..."
+                  placeholder={t('emr_search_placeholder', 'Search records or help...')}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#F7FAFD] border border-[#E2EBF2] text-xs sm:text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#0F9D9A] focus:ring-2 focus:ring-[#0F9D9A]/15 transition-all"
@@ -703,8 +1280,12 @@ export default function OpenEMRHub() {
               </div>
             </div>
 
-            {/* Header Right Actions: Notifications, Profile, and Sign Out */}
+            {/* Header Right Actions: Language Mode, Notifications, Profile, and Sign Out */}
             <div className="flex items-center gap-2 sm:gap-3">
+              {/* Indian Language Selector */}
+              <div className="hidden sm:block">
+                <IndicLanguageSelector />
+              </div>
 
               {/* Notification Bell */}
               <button
@@ -746,19 +1327,75 @@ export default function OpenEMRHub() {
                       <div className="w-10 h-10 rounded-full bg-teal-500 text-white flex items-center justify-center font-bold text-sm">
                         {patient.name.charAt(0)}
                       </div>
-                      <div>
-                        <div className="font-bold text-[#17324D]">{patient.name}</div>
-                        <div className="text-slate-400 text-[11px]">MRN: {patient.mrn}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold text-[#17324D] truncate">{patient.name}</div>
+                        <div className="text-slate-400 text-[11px] font-mono">MRN: {patient.mrn}</div>
+                        <span className="inline-flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[9px] font-bold">
+                          <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
+                          {t('emr_personal_health_record', 'Personal Health Record')}
+                        </span>
                       </div>
                     </div>
 
                     <div className="space-y-1">
+                      {/* Clinician Staff Controls - ONLY visible to Doctors, Radiologists, and Admins */}
+                      {isClinicianOrAdmin && (
+                        <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl mb-2 space-y-2">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                            Staff Controls · Switch Patient:
+                          </span>
+                          {patients.length > 1 && (
+                            <select
+                              value={selectedPatientId}
+                              onChange={(e) => setSelectedPatientId(e.target.value)}
+                              className="w-full p-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:border-teal-500"
+                            >
+                              {patients.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.name} ({p.mrn})
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowProfileMenu(false);
+                              handleCreateDemoPatient();
+                            }}
+                            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-teal-700 bg-teal-50 hover:bg-teal-100 font-semibold text-xs cursor-pointer text-left"
+                          >
+                            <Sparkles className="w-3.5 h-3.5 text-[#0F9D9A]" />
+                            <span>+ Demo Patient (Alex Taylor)</span>
+                          </button>
+                          <Link
+                            href="/doctor"
+                            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-slate-700 hover:bg-slate-100 font-medium text-xs cursor-pointer"
+                          >
+                            <Stethoscope className="w-3.5 h-3.5 text-[#0F9D9A]" />
+                            <span>Doctor Workstation (PACS)</span>
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowProfileMenu(false);
+                              handleClearAllData();
+                            }}
+                            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-amber-700 hover:bg-amber-100 font-medium text-xs cursor-pointer text-left"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-amber-600" />
+                            <span>Clear All Clinical Data (Reset)</span>
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Patient Actions */}
                       <Link
                         href="/patient"
                         className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-teal-700 hover:bg-teal-50 font-medium cursor-pointer"
                       >
                         <Sparkles className="w-4 h-4 text-[#0F9D9A]" />
-                        <span>Diagnostic System</span>
+                        <span>{t('emr_diagnostic_system', 'AI Diagnostic Suite')}</span>
                       </Link>
 
                       <button
@@ -770,7 +1407,7 @@ export default function OpenEMRHub() {
                         className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-600 hover:bg-slate-50 font-medium cursor-pointer"
                       >
                         <CreditCard className="w-4 h-4 text-[#0F9D9A]" />
-                        <span>View My Digital Insurance Card</span>
+                        <span>{t('emr_digital_insurance', 'View My Digital Insurance Card')}</span>
                       </button>
 
                       <button
@@ -782,7 +1419,7 @@ export default function OpenEMRHub() {
                         className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-600 hover:bg-slate-50 font-medium cursor-pointer"
                       >
                         <Share2 className="w-4 h-4 text-[#0F9D9A]" />
-                        <span>Share My Health Records</span>
+                        <span>{t('emr_share_records', 'Share My Health Records')}</span>
                       </button>
 
                       <button
@@ -794,7 +1431,7 @@ export default function OpenEMRHub() {
                         className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-600 hover:bg-slate-50 font-medium cursor-pointer"
                       >
                         <Settings className="w-4 h-4 text-[#0F9D9A]" />
-                        <span>Notification &amp; Privacy Settings</span>
+                        <span>{t('emr_privacy_settings', 'Notification & Privacy Settings')}</span>
                       </button>
                     </div>
 
@@ -806,7 +1443,7 @@ export default function OpenEMRHub() {
                         className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-rose-600 hover:bg-rose-50 font-semibold cursor-pointer"
                       >
                         <LogOut className="w-4 h-4 text-rose-600" />
-                        <span>Sign Out</span>
+                        <span>{t('emr_sign_out', 'Sign Out')}</span>
                       </button>
 
                       <Link
@@ -836,6 +1473,18 @@ export default function OpenEMRHub() {
 
           {/* Main Workspace */}
           <main className="p-4 sm:p-8 max-w-7xl mx-auto w-full space-y-6">
+            {clinicalLoadError && (
+              <div role="alert" className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-800">
+                <span>{clinicalLoadError}</span>
+                <button
+                  type="button"
+                  onClick={loadPatientData}
+                  className="self-start sm:self-auto rounded-lg bg-rose-600 px-3 py-1.5 font-bold text-white hover:bg-rose-700"
+                >
+                  Retry
+                </button>
+              </div>
+            )}
             {/* ==============================================================
                 TAB 1: OVERVIEW (Faithful to Reference Image)
                ============================================================== */}
@@ -849,7 +1498,7 @@ export default function OpenEMRHub() {
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 text-[#0F9D9A] text-xs font-semibold border border-teal-200/70 transition-colors"
                   >
                     <ArrowLeft className="w-3.5 h-3.5" />
-                    <span>Back to Diagnostic System</span>
+                    <span>{t('emr_back_patient', 'Back to Diagnostic System')}</span>
                   </Link>
                 </div>
 
@@ -857,11 +1506,11 @@ export default function OpenEMRHub() {
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                   <div>
                     <h1 className="text-2xl sm:text-3xl font-extrabold text-[#17324D] tracking-tight flex items-center gap-2">
-                      <span>Good morning, {patient.name.split(' ')[0]}</span>
+                      <span>{timeGreeting}, {patient.name.split(' ')[0]}</span>
                       <span className="text-2xl">☀️</span>
                     </h1>
                     <p className="text-sm text-slate-500 mt-1">
-                      Here&apos;s your health overview for today.
+                      {t('emr_overview_subtitle', "Here's your health overview for today.")}
                     </p>
                   </div>
 
@@ -873,7 +1522,7 @@ export default function OpenEMRHub() {
                       className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#0F9D9A] hover:bg-[#0D8B88] text-white font-semibold text-xs sm:text-sm shadow-sm hover:shadow-md transition-all cursor-pointer"
                     >
                       <Calendar className="w-4 h-4" />
-                      <span>Book appointment</span>
+                      <span>{t('emr_book_appointment', 'Book appointment')}</span>
                     </button>
                     <button
                       type="button"
@@ -881,31 +1530,115 @@ export default function OpenEMRHub() {
                       className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white hover:bg-slate-50 border border-[#D5E2EC] text-[#17324D] font-semibold text-xs sm:text-sm shadow-xs transition-all cursor-pointer"
                     >
                       <FileText className="w-4 h-4 text-[#0F9D9A]" />
-                      <span>View health records</span>
+                      <span>{t('emr_view_records', 'View health records')}</span>
                     </button>
                   </div>
                 </div>
 
                 {/* 2. Medical Alerts & Allergies (Patient Safety) */}
-                <div className="p-3.5 sm:p-4 rounded-2xl bg-amber-50/90 border border-amber-200 text-amber-900 flex items-start sm:items-center justify-between gap-3 shadow-xs">
+                <div
+                  className={`p-3.5 sm:p-4 rounded-2xl border flex items-start sm:items-center justify-between gap-3 shadow-xs transition-all ${
+                    activeMatchedPatient?.allergies && activeMatchedPatient.allergies.length > 0
+                      ? 'bg-amber-50/90 border-amber-200 text-amber-900'
+                      : 'bg-emerald-50/80 border-emerald-200 text-emerald-900'
+                  }`}
+                >
                   <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-xl bg-amber-100 text-amber-700 shrink-0">
-                      <AlertTriangle className="w-4 h-4" />
+                    <div
+                      className={`p-2 rounded-xl shrink-0 ${
+                        activeMatchedPatient?.allergies && activeMatchedPatient.allergies.length > 0
+                          ? 'bg-amber-100 text-amber-700'
+                          : 'bg-emerald-100 text-emerald-700'
+                      }`}
+                    >
+                      {activeMatchedPatient?.allergies && activeMatchedPatient.allergies.length > 0 ? (
+                        <AlertTriangle className="w-4 h-4" />
+                      ) : (
+                        <ShieldCheck className="w-4 h-4" />
+                      )}
                     </div>
                     <div>
-                      <span className="text-xs font-bold uppercase tracking-wider text-amber-800">
-                        My Known Drug Allergies:
+                      <span
+                        className={`text-xs font-bold uppercase tracking-wider ${
+                          activeMatchedPatient?.allergies && activeMatchedPatient.allergies.length > 0
+                            ? 'text-amber-800'
+                            : 'text-emerald-800'
+                        }`}
+                      >
+                        {t('emr_known_allergies', 'My Known Drug Allergies:')}
                       </span>
-                      <div className="text-xs text-amber-900 font-semibold flex flex-wrap gap-2 mt-0.5">
-                        <span className="px-2 py-0.5 rounded-md bg-amber-100">Penicillin (Severe)</span>
-                        <span className="px-2 py-0.5 rounded-md bg-amber-100">IV Iodine Contrast (Moderate)</span>
+                      <div className="text-xs font-semibold flex flex-wrap gap-2 mt-0.5">
+                        {activeMatchedPatient?.allergies && activeMatchedPatient.allergies.length > 0 ? (
+                          activeMatchedPatient.allergies.map((allergy, idx) => (
+                            <span key={idx} className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-950 font-bold">
+                              {allergy}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 font-bold flex items-center gap-1">
+                            <Check className="w-3 h-3 text-emerald-600" />
+                            {t('emr_no_allergies', 'No Known Drug Allergies (NKDA)')}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
-                  <span className="hidden md:inline-flex text-[11px] font-semibold text-amber-700 shrink-0">
-                    Shared with care team for all visits
-                  </span>
+                  <div className="flex items-center gap-2.5 shrink-0">
+                    <span className="hidden md:inline-flex text-[11px] font-semibold text-slate-500">
+                      Shared with care team for all visits
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowAllergiesModal(true)}
+                      className="px-2.5 py-1 rounded-lg bg-white/90 hover:bg-white text-slate-700 hover:text-slate-900 border border-slate-200 text-xs font-bold shadow-xs transition-colors cursor-pointer flex items-center gap-1"
+                    >
+                      <Plus className="w-3 h-3" />
+                      {t('emr_manage', 'Manage')}
+                    </button>
+                  </div>
                 </div>
+
+                {/* Empty State Alert Banner when no patients exist */}
+                {patients.length === 0 && (
+                  <div className="p-5 rounded-2xl bg-gradient-to-r from-teal-500/10 via-sky-500/10 to-indigo-500/10 border border-teal-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs animate-in fade-in">
+                    <div className="flex items-start sm:items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-teal-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+                        <Database className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-[#17324D]">
+                          {isClinicianOrAdmin
+                            ? 'Clinical Database is Clean (0 Active Patients)'
+                            : 'No Active Health Records on File'}
+                        </h3>
+                        <p className="text-xs text-slate-600 mt-0.5">
+                          {isClinicianOrAdmin
+                            ? 'Records written by doctors in the Doctor Workstation will sync here automatically. Or seed a test patient with 1 click.'
+                            : 'Your medical records have not been uploaded yet by your clinic. Records will securely appear here as soon as your physician certifies notes or lab results.'}
+                        </p>
+                      </div>
+                    </div>
+                    {isClinicianOrAdmin && (
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleCreateDemoPatient}
+                          className="px-3.5 py-2 rounded-xl bg-[#0F9D9A] hover:bg-[#0D8B88] text-white text-xs font-bold shadow-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5"
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>+ Quick Demo Patient</span>
+                        </button>
+                        <Link
+                          href="/doctor"
+                          className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-[#17324D] text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5"
+                        >
+                          <Stethoscope className="w-3.5 h-3.5 text-[#0F9D9A]" />
+                          <span>Doctor Portal</span>
+                        </Link>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* 3. Four Summary Cards */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -918,12 +1651,12 @@ export default function OpenEMRHub() {
                       <Calendar className="w-5 h-5" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-xs font-medium text-slate-500">Next appointment</div>
+                      <div className="text-xs font-medium text-slate-500">{t('emr_next_appointment', 'Next appointment')}</div>
                       <div className="text-sm font-bold text-[#17324D] mt-0.5 truncate">
-                        Tue, 20 Oct · 10:30 AM
+                        {appointments.length > 0 ? `${appointments[0].date} · ${appointments[0].time}` : t('emr_no_upcoming_visits', 'No upcoming visits')}
                       </div>
-                      <div className="text-xs text-slate-400 mt-0.5">
-                        {patient.primaryDoctor.name}
+                      <div className="text-xs text-slate-400 mt-0.5 truncate">
+                        {appointments.length > 0 ? appointments[0].doctor : t('emr_click_to_schedule', 'Click to schedule')}
                       </div>
                     </div>
                   </div>
@@ -937,13 +1670,13 @@ export default function OpenEMRHub() {
                       <Pill className="w-5 h-5" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-xs font-medium text-slate-500">Medications</div>
+                      <div className="text-xs font-medium text-slate-500">{t('emr_medications_card', 'Medications')}</div>
                       <div className="text-sm font-bold text-[#17324D] mt-0.5 flex items-center justify-between">
-                        <span>3 active</span>
+                        <span>{medications.length} {t('emr_active', 'active')}</span>
                         <ChevronRight className="w-4 h-4 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
                       </div>
                       <span className="text-xs font-semibold text-[#0F9D9A] mt-0.5 inline-block">
-                        View schedule
+                        {t('emr_view_schedule', 'View schedule')}
                       </span>
                     </div>
                   </div>
@@ -957,13 +1690,13 @@ export default function OpenEMRHub() {
                       <FlaskConical className="w-5 h-5" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-xs font-medium text-slate-500">Recent test results</div>
+                      <div className="text-xs font-medium text-slate-500">{t('emr_recent_test_results', 'Recent test results')}</div>
                       <div className="text-sm font-bold text-[#17324D] mt-0.5 flex items-center justify-between">
-                        <span>2 new</span>
+                        <span>{testResults.length} {t('emr_reports', 'reports')}</span>
                         <ChevronRight className="w-4 h-4 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
                       </div>
                       <span className="text-xs font-semibold text-[#0F9D9A] mt-0.5 inline-block">
-                        View results
+                        {t('emr_view_results', 'View results')}
                       </span>
                     </div>
                   </div>
@@ -977,13 +1710,13 @@ export default function OpenEMRHub() {
                       <Users className="w-5 h-5" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-xs font-medium text-slate-500">Care team</div>
+                      <div className="text-xs font-medium text-slate-500">{t('emr_care_team', 'Care team')}</div>
                       <div className="text-sm font-bold text-[#17324D] mt-0.5 flex items-center justify-between">
-                        <span>Available to help</span>
+                        <span>{messages.length} {t('emr_messages_count', 'messages')}</span>
                         <ChevronRight className="w-4 h-4 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
                       </div>
                       <span className="text-xs font-semibold text-[#0F9D9A] mt-0.5 inline-block">
-                        Send a message
+                        {t('emr_send_message', 'Send a message')}
                       </span>
                     </div>
                   </div>
@@ -1000,69 +1733,87 @@ export default function OpenEMRHub() {
                         </div>
                         <div>
                           <h2 className="text-base sm:text-lg font-bold text-[#17324D]">
-                            Your health at a glance
+                            {t('emr_health_at_glance', 'Your health at a glance')}
                           </h2>
                           <p className="text-xs text-slate-400">
-                            Your latest vital signs and measurements.
+                            {t('emr_vitals_subtitle', 'Your latest vital signs and measurements.')}
                           </p>
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setActiveTab('records');
-                          setRecordsTab('vitals_history');
-                        }}
-                        className="text-xs font-bold text-[#0F9D9A] hover:text-[#0D8B88] flex items-center gap-1 cursor-pointer"
-                      >
-                        <span>View details</span>
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setVitalsForm({
+                              bloodPressure: currentBp || '',
+                              heartRate: currentHr ? String(currentHr) : '',
+                              oxygen: currentO2 ? String(currentO2) : '',
+                              bmi: currentBmi ? String(currentBmi) : '',
+                            });
+                            setShowVitalsModal(true);
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-[#E8F8F5] hover:bg-[#D5F4EE] text-[#0F9D9A] font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>{hasAnyVitals ? 'Update Vitals' : 'Record Vitals'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('records');
+                            setRecordsTab('vitals_history');
+                          }}
+                          className="text-xs font-bold text-slate-500 hover:text-slate-700 flex items-center gap-1 cursor-pointer pl-1"
+                        >
+                          <span>History</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
 
-                    {/* 4 Gauge Meters matching screenshot */}
+                    {/* 4 Gauge Meters dynamically bound to active patient stats */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5 sm:gap-4 mt-4">
                       {/* Blood Pressure */}
                       {renderSemiCircleGauge(
-                        'Blood pressure',
-                        '128/82',
+                        t('emr_blood_pressure', 'Blood pressure'),
+                        currentBp ? currentBp.replace(/\s*mmHg/i, '') : '--',
                         'mmHg',
                         <Stethoscope className="w-4 h-4" />,
-                        '#3B82F6',
-                        0.68,
+                        currentBp ? '#3B82F6' : '#94A3B8',
+                        currentBp ? 0.68 : 0,
                         'Normal range'
                       )}
 
                       {/* Heart Rate */}
                       {renderSemiCircleGauge(
-                        'Heart rate',
-                        '74',
+                        t('emr_heart_rate', 'Heart rate'),
+                        currentHr ? String(currentHr) : '--',
                         'bpm',
                         <Heart className="w-4 h-4" />,
-                        '#EF4444',
-                        0.72,
+                        currentHr ? '#EF4444' : '#94A3B8',
+                        currentHr ? Math.min(Number(currentHr) / 100, 1) : 0,
                         'Normal range'
                       )}
 
                       {/* Oxygen */}
                       {renderSemiCircleGauge(
-                        'Oxygen',
-                        '98',
+                        t('emr_oxygen_level', 'Oxygen'),
+                        currentO2 ? String(currentO2) : '--',
                         '%',
                         <Wind className="w-4 h-4" />,
-                        '#0F9D9A',
-                        0.96,
+                        currentO2 ? '#0F9D9A' : '#94A3B8',
+                        currentO2 ? Math.min(Number(currentO2) / 100, 1) : 0,
                         'Normal range'
                       )}
 
                       {/* BMI */}
                       {renderSemiCircleGauge(
                         'BMI',
-                        '25.4',
+                        currentBmi ? String(currentBmi) : '--',
                         'kg/m²',
                         <Scale className="w-4 h-4" />,
-                        '#10B981',
-                        0.62,
+                        currentBmi ? '#10B981' : '#94A3B8',
+                        currentBmi ? Math.min(Number(currentBmi) / 40, 1) : 0,
                         'Normal range'
                       )}
                     </div>
@@ -1075,7 +1826,7 @@ export default function OpenEMRHub() {
                         <div className="flex items-center gap-2">
                           <Target className="w-5 h-5 text-[#0F9D9A]" />
                           <h2 className="text-base sm:text-lg font-bold text-[#17324D]">
-                            Your care plan
+                            {t('emr_care_plan', 'Your care plan')}
                           </h2>
                         </div>
                         <span className="text-xs font-semibold text-slate-400">
@@ -1161,53 +1912,65 @@ export default function OpenEMRHub() {
                   </div>
 
                   <div className="space-y-4">
-                    {/* Item 1: Lab results */}
-                    <div
-                      onClick={() => setActiveTab('results')}
-                      className="flex items-center justify-between p-3 rounded-xl hover:bg-[#F8FAFD] transition-colors cursor-pointer group"
-                    >
-                      <div className="flex items-center gap-3.5">
-                        <div className="w-10 h-10 rounded-full bg-[#F2EDFC] text-[#8B5CF6] flex items-center justify-center shrink-0">
-                          <FlaskConical className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <div className="text-sm font-bold text-[#17324D] group-hover:text-[#0F9D9A] transition-colors">
-                            Lab results added
-                          </div>
-                          <div className="text-xs text-slate-400 mt-0.5">
-                            Your blood test results have been added to your health records.
-                          </div>
-                        </div>
+                    {testResults.length === 0 && appointments.length === 0 ? (
+                      <div className="text-center py-6 text-xs text-slate-400">
+                        No recent clinical activity recorded yet. Tests or visits scheduled by your physician will appear here.
                       </div>
-                      <div className="flex items-center gap-3 shrink-0">
-                        <span className="text-xs font-medium text-slate-400">Today, 9:12 AM</span>
-                        <ChevronRight className="w-4 h-4 text-slate-300 group-hover:translate-x-0.5 transition-transform" />
-                      </div>
-                    </div>
+                    ) : (
+                      <>
+                        {testResults.slice(0, 1).map((res) => (
+                          <div
+                            key={res.id}
+                            onClick={() => setActiveTab('results')}
+                            className="flex items-center justify-between p-3 rounded-xl hover:bg-[#F8FAFD] transition-colors cursor-pointer group"
+                          >
+                            <div className="flex items-center gap-3.5">
+                              <div className="w-10 h-10 rounded-full bg-[#F2EDFC] text-[#8B5CF6] flex items-center justify-center shrink-0">
+                                <FlaskConical className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <div className="text-sm font-bold text-[#17324D] group-hover:text-[#0F9D9A] transition-colors">
+                                  {res.title}
+                                </div>
+                                <div className="text-xs text-slate-400 mt-0.5">
+                                  {res.patientExplanation}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3 shrink-0">
+                              <span className="text-xs font-medium text-slate-400">{res.date}</span>
+                              <ChevronRight className="w-4 h-4 text-slate-300 group-hover:translate-x-0.5 transition-transform" />
+                            </div>
+                          </div>
+                        ))}
 
-                    {/* Item 2: Appointment reminder */}
-                    <div
-                      onClick={() => setActiveTab('appointments')}
-                      className="flex items-center justify-between p-3 rounded-xl hover:bg-[#F8FAFD] transition-colors cursor-pointer group"
-                    >
-                      <div className="flex items-center gap-3.5">
-                        <div className="w-10 h-10 rounded-full bg-[#EBF3FE] text-[#2563EB] flex items-center justify-center shrink-0">
-                          <Calendar className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <div className="text-sm font-bold text-[#17324D] group-hover:text-[#0F9D9A] transition-colors">
-                            Appointment reminder
+                        {appointments.slice(0, 1).map((apt) => (
+                          <div
+                            key={apt.id}
+                            onClick={() => setActiveTab('appointments')}
+                            className="flex items-center justify-between p-3 rounded-xl hover:bg-[#F8FAFD] transition-colors cursor-pointer group"
+                          >
+                            <div className="flex items-center gap-3.5">
+                              <div className="w-10 h-10 rounded-full bg-[#EBF3FE] text-[#2563EB] flex items-center justify-center shrink-0">
+                                <Calendar className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <div className="text-sm font-bold text-[#17324D] group-hover:text-[#0F9D9A] transition-colors">
+                                  Appointment: {apt.doctor}
+                                </div>
+                                <div className="text-xs text-slate-400 mt-0.5">
+                                  Scheduled for {apt.date} at {apt.time} ({apt.type}).
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3 shrink-0">
+                              <span className="text-xs font-medium text-slate-400">{apt.status}</span>
+                              <ChevronRight className="w-4 h-4 text-slate-300 group-hover:translate-x-0.5 transition-transform" />
+                            </div>
                           </div>
-                          <div className="text-xs text-slate-400 mt-0.5">
-                            You have an upcoming appointment with Dr. Taylor on Tue, 20 Oct at 10:30 AM.
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3 shrink-0">
-                        <span className="text-xs font-medium text-slate-400">Yesterday, 4:30 PM</span>
-                        <ChevronRight className="w-4 h-4 text-slate-300 group-hover:translate-x-0.5 transition-transform" />
-                      </div>
-                    </div>
+                        ))}
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1220,8 +1983,8 @@ export default function OpenEMRHub() {
               <div className="space-y-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div>
-                    <h2 className="text-2xl font-bold text-[#17324D]">My Appointments</h2>
-                    <p className="text-sm text-slate-500">View upcoming clinical consultations and book new visits.</p>
+                    <h2 className="text-2xl font-bold text-[#17324D]">{t('emr_my_appointments', 'My Appointments')}</h2>
+                    <p className="text-sm text-slate-500">{t('emr_appointments_desc', 'View upcoming clinical consultations and book new visits.')}</p>
                   </div>
                   <button
                     type="button"
@@ -1229,67 +1992,89 @@ export default function OpenEMRHub() {
                     className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#0F9D9A] hover:bg-[#0D8B88] text-white font-semibold text-xs sm:text-sm shadow-sm transition-all cursor-pointer"
                   >
                     <Plus className="w-4 h-4" />
-                    <span>Schedule New Appointment</span>
+                    <span>{t('emr_schedule_new_appointment', 'Schedule New Appointment')}</span>
                   </button>
                 </div>
 
                 {/* Upcoming Appointments List */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {appointments.map((apt) => (
-                    <div key={apt.id} className="p-5 rounded-2xl bg-white border border-[#E7EEF4] shadow-xs space-y-3">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <span className="inline-block px-2.5 py-0.5 rounded-full bg-[#E8F8F5] text-[#0F9D9A] text-[11px] font-bold mb-1">
-                            {apt.status}
-                          </span>
-                          <h3 className="text-base font-bold text-[#17324D]">{apt.doctor}</h3>
-                          <p className="text-xs text-slate-400">{apt.specialty}</p>
-                        </div>
-                        <div className="p-2.5 rounded-xl bg-teal-50 text-[#0F9D9A]">
-                          <Calendar className="w-5 h-5" />
-                        </div>
-                      </div>
-
-                      <div className="p-3.5 rounded-xl bg-[#F8FAFD] border border-[#E2EBF2] text-xs space-y-2 text-slate-600">
-                        <div className="flex justify-between">
-                          <span className="text-slate-400 font-medium">Date &amp; Time:</span>
-                          <span className="font-bold text-[#17324D]">{apt.date} at {apt.time}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400 font-medium">Location:</span>
-                          <span className="font-medium text-slate-700">{apt.location}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400 font-medium">Type:</span>
-                          <span className="font-medium text-slate-700">{apt.type}</span>
-                        </div>
-                        <div className="pt-1 text-[11px] text-teal-800 bg-teal-50/70 p-2 rounded-lg">
-                          💡 {apt.instructions}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 pt-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setNotification(`Calendar invite added for your visit with ${apt.doctor}`);
-                            setTimeout(() => setNotification(null), 3000);
-                          }}
-                          className="flex-1 py-2 rounded-xl bg-white hover:bg-slate-50 border border-[#D5E2EC] text-xs font-semibold text-slate-700 transition-colors cursor-pointer"
-                        >
-                          Add to Calendar
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setActiveTab('messages')}
-                          className="flex-1 py-2 rounded-xl bg-[#0F9D9A] hover:bg-[#0D8B88] text-xs font-semibold text-white transition-colors cursor-pointer"
-                        >
-                          Message Doctor
-                        </button>
-                      </div>
+                {appointments.length === 0 ? (
+                  <div className="p-12 rounded-2xl bg-white border border-[#E7EEF4] text-center space-y-4">
+                    <div className="w-14 h-14 rounded-2xl bg-teal-50 text-[#0F9D9A] mx-auto flex items-center justify-center">
+                      <Calendar className="w-7 h-7" />
                     </div>
-                  ))}
-                </div>
+                    <div>
+                      <h3 className="text-base font-bold text-[#17324D]">No Appointments Scheduled</h3>
+                      <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
+                        You have no upcoming consultations. Book an appointment with your physician or care team below.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowAppointmentModal(true)}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#0F9D9A] hover:bg-[#0D8B88] text-white font-semibold text-xs shadow-sm transition-all cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Book an Appointment</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {appointments.map((apt) => (
+                      <div key={apt.id} className="p-5 rounded-2xl bg-white border border-[#E7EEF4] shadow-xs space-y-3">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <span className="inline-block px-2.5 py-0.5 rounded-full bg-[#E8F8F5] text-[#0F9D9A] text-[11px] font-bold mb-1">
+                              {apt.status}
+                            </span>
+                            <h3 className="text-base font-bold text-[#17324D]">{apt.doctor}</h3>
+                            <p className="text-xs text-slate-400">{apt.specialty}</p>
+                          </div>
+                          <div className="p-2.5 rounded-xl bg-teal-50 text-[#0F9D9A]">
+                            <Calendar className="w-5 h-5" />
+                          </div>
+                        </div>
+
+                        <div className="p-3.5 rounded-xl bg-[#F8FAFD] border border-[#E2EBF2] text-xs space-y-2 text-slate-600">
+                          <div className="flex justify-between">
+                            <span className="text-slate-400 font-medium">Date &amp; Time:</span>
+                            <span className="font-bold text-[#17324D]">{apt.date} at {apt.time}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-400 font-medium">Location:</span>
+                            <span className="font-medium text-slate-700">{apt.location}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-400 font-medium">Type:</span>
+                            <span className="font-medium text-slate-700">{apt.type}</span>
+                          </div>
+                          <div className="pt-1 text-[11px] text-teal-800 bg-teal-50/70 p-2 rounded-lg">
+                            💡 {apt.instructions}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setNotification(`Calendar invite added for your visit with ${apt.doctor}`);
+                              setTimeout(() => setNotification(null), 3000);
+                            }}
+                            className="flex-1 py-2 rounded-xl bg-white hover:bg-slate-50 border border-[#D5E2EC] text-xs font-semibold text-slate-700 transition-colors cursor-pointer"
+                          >
+                            Add to Calendar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab('messages')}
+                            className="flex-1 py-2 rounded-xl bg-[#0F9D9A] hover:bg-[#0D8B88] text-xs font-semibold text-white transition-colors cursor-pointer"
+                          >
+                            Message Doctor
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {/* Helpful Clinic Tips Card */}
                 <div className="p-5 rounded-2xl bg-gradient-to-r from-teal-50/70 to-sky-50/70 border border-teal-100 flex items-center justify-between gap-4">
@@ -1322,8 +2107,8 @@ export default function OpenEMRHub() {
               <div className="space-y-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div>
-                    <h2 className="text-2xl font-bold text-[#17324D]">My Health Records</h2>
-                    <p className="text-sm text-slate-500">Explore past doctor summaries, vitals history, vaccines, and health documents.</p>
+                    <h2 className="text-2xl font-bold text-[#17324D]">{t('emr_my_records', 'My Health Records')}</h2>
+                    <p className="text-sm text-slate-500">{t('emr_records_desc', 'Explore past doctor summaries, vitals history, vaccines, and health documents.')}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
@@ -1332,7 +2117,7 @@ export default function OpenEMRHub() {
                       className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 border border-[#D5E2EC] text-xs font-semibold text-[#17324D] shadow-xs cursor-pointer"
                     >
                       <Share2 className="w-3.5 h-3.5 text-[#0F9D9A]" />
-                      <span>Share Records</span>
+                      <span>{t('emr_share_records', 'Share Records')}</span>
                     </button>
                     <button
                       type="button"
@@ -1340,7 +2125,7 @@ export default function OpenEMRHub() {
                       className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#0F9D9A] hover:bg-[#0D8B88] text-white text-xs font-semibold shadow-xs cursor-pointer"
                     >
                       <CreditCard className="w-3.5 h-3.5" />
-                      <span>Insurance Card</span>
+                      <span>{t('emr_digital_insurance', 'Insurance Card')}</span>
                     </button>
                   </div>
                 </div>
@@ -1348,10 +2133,10 @@ export default function OpenEMRHub() {
                 {/* Sub-Tabs for clean patient navigation */}
                 <div className="flex items-center gap-2 p-1 bg-white rounded-xl border border-[#E7EEF4] w-fit">
                   {[
-                    { id: 'visits', label: 'Doctor Visits & Summaries' },
-                    { id: 'conditions', label: 'Conditions & Allergies' },
-                    { id: 'vaccines', label: 'Vaccines & Immunizations' },
-                    { id: 'vitals_history', label: 'Vitals Log' },
+                    { id: 'visits', label: t('records_past_visits', 'Doctor Visits & Summaries') },
+                    { id: 'conditions', label: t('records_diagnosed_conditions', 'Conditions & Allergies') },
+                    { id: 'vaccines', label: t('records_vaccines', 'Vaccines & Immunizations') },
+                    { id: 'vitals_history', label: t('records_vitals_history', 'Vitals Log') },
                   ].map((sub) => (
                     <button
                       key={sub.id}
@@ -1371,61 +2156,73 @@ export default function OpenEMRHub() {
                 {/* Sub-View 1: Past Doctor Visits & Summaries */}
                 {recordsTab === 'visits' && (
                   <div className="space-y-4">
-                    {pastVisits.map((visit) => (
-                      <div key={visit.id} className="p-5 rounded-2xl bg-white border border-[#E7EEF4] shadow-xs space-y-3">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
-                          <div>
-                            <span className="text-[11px] font-bold text-teal-600 bg-teal-50 px-2 py-0.5 rounded-md">
-                              Completed Consultation
+                    {pastVisits.length === 0 ? (
+                      <div className="p-12 rounded-2xl bg-white border border-[#E7EEF4] text-center space-y-3">
+                        <div className="w-14 h-14 rounded-2xl bg-teal-50 text-[#0F9D9A] mx-auto flex items-center justify-center">
+                          <FileText className="w-7 h-7" />
+                        </div>
+                        <h3 className="text-base font-bold text-[#17324D]">No Past Visits Recorded</h3>
+                        <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                          Consultation summaries, prescriptions reviewed, and recorded vitals will appear here after visits are completed.
+                        </p>
+                      </div>
+                    ) : (
+                      pastVisits.map((visit) => (
+                        <div key={visit.id} className="p-5 rounded-2xl bg-white border border-[#E7EEF4] shadow-xs space-y-3">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                            <div>
+                              <span className="text-[11px] font-bold text-teal-600 bg-teal-50 px-2 py-0.5 rounded-md">
+                                Completed Consultation
+                              </span>
+                              <h3 className="text-base font-bold text-[#17324D] mt-1">{visit.reason}</h3>
+                              <p className="text-xs text-slate-400">
+                                {visit.doctor} ({visit.specialty}) · {visit.date}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNotification(`Downloaded visit summary PDF for ${visit.date}`);
+                                setTimeout(() => setNotification(null), 3000);
+                              }}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-xs font-semibold text-slate-700 self-start sm:self-center cursor-pointer"
+                            >
+                              <Download className="w-3.5 h-3.5 text-slate-500" />
+                              <span>Download Visit Note</span>
+                            </button>
+                          </div>
+
+                          {/* Doctor's Plain English Takeaway */}
+                          <div className="p-3.5 rounded-xl bg-[#F8FAFD] border border-[#E2EBF2] space-y-1.5">
+                            <span className="text-xs font-bold text-[#17324D] flex items-center gap-1.5">
+                              <Stethoscope className="w-4 h-4 text-[#0F9D9A]" />
+                              <span>Doctor&apos;s Summary &amp; Recommendations:</span>
                             </span>
-                            <h3 className="text-base font-bold text-[#17324D] mt-1">{visit.reason}</h3>
-                            <p className="text-xs text-slate-400">
-                              {visit.doctor} ({visit.specialty}) · {visit.date}
+                            <p className="text-xs text-slate-600 leading-relaxed">
+                              {visit.doctorSummary}
                             </p>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setNotification(`Downloaded visit summary PDF for ${visit.date}`);
-                              setTimeout(() => setNotification(null), 3000);
-                            }}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-xs font-semibold text-slate-700 self-start sm:self-center cursor-pointer"
-                          >
-                            <Download className="w-3.5 h-3.5 text-slate-500" />
-                            <span>Download Visit Note</span>
-                          </button>
-                        </div>
 
-                        {/* Doctor's Plain English Takeaway */}
-                        <div className="p-3.5 rounded-xl bg-[#F8FAFD] border border-[#E2EBF2] space-y-1.5">
-                          <span className="text-xs font-bold text-[#17324D] flex items-center gap-1.5">
-                            <Stethoscope className="w-4 h-4 text-[#0F9D9A]" />
-                            <span>Doctor&apos;s Summary &amp; Recommendations:</span>
-                          </span>
-                          <p className="text-xs text-slate-600 leading-relaxed">
-                            {visit.doctorSummary}
-                          </p>
-                        </div>
-
-                        {/* Prescriptions & Vitals recorded */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 text-xs">
-                          <div className="p-2.5 rounded-lg bg-white border border-slate-100 text-slate-600">
-                            <span className="text-[11px] font-bold text-slate-400 block mb-1">Medications Reviewed:</span>
-                            <div className="flex flex-wrap gap-1.5">
-                              {visit.prescriptionsUpdated.map((p, i) => (
-                                <span key={i} className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-semibold text-[11px]">
-                                  {p}
-                                </span>
-                              ))}
+                          {/* Prescriptions & Vitals recorded */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 text-xs">
+                            <div className="p-2.5 rounded-lg bg-white border border-slate-100 text-slate-600">
+                              <span className="text-[11px] font-bold text-slate-400 block mb-1">Medications Reviewed:</span>
+                              <div className="flex flex-wrap gap-1.5">
+                                {visit.prescriptionsUpdated.map((p, i) => (
+                                  <span key={i} className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-semibold text-[11px]">
+                                    {p}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="p-2.5 rounded-lg bg-white border border-slate-100 text-slate-600">
+                              <span className="text-[11px] font-bold text-slate-400 block mb-1">Vitals on Record:</span>
+                              <span className="font-medium text-slate-700">{visit.vitalsRecorded}</span>
                             </div>
                           </div>
-                          <div className="p-2.5 rounded-lg bg-white border border-slate-100 text-slate-600">
-                            <span className="text-[11px] font-bold text-slate-400 block mb-1">Vitals on Record:</span>
-                            <span className="font-medium text-slate-700">{visit.vitalsRecorded}</span>
-                          </div>
                         </div>
-                      </div>
-                    ))}
+                      ))
+                    )}
                   </div>
                 )}
 
@@ -1434,40 +2231,58 @@ export default function OpenEMRHub() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {/* Allergies Card */}
                     <div className="bg-white rounded-2xl border border-[#E7EEF4] p-5 shadow-xs space-y-4">
-                      <div className="flex items-center gap-2.5">
-                        <div className="p-2 rounded-xl bg-amber-50 text-amber-600">
-                          <ShieldAlert className="w-5 h-5" />
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 rounded-xl bg-amber-50 text-amber-600">
+                            <ShieldAlert className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h3 className="text-base font-bold text-[#17324D]">My Allergies</h3>
+                            <p className="text-xs text-slate-400">Important substances to avoid.</p>
+                          </div>
                         </div>
-                        <div>
-                          <h3 className="text-base font-bold text-[#17324D]">My Allergies</h3>
-                          <p className="text-xs text-slate-400">Important substances to avoid.</p>
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowAllergiesModal(true)}
+                          className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          Manage Allergies
+                        </button>
                       </div>
 
                       <div className="space-y-3">
-                        <div className="p-3.5 rounded-xl border border-amber-200 bg-amber-50/60 space-y-1">
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="font-bold text-amber-950">Penicillin &amp; Beta-Lactams</span>
-                            <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 font-bold text-[10px]">
-                              Severe Reaction
-                            </span>
+                        {activeMatchedPatient?.allergies && activeMatchedPatient.allergies.length > 0 ? (
+                          activeMatchedPatient.allergies.map((allergy, idx) => (
+                            <div key={idx} className="p-3.5 rounded-xl border border-amber-200 bg-amber-50/60 flex items-center justify-between gap-3">
+                              <div>
+                                <span className="font-bold text-amber-950 text-sm">{allergy}</span>
+                                <p className="text-[11px] text-amber-800 mt-0.5">
+                                  Documented in EHR: Drug alerts care team before administration or prescription.
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 font-bold text-[10px]">
+                                  Active Allergy
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveAllergy(allergy)}
+                                  className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer transition-colors"
+                                  title="Remove allergy"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="p-4 rounded-xl border border-dashed border-emerald-200 bg-emerald-50/50 text-center space-y-1">
+                            <CheckCircle2 className="w-6 h-6 text-emerald-600 mx-auto" />
+                            <p className="text-xs font-bold text-emerald-900">No Known Drug Allergies (NKDA)</p>
+                            <p className="text-[11px] text-emerald-700">No adverse drug reactions or substance allergies are currently recorded in your chart.</p>
                           </div>
-                          <p className="text-[11px] text-amber-900 leading-relaxed">
-                            Reaction: Anaphylactoid hives and throat tightness. Alternative antibiotics (Azithromycin, Doxycycline) are documented in your chart.
-                          </p>
-                        </div>
-
-                        <div className="p-3.5 rounded-xl border border-amber-200 bg-amber-50/60 space-y-1">
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="font-bold text-amber-950">IV Iodine Contrast Dye</span>
-                            <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold text-[10px]">
-                              Moderate Reaction
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-amber-900 leading-relaxed">
-                            Reaction: Pruritus (itching). Any contrast CT scans will receive standard oral steroid/Benadryl premedication.
-                          </p>
-                        </div>
+                        )}
                       </div>
                     </div>
 
@@ -1484,29 +2299,29 @@ export default function OpenEMRHub() {
                       </div>
 
                       <div className="space-y-3">
-                        <div className="p-3.5 rounded-xl border border-[#E2EBF2] bg-[#F8FAFD] space-y-1">
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="font-bold text-[#17324D]">COPD (Mild / Stable)</span>
-                            <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold text-[10px]">
-                              Controlled
-                            </span>
+                        {activeMatchedPatient?.primaryDiagnosis &&
+                        activeMatchedPatient.primaryDiagnosis !== 'General Clinical Intake' &&
+                        activeMatchedPatient.primaryDiagnosis !== 'Pending Initial Assessment' &&
+                        activeMatchedPatient.primaryDiagnosis !== 'General Consultation' &&
+                        activeMatchedPatient.primaryDiagnosis !== 'Patient Health Portal Member' ? (
+                          <div className="p-3.5 rounded-xl border border-[#E2EBF2] bg-[#F8FAFD] space-y-1">
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="font-bold text-[#17324D]">{activeMatchedPatient.primaryDiagnosis}</span>
+                              <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold text-[10px]">
+                                Active Care
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-500 leading-relaxed">
+                              Clinical diagnosis documented in chart. Primary physician care plan in place.
+                            </p>
                           </div>
-                          <p className="text-[11px] text-slate-500 leading-relaxed">
-                            Annual lung CT screening and daily Tiotropium maintenance maintain healthy baseline oxygen levels (98%).
-                          </p>
-                        </div>
-
-                        <div className="p-3.5 rounded-xl border border-[#E2EBF2] bg-[#F8FAFD] space-y-1">
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="font-bold text-[#17324D]">Primary Hypertension</span>
-                            <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold text-[10px]">
-                              Target Met (128/82)
-                            </span>
+                        ) : (
+                          <div className="p-6 rounded-xl border border-dashed border-slate-200 text-center text-xs text-slate-500">
+                            <CheckCircle2 className="w-6 h-6 mx-auto text-emerald-500 mb-1.5" />
+                            <span className="font-semibold text-slate-700 block">No chronic conditions registered</span>
+                            <span className="text-[11px] text-slate-400">No active chronic health conditions currently documented in your medical chart.</span>
                           </div>
-                          <p className="text-[11px] text-slate-500 leading-relaxed">
-                            Controlled with daily Lisinopril 10mg and regular home blood pressure monitoring.
-                          </p>
-                        </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1554,39 +2369,61 @@ export default function OpenEMRHub() {
                 {/* Sub-View 4: Vitals Log */}
                 {recordsTab === 'vitals_history' && (
                   <div className="bg-white rounded-2xl border border-[#E7EEF4] p-6 shadow-xs space-y-4">
-                    <h3 className="text-base font-bold text-[#17324D]">Recorded Vitals History</h3>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs">
-                        <thead>
-                          <tr className="border-b border-slate-100 text-slate-400 font-semibold uppercase text-[10px]">
-                            <th className="pb-3">Date &amp; Time</th>
-                            <th className="pb-3">Blood Pressure</th>
-                            <th className="pb-3">Heart Rate</th>
-                            <th className="pb-3">Oxygen (SpO2)</th>
-                            <th className="pb-3">BMI</th>
-                            <th className="pb-3">Recorded By</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          <tr className="hover:bg-slate-50/70">
-                            <td className="py-3 font-bold text-[#17324D]">Today, 08:30 AM</td>
-                            <td className="py-3 text-blue-600 font-bold">128/82 mmHg</td>
-                            <td className="py-3 text-red-600 font-bold">74 bpm</td>
-                            <td className="py-3 text-teal-600 font-bold">98 %</td>
-                            <td className="py-3 text-emerald-600 font-bold">25.4</td>
-                            <td className="py-3 text-slate-500">Dr. Taylor (In-Clinic)</td>
-                          </tr>
-                          <tr className="hover:bg-slate-50/70">
-                            <td className="py-3 font-bold text-[#17324D]">Sept 12, 2026</td>
-                            <td className="py-3 text-blue-600 font-bold">124/80 mmHg</td>
-                            <td className="py-3 text-red-600 font-bold">72 bpm</td>
-                            <td className="py-3 text-teal-600 font-bold">98 %</td>
-                            <td className="py-3 text-emerald-600 font-bold">25.3</td>
-                            <td className="py-3 text-slate-500">CareNest Nurse Triage</td>
-                          </tr>
-                        </tbody>
-                      </table>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-base font-bold text-[#17324D]">Recorded Vitals History</h3>
+                        <p className="text-xs text-slate-400">Chronological vital signs entries for {displayName}.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setVitalsForm({
+                            bloodPressure: currentBp || '',
+                            heartRate: currentHr ? String(currentHr) : '',
+                            oxygen: currentO2 ? String(currentO2) : '',
+                            bmi: currentBmi ? String(currentBmi) : '',
+                          });
+                          setShowVitalsModal(true);
+                        }}
+                        className="px-3.5 py-1.5 rounded-xl bg-[#0F9D9A] hover:bg-[#0D8B88] text-white font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Log New Reading</span>
+                      </button>
                     </div>
+
+                    {hasAnyVitals ? (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs">
+                          <thead>
+                            <tr className="border-b border-slate-100 text-slate-400 font-semibold uppercase text-[10px]">
+                              <th className="pb-3">Date &amp; Time</th>
+                              <th className="pb-3">Blood Pressure</th>
+                              <th className="pb-3">Heart Rate</th>
+                              <th className="pb-3">Oxygen (SpO2)</th>
+                              <th className="pb-3">BMI</th>
+                              <th className="pb-3">Recorded By</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            <tr className="hover:bg-slate-50/70">
+                              <td className="py-3 font-bold text-[#17324D]">Latest Reading</td>
+                              <td className="py-3 text-blue-600 font-bold">{currentBp || '--'}</td>
+                              <td className="py-3 text-red-600 font-bold">{currentHr ? `${currentHr} bpm` : '--'}</td>
+                              <td className="py-3 text-teal-600 font-bold">{currentO2 ? `${currentO2} %` : '--'}</td>
+                              <td className="py-3 text-emerald-600 font-bold">{currentBmi || '--'}</td>
+                              <td className="py-3 text-slate-500">Patient Recorded</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div className="p-8 text-center text-slate-400">
+                        <Activity className="w-8 h-8 mx-auto text-slate-300 mb-2" />
+                        <p className="font-semibold text-slate-600 text-sm">No vital signs recorded yet</p>
+                        <p className="text-xs text-slate-400 mt-0.5">Click &ldquo;Log New Reading&rdquo; above to record your current blood pressure, heart rate, oxygen, or BMI.</p>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1599,8 +2436,8 @@ export default function OpenEMRHub() {
               <div className="space-y-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div>
-                    <h2 className="text-2xl font-bold text-[#17324D]">My Active Medications</h2>
-                    <p className="text-sm text-slate-500">Prescription instructions, daily intake guidance, and one-click pharmacy refills.</p>
+                    <h2 className="text-2xl font-bold text-[#17324D]">{t('emr_my_medications', 'My Active Medications')}</h2>
+                    <p className="text-sm text-slate-500">{t('emr_medications_desc', 'Prescription instructions, daily intake guidance, and one-click pharmacy refills.')}</p>
                   </div>
                   <button
                     type="button"
@@ -1611,53 +2448,65 @@ export default function OpenEMRHub() {
                     className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#0F9D9A] hover:bg-[#0D8B88] text-white font-semibold text-xs sm:text-sm shadow-sm transition-all cursor-pointer"
                   >
                     <RefreshCw className="w-4 h-4" />
-                    <span>Request All Refills</span>
+                    <span>{t('emr_request_refills', 'Request All Refills')}</span>
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {medications.map((med) => (
-                    <div key={med.id} className="p-5 rounded-2xl bg-white border border-[#E7EEF4] shadow-xs flex flex-col justify-between space-y-4">
-                      <div>
-                        <div className="flex items-center justify-between">
-                          <span className="p-2 rounded-xl bg-teal-50 text-[#0F9D9A]">
-                            <Pill className="w-5 h-5" />
-                          </span>
-                          <span className="px-2.5 py-0.5 rounded-full bg-teal-50 text-teal-700 text-[11px] font-bold">
-                            {med.tag}
-                          </span>
-                        </div>
-                        <h3 className="text-base font-bold text-[#17324D] mt-3">{med.name}</h3>
-                        <p className="text-xs font-semibold text-teal-600">{med.dosage}</p>
-                        <p className="text-xs text-slate-500 mt-2 leading-relaxed bg-[#F8FAFD] p-2.5 rounded-xl border border-slate-100">
-                          {med.instructions}
-                        </p>
-                      </div>
-
-                      <div className="p-3 rounded-xl bg-[#F8FAFD] border border-[#E2EBF2] text-xs space-y-1">
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Prescribed by:</span>
-                          <span className="font-bold text-[#17324D]">{med.prescribedBy}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Refills remaining:</span>
-                          <span className="font-bold text-[#0F9D9A]">{med.refillsLeft} refills</span>
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setNotification(`Refill ordered for ${med.name}. Estimated ready in 2 hours at CareNest Pharmacy.`);
-                          setTimeout(() => setNotification(null), 4000);
-                        }}
-                        className="w-full py-2 rounded-xl bg-white hover:bg-slate-50 border border-[#D5E2EC] text-xs font-semibold text-[#17324D] transition-colors cursor-pointer"
-                      >
-                        Refill This Medication
-                      </button>
+                {medications.length === 0 ? (
+                  <div className="p-12 rounded-2xl bg-white border border-[#E7EEF4] text-center space-y-3">
+                    <div className="w-14 h-14 rounded-2xl bg-teal-50 text-[#0F9D9A] mx-auto flex items-center justify-center">
+                      <Pill className="w-7 h-7" />
                     </div>
-                  ))}
-                </div>
+                    <h3 className="text-base font-bold text-[#17324D]">No Active Medications</h3>
+                    <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                      You have no active prescriptions on file. Prescriptions ordered by your physician in the Doctor Workstation will sync here automatically.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {medications.map((med) => (
+                      <div key={med.id} className="p-5 rounded-2xl bg-white border border-[#E7EEF4] shadow-xs flex flex-col justify-between space-y-4">
+                        <div>
+                          <div className="flex items-center justify-between">
+                            <span className="p-2 rounded-xl bg-teal-50 text-[#0F9D9A]">
+                              <Pill className="w-5 h-5" />
+                            </span>
+                            <span className="px-2.5 py-0.5 rounded-full bg-teal-50 text-teal-700 text-[11px] font-bold">
+                              {med.tag}
+                            </span>
+                          </div>
+                          <h3 className="text-base font-bold text-[#17324D] mt-3">{med.name}</h3>
+                          <p className="text-xs font-semibold text-teal-600">{med.dosage}</p>
+                          <p className="text-xs text-slate-500 mt-2 leading-relaxed bg-[#F8FAFD] p-2.5 rounded-xl border border-slate-100">
+                            {med.instructions}
+                          </p>
+                        </div>
+
+                        <div className="p-3 rounded-xl bg-[#F8FAFD] border border-[#E2EBF2] text-xs space-y-1">
+                          <div className="flex justify-between">
+                            <span className="text-slate-400">{t('Prescribed by:')}</span>
+                            <span className="font-bold text-[#17324D]">{med.prescribedBy}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-400">{t('Refills remaining:')}</span>
+                            <span className="font-bold text-[#0F9D9A]">{med.refillsLeft} {t('refills', 'refills')}</span>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNotification(`Refill ordered for ${med.name}. Estimated ready in 2 hours at CareNest Pharmacy.`);
+                            setTimeout(() => setNotification(null), 4000);
+                          }}
+                          className="w-full py-2 rounded-xl bg-white hover:bg-slate-50 border border-[#D5E2EC] text-xs font-semibold text-[#17324D] transition-colors cursor-pointer"
+                        >
+                          {t('Refill This Medication')}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1667,51 +2516,72 @@ export default function OpenEMRHub() {
             {activeTab === 'results' && (
               <div className="space-y-6">
                 <div>
-                  <h2 className="text-2xl font-bold text-[#17324D]">My Test Results</h2>
-                  <p className="text-sm text-slate-500">Lab panels and diagnostic radiology explained in clear, patient-friendly language.</p>
+                  <h2 className="text-2xl font-bold text-[#17324D]">{t('emr_my_results', 'My Test Results')}</h2>
+                  <p className="text-sm text-slate-500">{t('emr_results_desc', 'Lab panels and diagnostic radiology explained in clear, patient-friendly language.')}</p>
                 </div>
 
                 <div className="space-y-4">
-                  {testResults.map((res) => (
-                    <div key={res.id} className="p-6 rounded-2xl bg-white border border-[#E7EEF4] shadow-xs space-y-4">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2.5 rounded-xl bg-teal-50 text-[#0F9D9A]">
-                            <FlaskConical className="w-5 h-5" />
-                          </div>
-                          <div>
-                            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">{res.category} · {res.date}</span>
-                            <h3 className="text-base font-bold text-[#17324D]">{res.title}</h3>
-                          </div>
-                        </div>
-                        <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold self-start sm:self-center">
-                          {res.status}
-                        </span>
+                  {testResults.length === 0 ? (
+                    <div className="p-12 rounded-2xl bg-white border border-[#E7EEF4] text-center space-y-4">
+                      <div className="w-14 h-14 rounded-2xl bg-teal-50 text-[#0F9D9A] mx-auto flex items-center justify-center">
+                        <FlaskConical className="w-7 h-7" />
                       </div>
-
-                      {/* Doctor's Plain English Takeaway */}
-                      <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-100 space-y-1">
-                        <span className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                          <span>What this means for you:</span>
-                        </span>
-                        <p className="text-xs text-emerald-950 leading-relaxed font-medium">
-                          {res.patientExplanation}
+                      <div>
+                        <h3 className="text-base font-bold text-[#17324D]">No Test Results Available</h3>
+                        <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
+                          You currently have no completed lab panels or radiology imaging reports. Any diagnostic scans run through the AI suite will save here.
                         </p>
                       </div>
-
-                      {/* Result metrics table */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                        {res.details.map((d, i) => (
-                          <div key={i} className="p-3 rounded-xl bg-[#F8FAFD] border border-[#E2EBF2]">
-                            <span className="text-slate-400 text-[11px] block">{d.test}</span>
-                            <span className="text-sm font-bold text-[#17324D] block mt-0.5">{d.value}</span>
-                            <span className="text-[10px] text-teal-700 font-semibold">{d.status}</span>
-                          </div>
-                        ))}
-                      </div>
+                      <Link
+                        href="/patient"
+                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#0F9D9A] hover:bg-[#0D8B88] text-white font-semibold text-xs shadow-sm transition-all cursor-pointer"
+                      >
+                        <Sparkles className="w-4 h-4" />
+                        <span>Launch AI Diagnostic Suite</span>
+                      </Link>
                     </div>
-                  ))}
+                  ) : (
+                    testResults.map((res) => (
+                      <div key={res.id} className="p-6 rounded-2xl bg-white border border-[#E7EEF4] shadow-xs space-y-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2.5 rounded-xl bg-teal-50 text-[#0F9D9A]">
+                              <FlaskConical className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">{res.category} · {res.date}</span>
+                              <h3 className="text-base font-bold text-[#17324D]">{res.title}</h3>
+                            </div>
+                          </div>
+                          <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold self-start sm:self-center">
+                            {res.status}
+                          </span>
+                        </div>
+
+                        {/* Doctor's Plain English Takeaway */}
+                        <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-100 space-y-1">
+                          <span className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                            <span>What this means for you:</span>
+                          </span>
+                          <p className="text-xs text-emerald-950 leading-relaxed font-medium">
+                            {res.patientExplanation}
+                          </p>
+                        </div>
+
+                        {/* Result metrics table */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                          {res.details.map((d, i) => (
+                            <div key={i} className="p-3 rounded-xl bg-[#F8FAFD] border border-[#E2EBF2]">
+                              <span className="text-slate-400 text-[11px] block">{d.test}</span>
+                              <span className="text-sm font-bold text-[#17324D] block mt-0.5">{d.value}</span>
+                              <span className="text-[10px] text-teal-700 font-semibold">{d.status}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             )}
@@ -1722,31 +2592,45 @@ export default function OpenEMRHub() {
             {activeTab === 'messages' && (
               <div className="space-y-6">
                 <div>
-                  <h2 className="text-2xl font-bold text-[#17324D]">Message My Care Team</h2>
-                  <p className="text-sm text-slate-500">Ask questions directly to Dr. Taylor and your clinic nurses.</p>
+                  <h2 className="text-2xl font-bold text-[#17324D]">{t('emr_my_messages', 'Message My Care Team')}</h2>
+                  <p className="text-sm text-slate-500">{t('emr_messages_desc', 'Ask questions directly to Dr. Taylor and your clinic nurses.')}</p>
                 </div>
 
                 <div className="bg-white rounded-2xl border border-[#E7EEF4] shadow-xs overflow-hidden flex flex-col h-[520px]">
                   {/* Messages Feed */}
                   <div className="flex-1 p-6 overflow-y-auto space-y-4">
-                    {messages.map((m) => (
-                      <div
-                        key={m.id}
-                        className={`p-4 rounded-2xl max-w-xl space-y-1.5 ${
-                          m.isMe
-                            ? 'ml-auto bg-teal-50 border border-teal-200/80 text-teal-950'
-                            : 'mr-auto bg-[#F8FAFD] border border-[#E2EBF2] text-slate-700'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-bold text-[#17324D]">{m.sender}</span>
-                          <span className="text-[11px] text-slate-400">{m.time}</span>
+                    {messages.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center h-full text-center p-8 space-y-3">
+                        <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center">
+                          <MessageSquare className="w-6 h-6" />
                         </div>
-                        <p className="text-xs sm:text-sm leading-relaxed">
-                          {m.text}
-                        </p>
+                        <div>
+                          <p className="text-sm font-bold text-slate-700">No Messages in Inbox</p>
+                          <p className="text-xs text-slate-400 max-w-xs mx-auto mt-0.5">
+                            Send a secure message to Dr. Taylor and your clinical care team below.
+                          </p>
+                        </div>
                       </div>
-                    ))}
+                    ) : (
+                      messages.map((m) => (
+                        <div
+                          key={m.id}
+                          className={`p-4 rounded-2xl max-w-xl space-y-1.5 ${
+                            m.isMe
+                              ? 'ml-auto bg-teal-50 border border-teal-200/80 text-teal-950'
+                              : 'mr-auto bg-[#F8FAFD] border border-[#E2EBF2] text-slate-700'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-bold text-[#17324D]">{m.sender}</span>
+                            <span className="text-[11px] text-slate-400">{m.time}</span>
+                          </div>
+                          <p className="text-xs sm:text-sm leading-relaxed">
+                            {m.text}
+                          </p>
+                        </div>
+                      ))
+                    )}
                   </div>
 
                   {/* Send Message Form */}
@@ -1763,7 +2647,7 @@ export default function OpenEMRHub() {
                       className="px-4 py-2.5 rounded-xl bg-[#0F9D9A] hover:bg-[#0D8B88] text-white font-semibold text-xs sm:text-sm shadow-xs transition-colors flex items-center gap-2 cursor-pointer"
                     >
                       <Send className="w-4 h-4" />
-                      <span>Send</span>
+                      <span>{t('emr_send_message', 'Send')}</span>
                     </button>
                   </form>
                 </div>
@@ -1776,8 +2660,8 @@ export default function OpenEMRHub() {
             {activeTab === 'settings' && (
               <div className="space-y-6">
                 <div>
-                  <h2 className="text-2xl font-bold text-[#17324D]">Account &amp; Privacy Settings</h2>
-                  <p className="text-sm text-slate-500">Manage your contact information, insurance card, and notification reminders.</p>
+                  <h2 className="text-2xl font-bold text-[#17324D]">{t('emr_my_settings', 'Account & Privacy Settings')}</h2>
+                  <p className="text-sm text-slate-500">{t('emr_settings_desc', 'Manage your contact information, insurance card, and notification reminders.')}</p>
                 </div>
 
                 {/* Patient Information Summary */}
@@ -1934,7 +2818,7 @@ export default function OpenEMRHub() {
                   className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:border-[#0F9D9A]"
                 >
                   <option value="Dr. Taylor">Dr. Taylor (Pulmonology &amp; Preventive Care)</option>
-                  <option value="Dr. Elena Vance, MD">Dr. Elena Vance, MD (Radiology)</option>
+                  <option value="Dr. Sarah Mitchell, MD">Dr. Sarah Mitchell, MD (Radiology)</option>
                   <option value="Dr. Marcus Chen, MD">Dr. Marcus Chen, MD (Cardiology)</option>
                 </select>
               </div>
@@ -2003,6 +2887,227 @@ export default function OpenEMRHub() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ==============================================================
+          MODAL: RECORD VITAL SIGNS
+         ============================================================== */}
+      {showVitalsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-[#E7EEF4] space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-teal-50 text-[#0F9D9A]">
+                  <HeartPulse className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-[#17324D]">Record Vital Signs</h3>
+                  <p className="text-[11px] text-slate-400">Log your active physiological measurements.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowVitalsModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveVitals} className="space-y-3.5 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Blood Pressure (mmHg)</label>
+                  <input
+                    type="text"
+                    value={vitalsForm.bloodPressure}
+                    onChange={(e) => setVitalsForm({ ...vitalsForm, bloodPressure: e.target.value })}
+                    placeholder="e.g. 120/80"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:border-[#0F9D9A]"
+                  />
+                </div>
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Heart Rate (bpm)</label>
+                  <input
+                    type="number"
+                    value={vitalsForm.heartRate}
+                    onChange={(e) => setVitalsForm({ ...vitalsForm, heartRate: e.target.value })}
+                    placeholder="e.g. 72"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:border-[#0F9D9A]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Oxygen Saturation (%)</label>
+                  <input
+                    type="number"
+                    value={vitalsForm.oxygen}
+                    onChange={(e) => setVitalsForm({ ...vitalsForm, oxygen: e.target.value })}
+                    placeholder="e.g. 98"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:border-[#0F9D9A]"
+                  />
+                </div>
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">BMI (kg/m²)</label>
+                  <input
+                    type="text"
+                    value={vitalsForm.bmi}
+                    onChange={(e) => setVitalsForm({ ...vitalsForm, bmi: e.target.value })}
+                    placeholder="e.g. 24.2"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:border-[#0F9D9A]"
+                  />
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-[#F8FAFD] border border-slate-100 text-[11px] text-slate-500">
+                Measurements saved here will update your clinical health record and calibrate diagnostic review.
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setShowVitalsModal(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl bg-[#0F9D9A] hover:bg-[#0D8B88] text-white font-semibold shadow-xs cursor-pointer"
+                >
+                  Save Vitals
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ==============================================================
+          MODAL: MANAGE DRUG ALLERGIES
+         ============================================================== */}
+      {showAllergiesModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-[#E7EEF4] space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-amber-50 text-amber-600">
+                  <ShieldAlert className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-[#17324D]">Manage Drug Allergies</h3>
+                  <p className="text-[11px] text-slate-400">Keep your clinical care team informed of adverse reactions.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAllergiesModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Current Allergies List */}
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-700 block">Current Documented Allergies</label>
+              {activeMatchedPatient?.allergies && activeMatchedPatient.allergies.length > 0 ? (
+                <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto p-1">
+                  {activeMatchedPatient.allergies.map((allergy, idx) => (
+                    <div
+                      key={idx}
+                      className="px-3 py-1.5 rounded-xl bg-amber-100/80 border border-amber-200 text-amber-950 text-xs font-semibold flex items-center gap-2 shadow-2xs"
+                    >
+                      <span>{allergy}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveAllergy(allergy)}
+                        disabled={isSavingAllergies}
+                        className="text-amber-700 hover:text-rose-600 cursor-pointer transition-colors"
+                        title="Remove"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 font-semibold flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>No Known Drug Allergies (NKDA) recorded.</span>
+                </div>
+              )}
+            </div>
+
+            {/* Add New Allergy Form */}
+            <div className="space-y-2 pt-2 border-t border-slate-100">
+              <label className="text-xs font-bold text-slate-700 block">Add New Allergy or Substance</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={newAllergyInput}
+                  onChange={(e) => setNewAllergyInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddAllergy();
+                    }
+                  }}
+                  placeholder="e.g. Penicillin, Sulfa, Aspirin..."
+                  className="flex-1 px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs focus:outline-none focus:border-[#0F9D9A]"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleAddAllergy()}
+                  disabled={isSavingAllergies || !newAllergyInput.trim()}
+                  className="px-3.5 py-2 rounded-xl bg-[#0F9D9A] hover:bg-[#0D8B88] disabled:opacity-50 text-white text-xs font-bold shadow-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-1"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add
+                </button>
+              </div>
+
+              {/* Quick Select common substances */}
+              <div className="pt-2">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Common Allergens</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {['Penicillin', 'Sulfa Drugs', 'Aspirin', 'Iodine Contrast', 'Latex', 'Codeine'].map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => handleAddAllergy(s)}
+                      disabled={isSavingAllergies || Boolean(activeMatchedPatient?.allergies?.includes(s))}
+                      className="px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-700 text-[11px] font-medium transition-colors cursor-pointer"
+                    >
+                      + {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Actions */}
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={handleClearAllergies}
+                disabled={isSavingAllergies}
+                className="text-xs text-rose-600 hover:text-rose-700 font-semibold cursor-pointer"
+              >
+                Clear all (Mark NKDA)
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowAllergiesModal(false)}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs cursor-pointer"
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -171,6 +171,7 @@ export default function CardiacEnhanced() {
     try {
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('serviceId', 'cardiac');
       setUploadPct(65);
       setUploadPhase('processing');
 

@@ -3,39 +3,44 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
-
-const impactCards = [
-  {
-    title: 'The Global Impact of AI:',
-    subtitle: 'Real Stories, Real Lives Transformed',
-    description: 'Explore the clinical workspace behind our healthcare pathways.',
-    buttonText: 'Explore the doctor workspace',
-    href: '/doctor',
-    image: '/images/mipaas_global_impact.jpg',
-  },
-  {
-    title: 'From Aims to Achievements:',
-    subtitle: 'Fulfilling Clinical & Business Goals',
-    description: 'Explore the staff portal for operational workflows.',
-    buttonText: 'Explore the staff portal',
-    href: '/staff',
-    image: '/images/mipaas_clinical_achievement.jpg',
-  },
-];
+import { useIndicLanguage } from '@/context/IndicLanguageContext';
 
 export default function ImpactSection() {
+  const { t } = useIndicLanguage();
+
+  const impactCards = [
+    {
+      title: 'The Global Impact of AI:',
+      subtitle: 'Real Stories, Real Lives Transformed',
+      description: 'Explore how deep learning detection accelerates acute clinical intervention across 14 pathologies.',
+      buttonText: t('impact_explore_pathways_btn', 'Explore clinical pathways'),
+      href: '/#products',
+      image: '/images/mipaas_global_impact.jpg',
+    },
+    {
+      title: 'From Aims to Achievements:',
+      subtitle: 'Fulfilling Clinical & Business Goals',
+      description: 'Validated operational workflows, hospital-grade DICOM ingestion, and multi-center clinical trials.',
+      buttonText: t('impact_view_evidence_btn', 'View clinical evidence'),
+      href: '/#evidence',
+      image: '/images/mipaas_clinical_achievement.jpg',
+    },
+  ];
+
   return (
     <section id="product" aria-labelledby="impact-heading" className="scroll-mt-28 bg-white py-20 text-slate-900 border-b border-slate-200/80">
       <div className="site-container">
         <header className="mb-12 grid gap-6 border-b border-slate-200 pb-8 md:grid-cols-2 md:gap-12">
           <div>
-            <p className="eyebrow mb-2 !text-blue-600 font-bold text-xs uppercase tracking-wider">Impact & implementation</p>
+            <p className="eyebrow mb-2 !text-blue-600 font-bold text-xs uppercase tracking-wider">
+              {t('impact_eyebrow', 'Impact & implementation')}
+            </p>
             <h2 id="impact-heading" className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
-              From pathways to practice
+              {t('impact_title', 'From pathways to practice')}
             </h2>
           </div>
           <p className="max-w-lg self-end text-sm leading-relaxed text-slate-600 md:text-base">
-            These demonstration stories illustrate the platform’s intended use. They are not verified case studies or evidence of clinical or business outcomes.
+            {t('impact_desc', 'These demonstration stories illustrate the platform’s intended use. They are not verified case studies or evidence of clinical or business outcomes.')}
           </p>
         </header>
 

@@ -12,13 +12,9 @@ import {
   Lock,
   Unlock,
   CheckCircle2,
-  AlertTriangle,
   FileText,
-  Sliders,
-  Eye,
   RefreshCw,
   Upload,
-  Layers,
   Zap,
   Globe,
   MapPin,
@@ -29,11 +25,11 @@ import {
   Clock,
   Heart,
   Brain,
-  Crosshair,
 } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import AnatomyViewer from '@/components/common/AnatomyViewer';
+import { clinicalApiService } from '@/services/clinicalApiService';
 
 /* ── colour tokens ── */
 const C = {
@@ -70,76 +66,14 @@ const FEATURES = [
   { tag: 'Public Health', title: 'DHIS2 National Registry', desc: 'Seamlessly synchronizes patient screening logs, GPS coordinates, and CAD scores with national programs.', stat: 'e-TB Connected' },
 ];
 
-/* ── sample clinical cases ── */
-const TB_CASES = [
-  {
-    id: 'tb-01',
-    label: 'Case A: Active Cavitary Pulmonary TB (High Bacterial Load)',
-    patientProfile: '34M · Low-Resource Community Screening',
-    tbScore: 88,
-    whoThreshold: 'HIGH RISK (Score >= 60)',
-    xrayFinding: 'Thick-walled 24mm cavity in right upper lobe with surrounding tree-in-bud nodular opacities.',
-    status: 'Presumptive Active TB',
-    cavitySize: '24.2 mm',
-    bacillaryBurden: 'High (3+ Acid-Fast Bacilli expected)',
-    biomarkers: [
-      { name: 'Apical Cavitation', detected: true, probability: 95.8, location: 'Right Upper Lobe' },
-      { name: 'Upper Lobe Infiltrate', detected: true, probability: 96.4, location: 'Right Apicoposterior' },
-      { name: 'Tree-in-Bud Micronodules', detected: true, probability: 89.2, location: 'Pericavitary Zone' },
-      { name: 'Pleural Blunting', detected: false, probability: 28.1, location: 'Bilateral Normal' },
-      { name: 'Hilar Lymphadenopathy', detected: true, probability: 72.4, location: 'Right Paratracheal' },
-    ],
-    recommendedAction: 'STAT GeneXpert MTB/RIF sputum testing + Immediate airborne infection isolation',
-  },
-  {
-    id: 'tb-02',
-    label: 'Case B: Minimal Apical Fibro-nodular TB (Early Active)',
-    patientProfile: '26F · Household Contact Investigation',
-    tbScore: 68,
-    whoThreshold: 'MODERATE RISK (Score >= 60)',
-    xrayFinding: 'Subtle patchy consolidation in left apicoposterior segment with small ill-defined nodules.',
-    status: 'Presumptive Active TB',
-    cavitySize: 'Non-cavitary (<5mm micro-nodules)',
-    bacillaryBurden: 'Moderate (1+ to 2+ expected)',
-    biomarkers: [
-      { name: 'Apical Cavitation', detected: false, probability: 14.0, location: 'None visible' },
-      { name: 'Upper Lobe Infiltrate', detected: true, probability: 86.5, location: 'Left Apical Segment' },
-      { name: 'Tree-in-Bud Micronodules', detected: true, probability: 78.6, location: 'Left Mid-field' },
-      { name: 'Pleural Blunting', detected: false, probability: 19.3, location: 'Clear Costophrenic' },
-      { name: 'Hilar Lymphadenopathy', detected: false, probability: 31.0, location: 'Normal Hilum' },
-    ],
-    recommendedAction: 'GeneXpert MTB/RIF test recommended before initiating first-line 4FDC regimen',
-  },
-  {
-    id: 'tb-03',
-    label: 'Case C: Old Inactive Fibrotic Scarring (Healed TB)',
-    patientProfile: '61M · Routine Occupational Pre-Employment',
-    tbScore: 34,
-    whoThreshold: 'LOW RISK (Score < 60)',
-    xrayFinding: 'Linear fibrocalcific bands and calcified Ghon focus in right apex. No active parenchymal consolidation.',
-    status: 'Inactive / Healed TB',
-    cavitySize: 'No active cavity',
-    bacillaryBurden: 'Negative / Non-infectious',
-    biomarkers: [
-      { name: 'Apical Cavitation', detected: false, probability: 4.1, location: 'None' },
-      { name: 'Upper Lobe Infiltrate', detected: false, probability: 22.0, location: 'Fibrotic scar only' },
-      { name: 'Tree-in-Bud Micronodules', detected: false, probability: 6.8, location: 'Absent' },
-      { name: 'Pleural Blunting', detected: true, probability: 64.2, location: 'Chronic Apical Cap' },
-      { name: 'Hilar Lymphadenopathy', detected: false, probability: 12.5, location: 'Calcified Node' },
-    ],
-    recommendedAction: 'Negative for active pulmonary tuberculosis. No GeneXpert molecular cartridge indicated.',
-  },
-];
-
 type UploadPhase = 'idle' | 'uploading' | 'processing' | 'done';
 
 export default function TBPage() {
   const stepsRef = useRef<HTMLDivElement>(null);
   const fileRef  = useRef<HTMLInputElement>(null);
 
-  const { currentUser, hasPermission, setRBACModalOpen, addAuditLog } = useRBAC();
+  const { hasPermission, setRBACModalOpen, currentUser, isAuthenticated } = useRBAC();
   const router = useRouter();
-  const isAuthenticated = hasPermission('jobs:create') || hasPermission('jobs:read');
 
   const redirectToLogin = useCallback(() => {
     router.push('/login?redirect=/tb');
@@ -152,16 +86,6 @@ export default function TBPage() {
   const [dragOver, setDragOver] = useState(false);
   const [countersStarted, setCountersStarted] = useState(false);
   const [counters, setCounters] = useState([0, 0, 0, 0]);
-
-  /* ── workstation state ── */
-  const [selectedCase, setSelectedCase] = useState(TB_CASES[0]);
-  const [whoThreshold, setWhoThreshold] = useState(60);
-  const [showContours, setShowContours] = useState(true);
-  const [showHeatmap, setShowHeatmap] = useState(true);
-  const [showTreeInBud, setShowTreeInBud] = useState(true);
-  const [heatmapOpacity, setHeatmapOpacity] = useState(75);
-  const [reportSigned, setReportSigned] = useState(false);
-  const [signedAt, setSignedAt] = useState<string | null>(null);
 
   const COUNTER_TARGETS = [94.6, 42, 1.9, 100];
   const COUNTER_SUFFIXES = ['%', '%', 's', '%'];
@@ -215,6 +139,10 @@ export default function TBPage() {
   /* ── real DICOM upload & triage ── */
   const handleFileSelect = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
+    if (!isAuthenticated || !currentUser?.id) {
+      redirectToLogin();
+      return;
+    }
     setUploadError(null);
     const file = files[0];
     const name = file.name.toLowerCase();
@@ -237,6 +165,7 @@ export default function TBPage() {
     try {
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('serviceId', 'tb');
       setUploadPct(65);
       setUploadPhase('processing');
 
@@ -253,39 +182,60 @@ export default function TBPage() {
       setUploadPct(100);
       setUploadPhase('done');
 
-      // Save study and redirect to Doctor Workstation
+      // Auto-save the AI-assisted draft to backend clinical records
+      try {
+        const pts = await clinicalApiService.getPatients();
+        const isAuthPatient = currentUser && currentUser.id && currentUser.role === 'patient';
+        const targetPt = pts.length > 0 ? pts[0] : null;
+
+        const effectivePatientId = isAuthPatient
+          ? currentUser.id
+          : (targetPt ? targetPt.id : 'ANON-PATIENT');
+
+        const effectivePatientName = isAuthPatient
+          ? currentUser.name
+          : (targetPt ? targetPt.name : 'Anonymous patient');
+
+        const effectiveMrn = (targetPt && targetPt.mrn) ? targetPt.mrn : 'MRN-NOT-AVAILABLE';
+
+        await clinicalApiService.saveDiagnosticReport({
+          patientId: effectivePatientId,
+          patientName: effectivePatientName,
+          mrn: effectiveMrn,
+          serviceId: 'tb',
+          serviceName: 'qXR Tuberculosis Screening AI',
+          findings: json.data?.findings?.[0]?.label || 'Tuberculosis Screening Completed',
+          confidence: json.data?.findings?.[0]?.probability || 0.92,
+          riskLevel: 'Moderate',
+          recommendation: 'WHO CAD4TB threshold calibration and confirmatory GeneXpert sputum testing.',
+          clinicalSummary: `Tuberculosis screening analysis completed. Finding: ${json.data?.findings?.[0]?.label || 'TB Screening Evaluated'}.`,
+          certified: false,
+          radiologist: 'Pending clinician verification',
+          date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        });
+      } catch (saveErr) {
+        console.error('Failed to auto-save TB report to clinical backend:', saveErr);
+      }
+
+      // Save study and redirect based on role
       if (typeof window !== 'undefined') {
         sessionStorage.setItem('mipaas_active_dicom_study', JSON.stringify(json.data));
       }
-      setTimeout(() => {
-        router.push('/doctor');
-      }, 500);
+      if (currentUser && currentUser.id && (currentUser.role === 'doctor' || currentUser.role === 'radiologist')) {
+        setTimeout(() => {
+          router.push('/doctor');
+        }, 500);
+      } else if (currentUser && currentUser.id && currentUser.role === 'patient') {
+        setTimeout(() => {
+          router.push('/emr?tab=results');
+        }, 500);
+      }
     } catch (err: unknown) {
       console.error('Upload failed:', err);
       setUploadError(err instanceof Error && err.message ? err.message : 'Error processing DICOM image');
       setUploadPhase('idle');
     }
   };
-
-  const handleSignReport = () => {
-    const time = new Date().toLocaleTimeString();
-    setReportSigned(true);
-    setSignedAt(time);
-    addAuditLog(
-      'report:signed',
-      `study:${selectedCase.id}`,
-      'allow',
-      {
-        whoScore: selectedCase.tbScore,
-        verifiedBy: currentUser.name,
-        role: currentUser.role,
-        action: selectedCase.recommendedAction,
-      }
-    );
-  };
-
-  /* ── classification based on dynamic threshold ── */
-  const isAboveThreshold = selectedCase.tbScore >= whoThreshold;
 
   return (
     <>
@@ -334,9 +284,6 @@ export default function TBPage() {
         .tb-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; text-align: center; }
         .tb-stat-n { font: 700 clamp(36px, 4.5vw, 54px) Sora; font-variant-numeric: tabular-nums; color: ${C.ink}; }
         .tb-stat-l { color: ${C.mute}; font-size: 13px; margin-top: 4px; }
-
-        .tb-station { border-radius: 24px; border: 1px solid rgba(255,255,255,.1); background: #0A1823; overflow: hidden; }
-        .tb-station-header { padding: 18px 24px; border-bottom: 1px solid rgba(255,255,255,.08); display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,.25); }
 
         @media(max-width:960px){ .tb-hero-grid { grid-template-columns: 1fr; } .tb-steps, .tb-grid, .tb-stats { grid-template-columns: 1fr 1fr; } .tb-stage { height: 380px; } }
         @media(max-width:600px){ .tb-steps, .tb-grid { grid-template-columns: 1fr; } .tb-stats { grid-template-columns: 1fr 1fr; } }
@@ -546,236 +493,31 @@ export default function TBPage() {
         {/* ━━━━━ CLINICAL WORKSTATION ━━━━━ */}
         <section className="tb-section tb-alt" id="clinical-station">
           <div className="tb-wrap">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 24, flexWrap: 'wrap', gap: 16 }}>
-              <div>
-                <span className="tb-tag">Point-of-Care Diagnostic Console</span>
-                <h2 className="tb-h2" style={{ margin: '8px 0 0' }}>Interactive TB Workstation & Calibrator</h2>
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                {TB_CASES.map((c) => (
-                  <button
-                    key={c.id}
-                    onClick={() => { setSelectedCase(c); setReportSigned(false); }}
-                    className="tb-btn"
-                    style={{
-                      background: selectedCase.id === c.id ? 'rgba(245,166,35,.15)' : 'rgba(255,255,255,.03)',
-                      borderColor: selectedCase.id === c.id ? C.amber : C.line,
-                      color: selectedCase.id === c.id ? '#fff' : C.mute,
-                      fontSize: 13,
-                      padding: '8px 16px',
-                    }}
-                  >
-                    {c.id.toUpperCase()}
-                  </button>
-                ))}
-              </div>
+            <div style={{ marginBottom: 24 }}>
+              <span className="tb-tag">Point-of-Care Diagnostic Console</span>
+              <h2 className="tb-h2" style={{ margin: '8px 0 0' }}>Interactive TB Diagnostic Console</h2>
             </div>
+            <p className="tb-sub" style={{ marginBottom: 36 }}>
+              Upload a radiograph above to run it through the live TB screening pipeline.
+            </p>
 
-            <div className="tb-station">
-              <div className="tb-station-header">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <Activity style={{ width: 18, height: 18, color: C.amber }} />
-                  <span style={{ font: '600 14px Sora' }}>{selectedCase.label}</span>
-                  <span style={{ fontSize: 12, color: C.mute }}>· {selectedCase.patientProfile}</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: isAboveThreshold ? C.coral : C.teal }}>
-                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: isAboveThreshold ? C.coral : C.teal }} />
-                    {isAboveThreshold ? 'Presumptive Active TB' : 'Screening Negative / Low Risk'}
-                  </div>
-                </div>
+            <div
+              style={{
+                borderRadius: 28,
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                background: '#091927',
+                padding: '32px',
+                boxShadow: '0 20px 50px rgba(0, 0, 0, 0.5)',
+                textAlign: 'center',
+              }}
+            >
+              <FileText style={{ width: 28, height: 28, color: C.teal, marginBottom: 12 }} />
+              <div style={{ fontSize: 17, fontWeight: 700, color: '#fff', marginBottom: 6 }}>
+                No clinical cases available
               </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 24, padding: 24 }}>
-                {/* Visualizer Canvas & Controls */}
-                <div>
-                  <div style={{ position: 'relative', height: 420, borderRadius: 18, background: '#030609', border: '1px solid rgba(255,255,255,.08)', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    {/* Simulated Radiograph Canvas */}
-                    <div style={{ position: 'absolute', inset: 0, opacity: 0.85, background: 'radial-gradient(ellipse at 50% 50%, #172733 0%, #070d14 80%)' }}>
-                      {/* Thorax bone silhouette */}
-                      <svg viewBox="0 0 400 400" style={{ width: '100%', height: '100%', opacity: 0.35 }}>
-                        <ellipse cx="200" cy="220" rx="140" ry="160" fill="none" stroke="#fff" strokeWidth="2" strokeDasharray="6 4" />
-                        <path d="M 200 40 L 200 380" stroke="#fff" strokeWidth="3" opacity="0.6" />
-                        {/* Clavicles & Ribs */}
-                        <path d="M 120 100 Q 200 130 280 100" fill="none" stroke="#fff" strokeWidth="2.5" />
-                        <path d="M 90 140 Q 200 180 310 140" fill="none" stroke="#fff" strokeWidth="1.5" />
-                        <path d="M 80 190 Q 200 240 320 190" fill="none" stroke="#fff" strokeWidth="1.5" />
-                        <path d="M 85 240 Q 200 290 315 240" fill="none" stroke="#fff" strokeWidth="1.5" />
-                      </svg>
-                    </div>
-
-                    {/* Cavitary Lesion Overlay */}
-                    {showContours && selectedCase.id === 'tb-01' && (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          top: '22%',
-                          right: '28%',
-                          width: 84,
-                          height: 84,
-                          borderRadius: '50%',
-                          border: `3px solid ${C.coral}`,
-                          background: `radial-gradient(circle, rgba(255,120,105,${heatmapOpacity / 100 * 0.4}) 0%, transparent 75%)`,
-                          animation: 'pulse 2s infinite',
-                        }}
-                      >
-                        <div style={{ position: 'absolute', top: -20, left: -10, fontSize: 10, background: C.coral, color: '#fff', padding: '2px 6px', borderRadius: 4, fontWeight: 700, whiteSpace: 'nowrap' }}>
-                          Cavity: 24.2mm
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Tree-in-Bud Micronodules */}
-                    {showTreeInBud && selectedCase.id === 'tb-01' && (
-                      <div style={{ position: 'absolute', top: '34%', right: '24%', display: 'flex', gap: 6, flexWrap: 'wrap', width: 60 }}>
-                        <div style={{ width: 6, height: 6, borderRadius: '50%', background: C.amber }} />
-                        <div style={{ width: 5, height: 5, borderRadius: '50%', background: C.amber }} />
-                        <div style={{ width: 7, height: 7, borderRadius: '50%', background: C.coral }} />
-                        <div style={{ width: 6, height: 6, borderRadius: '50%', background: C.amber }} />
-                      </div>
-                    )}
-
-                    {/* Heatmap Infiltrate Overlay */}
-                    {showHeatmap && selectedCase.id === 'tb-02' && (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          top: '20%',
-                          left: '26%',
-                          width: 110,
-                          height: 90,
-                          borderRadius: '40% 60% 70% 30% / 40% 50% 60% 50%',
-                          background: `radial-gradient(circle, rgba(245,166,35,${heatmapOpacity / 100 * 0.5}) 0%, transparent 80%)`,
-                          border: `2px dashed ${C.amber}`,
-                        }}
-                      >
-                        <div style={{ position: 'absolute', top: -18, left: 0, fontSize: 10, background: C.amber, color: '#060B11', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>
-                          Infiltrate: 86.5%
-                        </div>
-                      </div>
-                    )}
-
-                    {/* HUD Overlay Stats */}
-                    <div style={{ position: 'absolute', bottom: 16, left: 16, right: 16, display: 'flex', justifyContent: 'space-between', background: 'rgba(6,11,17,.8)', padding: '10px 14px', borderRadius: 12, border: '1px solid rgba(255,255,255,.08)', fontSize: 12 }}>
-                      <div>Finding: <b style={{ color: '#fff' }}>{selectedCase.xrayFinding}</b></div>
-                    </div>
-                  </div>
-
-                  {/* Toggle Controls */}
-                  <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
-                    <button
-                      onClick={() => setShowContours(!showContours)}
-                      className="tb-btn"
-                      style={{ padding: '6px 14px', fontSize: 12, background: showContours ? 'rgba(255,120,105,.15)' : 'rgba(255,255,255,.03)', borderColor: showContours ? C.coral : C.line }}
-                    >
-                      <Layers style={{ width: 14, height: 14 }} /> Cavity Contours
-                    </button>
-                    <button
-                      onClick={() => setShowHeatmap(!showHeatmap)}
-                      className="tb-btn"
-                      style={{ padding: '6px 14px', fontSize: 12, background: showHeatmap ? 'rgba(245,166,35,.15)' : 'rgba(255,255,255,.03)', borderColor: showHeatmap ? C.amber : C.line }}
-                    >
-                      <Eye style={{ width: 14, height: 14 }} /> Infiltration Heatmap
-                    </button>
-                    <button
-                      onClick={() => setShowTreeInBud(!showTreeInBud)}
-                      className="tb-btn"
-                      style={{ padding: '6px 14px', fontSize: 12, background: showTreeInBud ? 'rgba(0,220,206,.15)' : 'rgba(255,255,255,.03)', borderColor: showTreeInBud ? C.teal : C.line }}
-                    >
-                      <Crosshair style={{ width: 14, height: 14 }} /> Tree-in-Bud Markers
-                    </button>
-                  </div>
-                </div>
-
-                {/* Quantitative Analytics & GeneXpert Triage */}
-                <div>
-                  {/* WHO CAD4TB Calibration Slider */}
-                  <div style={{ background: 'rgba(255,255,255,.02)', border: '1px solid rgba(255,255,255,.07)', borderRadius: 16, padding: 18, marginBottom: 16 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                      <span style={{ fontSize: 13, color: C.mute }}>WHO CAD4TB Score</span>
-                      <span style={{ font: '700 20px Sora', color: isAboveThreshold ? C.amber : C.teal }}>
-                        {selectedCase.tbScore} / 100
-                      </span>
-                    </div>
-
-                    <div style={{ position: 'relative', height: 8, background: 'rgba(255,255,255,.1)', borderRadius: 4, margin: '14px 0 8px' }}>
-                      <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${selectedCase.tbScore}%`, background: `linear-gradient(90deg, ${C.teal}, ${C.amber}, ${C.coral})`, borderRadius: 4 }} />
-                      {/* Threshold marker */}
-                      <div style={{ position: 'absolute', left: `${whoThreshold}%`, top: -4, bottom: -4, width: 3, background: '#fff' }} />
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
-                      <label style={{ fontSize: 12, color: C.mute, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <Sliders style={{ width: 12, height: 12 }} /> Threshold Calibration:
-                      </label>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>&gt;= {whoThreshold}</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="20"
-                      max="85"
-                      value={whoThreshold}
-                      onChange={(e) => setWhoThreshold(Number(e.target.value))}
-                      style={{ width: '100%', marginTop: 6, accentColor: C.amber }}
-                    />
-                  </div>
-
-                  {/* Biomarkers Table */}
-                  <div style={{ background: 'rgba(255,255,255,.02)', border: '1px solid rgba(255,255,255,.07)', borderRadius: 16, padding: 16, marginBottom: 16 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12, color: '#fff' }}>Deep Feature Biomarkers</div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {selectedCase.biomarkers.map((b, idx) => (
-                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, padding: '4px 0', borderBottom: idx < selectedCase.biomarkers.length - 1 ? '1px solid rgba(255,255,255,.04)' : 'none' }}>
-                          <span style={{ color: b.detected ? '#fff' : C.mute }}>{b.name}</span>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span style={{ color: C.mute, fontSize: 11 }}>{b.location}</span>
-                            <span style={{ fontWeight: 600, color: b.probability > 70 ? (b.probability > 90 ? C.coral : C.amber) : C.mute }}>
-                              {b.probability}%
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Sputum GeneXpert Cartridge Optimizer Card */}
-                  <div style={{ background: isAboveThreshold ? 'rgba(245,166,35,.06)' : 'rgba(0,220,206,.06)', border: `1px solid ${isAboveThreshold ? 'rgba(245,166,35,.3)' : 'rgba(0,220,206,.2)'}`, borderRadius: 16, padding: 16, marginBottom: 16 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                      {isAboveThreshold ? <AlertTriangle style={{ width: 16, height: 16, color: C.amber }} /> : <CheckCircle2 style={{ width: 16, height: 16, color: C.teal }} />}
-                      <span style={{ font: '600 13px Sora', color: isAboveThreshold ? C.amber : C.teal }}>
-                        {isAboveThreshold ? 'STAT GeneXpert MTB/RIF Cartridge Indicated' : 'Cartridge Saved: No Sputum Molecular Testing Required'}
-                      </span>
-                    </div>
-                    <p style={{ margin: 0, fontSize: 12, color: C.mute, lineHeight: 1.5 }}>
-                      {selectedCase.recommendedAction}
-                    </p>
-                  </div>
-
-                  {/* RBAC Sign-off & Audit Console */}
-                  <div style={{ background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.08)', borderRadius: 16, padding: 16 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <div style={{ font: '600 13px Sora', color: '#fff' }}>Clinical Verification</div>
-                        <div style={{ fontSize: 11, color: C.mute }}>
-                          Active User: {currentUser.name} ({currentUser.role})
-                        </div>
-                      </div>
-                      {reportSigned ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: C.teal, fontSize: 12, fontWeight: 600 }}>
-                          <CheckCircle2 style={{ width: 15, height: 15 }} /> Signed at {signedAt}
-                        </div>
-                      ) : (
-                        <button
-                          onClick={handleSignReport}
-                          className="tb-btn tb-btn-teal"
-                          style={{ padding: '6px 16px', fontSize: 12 }}
-                        >
-                          Sign Diagnostic Report
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
+              <div style={{ fontSize: 13, color: C.mute, maxWidth: 460, margin: '0 auto' }}>
+                Sample radiographs and their model outputs have been removed. Upload a study above to run it through
+                the live TB screening pipeline.
               </div>
             </div>
           </div>

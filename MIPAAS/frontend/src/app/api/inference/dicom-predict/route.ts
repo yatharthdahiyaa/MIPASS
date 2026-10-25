@@ -11,6 +11,7 @@ export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
+    const serviceId = (formData.get("serviceId") as string) || "qxr";
 
     if (!file) {
       return NextResponse.json(
@@ -22,6 +23,32 @@ export async function POST(req: NextRequest) {
           },
         },
         { status: 400 }
+      );
+    }
+
+    // Only qXR has a real pretrained checkpoint wired into this build. Returning
+    // a chest model result for a brain MRI, skin lesion, etc. would be unsafe and
+    // misleading. These services remain available in the patient portal as
+    // explicitly-labelled demo mode until validated checkpoints are added.
+    if (serviceId !== "qxr") {
+      return NextResponse.json(
+        {
+          success: false,
+          demo_mode: true,
+          model_availability: {
+            available: false,
+            mode: "unavailable",
+            serviceId,
+            message:
+              "No trained model checkpoint is available for this service in this build. Use the qXR Chest X-Ray service for real inference, or use the patient portal demo mode with its explicit demo label.",
+          },
+          error: {
+            code: 501,
+            message:
+              "This service has no trained model checkpoint in this build. It is not safe to apply the chest X-ray model to this scan type. Please use qXR Chest X-Ray or a validated clinical service.",
+          },
+        },
+        { status: 501 }
       );
     }
 

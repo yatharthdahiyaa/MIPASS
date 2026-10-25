@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { FileText, BarChart3, ShieldCheck } from 'lucide-react';
+import { useIndicLanguage } from '@/context/IndicLanguageContext';
 
 interface FeatureCardItem {
   icon: React.ElementType;
@@ -9,29 +10,31 @@ interface FeatureCardItem {
   description: string;
 }
 
-const CARDS: FeatureCardItem[] = [
-  {
-    icon: FileText,
-    title: 'Peer-Reviewed Research',
-    description: 'Access trusted literature and real-world evidence from global healthcare datasets.',
-  },
-  {
-    icon: BarChart3,
-    title: 'Clinical Trial Data',
-    description: 'Explore validated clinical data across indications, demographics, and outcomes.',
-  },
-  {
-    icon: ShieldCheck,
-    title: 'Regulatory Compliance',
-    description: 'Stay aligned with global healthcare standards, HIPAA protocols, and FDA guidelines.',
-  },
-];
-
 export default function FeatureCards() {
+  const { t } = useIndicLanguage();
+
+  const cards: FeatureCardItem[] = [
+    {
+      icon: FileText,
+      title: t('card_research_title'),
+      description: t('card_research_desc'),
+    },
+    {
+      icon: BarChart3,
+      title: t('card_trials_title'),
+      description: t('card_trials_desc'),
+    },
+    {
+      icon: ShieldCheck,
+      title: t('card_compliance_title'),
+      description: t('card_compliance_desc'),
+    },
+  ];
+
   return (
     <section className="w-full max-w-6xl mx-auto px-4 sm:px-6 relative z-20 pb-12">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5 sm:gap-6">
-        {CARDS.map((card, idx) => {
+        {cards.map((card, idx) => {
           const Icon = card.icon;
           return (
             <div

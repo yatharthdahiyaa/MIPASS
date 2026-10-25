@@ -3,18 +3,23 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
+import { useIndicLanguage } from '@/context/IndicLanguageContext';
 
 export default function DevelopmentsSection() {
+  const { t } = useIndicLanguage();
+
   return (
     <section id="pricing" aria-labelledby="developments-heading" className="scroll-mt-28 border-b border-slate-200/80 bg-slate-50/70 py-20 text-slate-900">
       <div className="site-container">
         <header className="mb-12 max-w-3xl">
-          <p className="eyebrow mb-2 !text-blue-600 font-bold text-xs uppercase tracking-wider">Evidence & insights</p>
+          <p className="eyebrow mb-2 !text-blue-600 font-bold text-xs uppercase tracking-wider">
+            {t('developments_eyebrow', 'Evidence & insights')}
+          </p>
           <h2 id="developments-heading" className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
-            Explore Our Latest Developments
+            {t('developments_title', 'Explore Our Latest Developments')}
           </h2>
           <p className="mt-4 max-w-2xl text-slate-600 text-sm sm:text-base leading-relaxed">
-            Explore the clinical pathways behind these stories. The studies, news, and deployment figures below illustrate MIPASS AI in clinical practice.
+            {t('developments_desc', 'Explore the clinical pathways behind these stories. The studies, news, and deployment figures below illustrate MiPAAS AI in clinical practice.')}
           </p>
         </header>
 
@@ -25,7 +30,7 @@ export default function DevelopmentsSection() {
               <div className="flex flex-col p-6 sm:p-8">
                 <p className="mb-3 text-xs font-bold uppercase tracking-wider text-blue-600">Research study · Demo</p>
                 <h3 className="text-2xl font-bold leading-snug tracking-tight text-slate-900">
-                  AI Helps Doctors Treat Stroke Faster: MIPASS Study Reveals Significant Real-World Impact
+                  AI Helps Doctors Treat Stroke Faster: MiPAAS Study Reveals Significant Real-World Impact
                 </h3>
                 <p className="mt-4 text-xs font-medium text-slate-500">
                   Dr. Sarah Chen, Dr. Raj Patel, Dr. Michael Torres, Dr. Lisa Kim, Dr. Priya Sharma, Dr. James Wilson
@@ -73,7 +78,7 @@ export default function DevelopmentsSection() {
             <div className="flex flex-1 flex-col p-6 sm:p-7">
               <p className="mb-2 text-xs font-bold uppercase tracking-wider text-blue-600">News · Sep 2026 · Demo</p>
               <h3 className="text-lg font-bold leading-snug text-slate-900">
-                MIPASS Clinical Decision Support System Wins Landmark Class II Clearance
+                MiPAAS Clinical Decision Support System Wins Landmark Class II Clearance
               </h3>
               <p className="mt-3 text-xs leading-relaxed text-slate-500">
                 Illustrative headline. Regulatory clearance standards align with rigorous global software-as-a-medical-device protocols.
@@ -95,7 +100,7 @@ export default function DevelopmentsSection() {
             <p className="mb-2 text-xs font-bold uppercase tracking-wider text-blue-600">Global updates · Demo</p>
             <h3 className="text-2xl font-bold tracking-tight text-slate-900">Join the Movement</h3>
             <p className="mt-4 text-sm leading-relaxed text-slate-600">
-              Over 5,500 healthcare institutions across 105 countries deploy MIPASS AI to accelerate diagnosis, reduce clinician burnout, and expand access to rural and underserved populations.
+              Over 5,500 healthcare institutions across 105 countries deploy MiPAAS AI to accelerate diagnosis, reduce clinician burnout, and expand access to rural and underserved populations.
             </p>
             <p className="mt-3 text-xs leading-relaxed text-slate-400">
               Demonstration figures and outcome metrics.

@@ -1,6 +1,7 @@
 'use client';
 
 import Image from 'next/image';
+import { useIndicLanguage } from '@/context/IndicLanguageContext';
 
 const partnerLogos = [
   'Fujifilm',
@@ -23,15 +24,17 @@ const complianceBadges = [
 ];
 
 export default function PartnersSection() {
+  const { t } = useIndicLanguage();
+
   return (
     <section aria-labelledby="ecosystem-heading" className="border-b border-slate-200/80 bg-white py-16 text-slate-900 md:py-20">
       <div className="site-container">
         <div className="grid gap-6 md:grid-cols-[1fr_2fr] md:gap-12">
           <div>
-            <p className="eyebrow mb-3 !text-blue-600 font-bold text-xs uppercase tracking-wider">Platform connections</p>
-            <h2 id="ecosystem-heading" className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">Integration ecosystem</h2>
+            <p className="eyebrow mb-3 !text-blue-600 font-bold text-xs uppercase tracking-wider">{t('partners_eyebrow')}</p>
+            <h2 id="ecosystem-heading" className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">{t('partners_title')}</h2>
             <p className="mt-3 max-w-sm text-sm leading-relaxed text-slate-600">
-              Listed organizations are shown for ecosystem context, not as verified integrations or endorsements.
+              {t('partners_subtitle')}
             </p>
           </div>
           <ul aria-label="Listed ecosystem organizations" className="grid grid-cols-2 content-center gap-x-6 gap-y-5 sm:grid-cols-3 lg:grid-cols-4">
@@ -45,9 +48,9 @@ export default function PartnersSection() {
 
         <div className="mt-12 grid gap-6 border-t border-slate-200/80 pt-10 md:grid-cols-[1fr_2fr] md:gap-12">
           <div>
-            <h3 className="text-base font-bold text-slate-900">Certification & compliance context</h3>
+            <h3 className="text-base font-bold text-slate-900">{t('compliance_heading')}</h3>
             <p className="mt-2 max-w-sm text-xs leading-relaxed text-slate-600">
-              Certification requirements vary by product and deployment. Displayed badges do not establish platform-wide clearance or compliance.
+              {t('compliance_desc')}
             </p>
           </div>
           <ul aria-label="Illustrative certification and compliance badges" className="grid grid-cols-2 gap-4 sm:grid-cols-4">

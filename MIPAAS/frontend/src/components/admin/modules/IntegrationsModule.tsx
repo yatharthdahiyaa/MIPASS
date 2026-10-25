@@ -18,6 +18,7 @@ import {
   X,
 } from 'lucide-react';
 import SensitiveActionModal from '../common/SensitiveActionModal';
+import AdminNotice from '../common/AdminNotice';
 
 interface ApiKeyItem {
   id: string;
@@ -33,6 +34,7 @@ export default function IntegrationsModule() {
   const { activeOrg, activeSite, hasPermission, addAuditLog } = useMultiLevelAdmin();
 
   const [activeTab, setActiveTab] = useState<'pacs' | 'apikeys' | 'webhooks' | 'ip'>('pacs');
+  const [notice, setNotice] = useState<string | null>(null);
 
   // PACS C-ECHO state
   const [echoRunning, setEchoRunning] = useState(false);
@@ -331,7 +333,7 @@ export default function IntegrationsModule() {
               <button
                 onClick={() => {
                   navigator.clipboard.writeText(generatedKey);
-                  alert('Copied API key to clipboard.');
+                  setNotice('Copied API key to clipboard.');
                 }}
                 className="p-1.5 rounded-lg bg-teal-500 text-black hover:bg-teal-400 shrink-0 ml-2"
                 title="Copy to clipboard"
@@ -349,6 +351,8 @@ export default function IntegrationsModule() {
           </div>
         </div>
       )}
+
+      <AdminNotice message={notice} onDismiss={() => setNotice(null)} />
     </div>
   );
 }

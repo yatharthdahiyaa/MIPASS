@@ -189,8 +189,8 @@ export const ROLE_DEFINITIONS: Record<Role, RoleMeta> = {
 export const CLINICAL_PERSONAS: Record<string, UserProfile> = {
   'doc-01': {
     id: 'doc-01',
-    name: 'Dr. Elena Vance, MD',
-    email: 'elena.vance@mipaas.health',
+    name: 'Attending Physician, MD',
+    email: 'doctor@mipaas.health',
     role: 'doctor',
     roleTitle: 'Internal Medicine & Lead Clinician',
     department: 'Outpatient Clinical Medicine',
@@ -205,12 +205,12 @@ export const CLINICAL_PERSONAS: Record<string, UserProfile> = {
   },
   'pat-01': {
     id: 'pat-01',
-    name: 'Alex Taylor',
-    email: 'alex.taylor@carenest.health',
+    name: 'Yatharthdahiyaa',
+    email: 'yatharth@mipaas.health',
     role: 'patient',
-    roleTitle: 'Registered Patient',
-    department: 'Preventive Care',
-    organization: 'CareNest Health Plan',
+    roleTitle: 'Patient Member',
+    department: 'Pulmonology & Thoracic Care',
+    organization: 'CareNest Health System',
     permissions: [
       'results:read',
       'phi:read',
@@ -218,8 +218,8 @@ export const CLINICAL_PERSONAS: Record<string, UserProfile> = {
   },
   'rad-01': {
     id: 'rad-01',
-    name: 'Dr. Elena Vance',
-    email: 'elena.vance@mipaas.health',
+    name: 'Attending Radiologist, MD',
+    email: 'radiologist@mipaas.health',
     role: 'radiologist',
     roleTitle: 'Chief Thoracic Radiologist',
     department: 'Cardiothoracic Imaging',

@@ -7,7 +7,6 @@ import { ROLE_DEFINITIONS } from '@/types/rbac';
 import {
   ShieldCheck,
   Activity,
-  FileCheck2,
   Lock,
   Unlock,
   CheckCircle2,
@@ -24,6 +23,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import AnatomyViewer from '@/components/common/AnatomyViewer';
+import { clinicalApiService } from '@/services/clinicalApiService';
 
 const C = {
   bg:   '#0B1926',
@@ -57,68 +57,14 @@ const FEATURES = [
   { tag: 'Collateral Scoring', title: 'Multiphasic CTA', desc: 'Scores leptomeningeal collateral status to predict tissue survival time.', stat: 'Tan collateral scale' },
 ];
 
-const STROKE_CASES = [
-  {
-    id: 'stroke-01',
-    label: 'Case A: Acute Right MCA-M1 Occlusion (LVO)',
-    nihss: '18 (Severe)',
-    aspectsScore: 8,
-    onset: '2.5 hrs ago (Golden Window)',
-    lvoLocation: 'Right MCA M1 Segment',
-    ischemicCore: '14 mL (CBF < 30%)',
-    penumbra: '86 mL (Tmax > 6.0s)',
-    mismatchRatio: '6.1x (Favorable Target)',
-    thrombectomyCandidate: true,
-    findings: 'Acute occlusion of right proximal M1 segment. Automated ASPECTS 8/10 with early ischemic changes in lentiform nucleus and insular ribbon. Large salvageable tissue penumbra.',
-    aspectsRegions: [
-      { code: 'C', name: 'Caudate', affected: false },
-      { code: 'L', name: 'Lentiform', affected: true },
-      { code: 'IC', name: 'Internal Capsule', affected: false },
-      { code: 'I', name: 'Insular Ribbon', affected: true },
-      { code: 'M1', name: 'Anterior MCA', affected: false },
-      { code: 'M2', name: 'MCA at Insula', affected: false },
-      { code: 'M3', name: 'Posterior MCA', affected: false },
-      { code: 'M4', name: 'Upper Ant MCA', affected: false },
-      { code: 'M5', name: 'Upper Lat MCA', affected: false },
-      { code: 'M6', name: 'Upper Post MCA', affected: false },
-    ],
-  },
-  {
-    id: 'stroke-02',
-    label: 'Case B: Left Internal Carotid Artery (T-Junction)',
-    nihss: '22 (Critical)',
-    aspectsScore: 6,
-    onset: '3.8 hrs ago',
-    lvoLocation: 'Left Carotid Terminus',
-    ischemicCore: '32 mL',
-    penumbra: '118 mL',
-    mismatchRatio: '3.7x',
-    thrombectomyCandidate: true,
-    findings: 'Complete occlusion of left carotid terminus. Moderate early ischemic changes involving M1, M2, and lentiform nucleus. Emergency endovascular thrombectomy recommended.',
-    aspectsRegions: [
-      { code: 'C', name: 'Caudate', affected: false },
-      { code: 'L', name: 'Lentiform', affected: true },
-      { code: 'IC', name: 'Internal Capsule', affected: true },
-      { code: 'I', name: 'Insular Ribbon', affected: false },
-      { code: 'M1', name: 'Anterior MCA', affected: true },
-      { code: 'M2', name: 'MCA at Insula', affected: true },
-      { code: 'M3', name: 'Posterior MCA', affected: false },
-      { code: 'M4', name: 'Upper Ant MCA', affected: false },
-      { code: 'M5', name: 'Upper Lat MCA', affected: false },
-      { code: 'M6', name: 'Upper Post MCA', affected: false },
-    ],
-  },
-];
-
 type UploadPhase = 'idle' | 'uploading' | 'processing' | 'done';
 
 export default function StrokePage() {
   const stepsRef = useRef<HTMLDivElement>(null);
   const fileRef  = useRef<HTMLInputElement>(null);
 
-  const { currentUser, isIamAuthenticated } = useRBAC();
+  const { currentUser, isAuthenticated } = useRBAC();
   const router = useRouter();
-  const isAuthenticated = isIamAuthenticated;
 
   const redirectToLogin = useCallback(() => {
     router.push('/login?redirect=/stroke');
@@ -130,11 +76,6 @@ export default function StrokePage() {
   const [dragOver, setDragOver] = useState(false);
   const [countersStarted, setCountersStarted] = useState(false);
   const [counters, setCounters] = useState([0, 0, 0, 0]);
-
-  const [selectedCase, setSelectedCase] = useState(STROKE_CASES[0]);
-  const [viewMode, setViewMode] = useState<'aspects' | 'perfusion' | 'cta'>('aspects');
-  const [analyzing, setAnalyzing] = useState(false);
-  const [reportSigned, setReportSigned] = useState(false);
 
   const COUNTER_TARGETS = [96.5, 30, 8, 34];
   const COUNTER_SUFFIXES = ['%', 's', '/10', 'm'];
@@ -189,6 +130,10 @@ export default function StrokePage() {
   /* ── upload handlers ── */
   const startUpload = async (files: File[]) => {
     if (!files.length) return;
+    if (!isAuthenticated || !currentUser?.id) {
+      redirectToLogin();
+      return;
+    }
     setUploadError(null);
     const file = files[0];
     const name = file.name.toLowerCase();
@@ -208,6 +153,7 @@ export default function StrokePage() {
     try {
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('serviceId', 'stroke');
       setUploadPct(65);
       setUploadPhase('processing');
 
@@ -224,24 +170,59 @@ export default function StrokePage() {
       setUploadPct(100);
       setUploadPhase('done');
 
-      // Save study and redirect to Doctor Workstation
+      // Auto-save the AI-assisted draft to backend clinical records
+      try {
+        const pts = await clinicalApiService.getPatients();
+        const isAuthPatient = currentUser && currentUser.id && currentUser.role === 'patient';
+        const targetPt = pts.length > 0 ? pts[0] : null;
+
+        const effectivePatientId = isAuthPatient
+          ? currentUser.id
+          : (targetPt ? targetPt.id : 'ANON-PATIENT');
+
+        const effectivePatientName = isAuthPatient
+          ? currentUser.name
+          : (targetPt ? targetPt.name : 'Anonymous patient');
+
+        const effectiveMrn = (targetPt && targetPt.mrn) ? targetPt.mrn : 'MRN-NOT-AVAILABLE';
+
+        await clinicalApiService.saveDiagnosticReport({
+          patientId: effectivePatientId,
+          patientName: effectivePatientName,
+          mrn: effectiveMrn,
+          serviceId: 'stroke',
+          serviceName: 'qER Stroke & ASPECTS AI',
+          findings: json.data?.findings?.[0]?.label || 'Acute Ischemic Stroke / ASPECTS Analysis Completed',
+          confidence: json.data?.findings?.[0]?.probability || 0.94,
+          riskLevel: 'Critical',
+          recommendation: 'Immediate stroke protocol activation and endovascular thrombectomy consultation.',
+          clinicalSummary: `Non-contrast CT ASPECTS analysis complete. Finding: ${json.data?.findings?.[0]?.label || 'Acute Infarct / ASPECTS Assessment'}.`,
+          certified: false,
+          radiologist: 'Pending clinician verification',
+          date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        });
+      } catch (saveErr) {
+        console.error('Failed to auto-save Stroke report to clinical backend:', saveErr);
+      }
+
+      // Save study and redirect based on role
       if (typeof window !== 'undefined') {
         sessionStorage.setItem('mipaas_active_dicom_study', JSON.stringify(json.data));
       }
-      setTimeout(() => {
-        router.push('/doctor');
-      }, 500);
+      if (currentUser && currentUser.id && (currentUser.role === 'doctor' || currentUser.role === 'radiologist')) {
+        setTimeout(() => {
+          router.push('/doctor');
+        }, 500);
+      } else if (currentUser && currentUser.id && currentUser.role === 'patient') {
+        setTimeout(() => {
+          router.push('/emr?tab=results');
+        }, 500);
+      }
     } catch (err: unknown) {
       console.error('Upload failed:', err);
       setUploadError(err instanceof Error && err.message ? err.message : 'Error processing DICOM image');
       setUploadPhase('idle');
     }
-  };
-
-  const selectCase = (c: typeof STROKE_CASES[0]) => {
-    setAnalyzing(true);
-    setSelectedCase(c);
-    setTimeout(() => setAnalyzing(false), 500);
   };
 
   return (
@@ -612,7 +593,7 @@ export default function StrokePage() {
             </div>
           </div>
           <p className="lc-sub" style={{ marginBottom: 36 }}>
-            Automated 10-zone ASPECTS breakdown, CTA vessel cutoff verification, and CTP mismatch volume curves.
+            Upload a CT / CTA study above to run it through the live stroke triage pipeline.
           </p>
 
           {/* Console Card */}
@@ -623,225 +604,16 @@ export default function StrokePage() {
               background: '#091927',
               padding: '32px',
               boxShadow: '0 20px 50px rgba(0, 0, 0, 0.5)',
+              textAlign: 'center',
             }}
           >
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                paddingBottom: 20,
-                borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-                flexWrap: 'wrap',
-                gap: 14,
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 10,
-                    background: 'rgba(245, 166, 35, 0.15)',
-                    border: '1px solid rgba(245, 166, 35, 0.3)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Activity style={{ width: 18, height: 18, color: C.gold }} />
-                </div>
-                <div>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>
-                    {selectedCase.label}
-                  </div>
-                  <div style={{ fontSize: 12, color: C.mute }}>
-                    NIHSS: {selectedCase.nihss} · Onset: {selectedCase.onset}
-                  </div>
-                </div>
-              </div>
-
-              {/* Mode Switcher */}
-              <div style={{ display: 'flex', gap: 8 }}>
-                {(['aspects', 'perfusion', 'cta'] as const).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => setViewMode(m)}
-                    className="lc-btn"
-                    style={{
-                      padding: '6px 14px',
-                      fontSize: 12,
-                      borderColor: viewMode === m ? C.gold : 'rgba(255,255,255,0.1)',
-                      color: viewMode === m ? '#07131D' : C.mute,
-                      background: viewMode === m ? C.gold : 'rgba(255,255,255,0.03)',
-                      fontWeight: 700,
-                    }}
-                  >
-                    {m.toUpperCase()}
-                  </button>
-                ))}
-              </div>
+            <FileText style={{ width: 28, height: 28, color: C.teal, marginBottom: 12 }} />
+            <div style={{ fontSize: 17, fontWeight: 700, color: '#fff', marginBottom: 6 }}>
+              No clinical cases available
             </div>
-
-            {/* Grid */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))',
-                gap: 24,
-                marginTop: 24,
-              }}
-            >
-              {/* Left Column: Canvas */}
-              <div>
-                <div
-                  style={{
-                    position: 'relative',
-                    aspectRatio: '4/3',
-                    borderRadius: 20,
-                    overflow: 'hidden',
-                    background: '#04070B',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <svg viewBox="0 0 400 300" style={{ width: '100%', height: '100%' }}>
-                    <rect width="400" height="300" fill="#080e14" />
-                    <ellipse cx="200" cy="150" rx="140" ry="110" fill="#131b24" stroke="#253240" strokeWidth="2" />
-                    <line x1="200" y1="40" x2="200" y2="260" stroke="#00DCCE" strokeWidth="1" strokeDasharray="3 3" opacity="0.4" />
-
-                    {viewMode === 'aspects' && (
-                      <>
-                        <path d="M 230 130 Q 270 120 290 160 Q 250 170 230 130 Z" fill="rgba(245,166,35,0.5)" stroke="#F5A623" strokeWidth="1.5" />
-                        <circle cx="245" cy="145" r="14" fill="#FF7869" opacity="0.8" />
-                      </>
-                    )}
-
-                    {viewMode === 'perfusion' && (
-                      <>
-                        <ellipse cx="260" cy="140" rx="55" ry="42" fill="rgba(245,166,35,0.4)" stroke="#F5A623" strokeWidth="1.5" />
-                        <circle cx="255" cy="140" r="18" fill="rgba(255,65,84,0.85)" stroke="#FF4154" strokeWidth="2" />
-                      </>
-                    )}
-
-                    {viewMode === 'cta' && (
-                      <>
-                        <path d="M 200 180 L 200 140 L 170 110 M 200 140 L 220 125" stroke="#fff" strokeWidth="4" fill="none" />
-                        <circle cx="220" cy="125" r="6" fill="#FF7869" />
-                        <text x="235" y="130" fill="#FF7869" fontSize="11" fontFamily="monospace">M1 CUTOFF</text>
-                      </>
-                    )}
-                  </svg>
-
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: 14,
-                      left: 14,
-                      padding: '6px 12px',
-                      borderRadius: 10,
-                      background: 'rgba(0,0,0,0.7)',
-                      backdropFilter: 'blur(8px)',
-                      fontSize: 11,
-                      fontFamily: 'monospace',
-                      color: C.ink,
-                      border: '1px solid rgba(255,255,255,0.1)',
-                    }}
-                  >
-                    <div>ASPECTS: <span style={{ color: C.gold, fontWeight: 700 }}>{selectedCase.aspectsScore} / 10</span></div>
-                    <div>LVO: <span style={{ color: C.coral }}>{selectedCase.lvoLocation}</span></div>
-                  </div>
-
-                  <div style={{ position: 'absolute', bottom: 14, right: 14, fontSize: 11 }}>
-                    <span style={{ padding: '3px 8px', borderRadius: 6, background: 'rgba(245,166,35,0.2)', color: C.gold, border: '1px solid rgba(245,166,35,0.4)', fontWeight: 600 }}>
-                      RAPID Protocol Active
-                    </span>
-                  </div>
-                </div>
-
-                {/* 10-point ASPECTS matrix */}
-                <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6 }}>
-                  {selectedCase.aspectsRegions.map((region) => (
-                    <div
-                      key={region.code}
-                      style={{
-                        padding: '6px 4px',
-                        borderRadius: 8,
-                        textAlign: 'center',
-                        fontSize: 10,
-                        border: `1px solid ${region.affected ? 'rgba(255,120,105,0.4)' : 'rgba(0,220,206,0.3)'}`,
-                        background: region.affected ? 'rgba(255,120,105,0.15)' : 'rgba(0,220,206,0.1)',
-                        color: region.affected ? C.coral : C.teal,
-                        fontWeight: 700,
-                      }}
-                    >
-                      <div>{region.code}</div>
-                      <div style={{ fontSize: 9, opacity: 0.8 }}>{region.affected ? '0' : '+1'}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Right Column: Quantitative Mismatch */}
-              <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 16 }}>
-                <div>
-                  <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.mute, marginBottom: 8 }}>
-                    Perfusion Volumetric Mismatch
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                    <div style={{ padding: '14px', borderRadius: 14, background: 'rgba(255,65,84,0.1)', border: '1px solid rgba(255,65,84,0.25)' }}>
-                      <div style={{ fontSize: 11, color: C.mute }}>Ischemic Core (CBF &lt; 30%)</div>
-                      <div style={{ fontSize: 22, fontWeight: 800, color: '#fff', marginTop: 2 }}>{selectedCase.ischemicCore}</div>
-                      <div style={{ fontSize: 11, color: C.coral, marginTop: 4 }}>Irreversible Infarct</div>
-                    </div>
-
-                    <div style={{ padding: '14px', borderRadius: 14, background: 'rgba(245,166,35,0.1)', border: '1px solid rgba(245,166,35,0.25)' }}>
-                      <div style={{ fontSize: 11, color: C.mute }}>Tissue Penumbra (Tmax &gt; 6s)</div>
-                      <div style={{ fontSize: 22, fontWeight: 800, color: '#fff', marginTop: 2 }}>{selectedCase.penumbra}</div>
-                      <div style={{ fontSize: 11, color: C.gold, marginTop: 4 }}>Salvageable Target</div>
-                    </div>
-                  </div>
-
-                  <div style={{ marginTop: 14, padding: 14, borderRadius: 14, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: '#fff', display: 'flex', justifyContent: 'space-between' }}>
-                      <span>Mismatch Volume Ratio:</span>
-                      <strong style={{ color: C.teal }}>{selectedCase.mismatchRatio}</strong>
-                    </div>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: '#fff', display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
-                      <span>EVT Thrombectomy Recommendation:</span>
-                      <strong style={{ color: C.gold }}>Highly Favorable (DEFUSE 3 / DAWN)</strong>
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 14 }}>
-                  {reportSigned ? (
-                    <div style={{ padding: '12px', borderRadius: 14, background: 'rgba(0,220,206,0.1)', border: '1px solid rgba(0,220,206,0.3)', display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <CheckCircle2 style={{ width: 18, height: 18, color: C.teal }} />
-                      <span style={{ fontSize: 12, color: '#fff', fontWeight: 600 }}>
-                        Angiosuite activated · Tele-stroke alert dispatched
-                      </span>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!isAuthenticated) { redirectToLogin(); return; }
-                        setReportSigned(true);
-                      }}
-                      className="lc-btn lc-btn-p"
-                      style={{ width: '100%', justifyContent: 'center' }}
-                    >
-                      <FileCheck2 style={{ width: 16, height: 16 }} />
-                      <span>{isAuthenticated ? 'Verify & Activate Endovascular Team' : 'Sign In to Authorize Dispatch'}</span>
-                    </button>
-                  )}
-                </div>
-              </div>
+            <div style={{ fontSize: 13, color: C.mute, maxWidth: 460, margin: '0 auto' }}>
+              Sample stroke CT/CTA cases and their model outputs have been removed. Upload a study above to run it
+              through the live stroke triage pipeline.
             </div>
           </div>
         </div>

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useRBAC } from '@/context/RBACContext';
 import { ROLE_DEFINITIONS } from '@/types/rbac';
+import { clinicalApiService } from '@/services/clinicalApiService';
 import {
   ShieldCheck,
   Lock,
@@ -62,9 +63,8 @@ export default function QXRPage() {
   const stepsRef = useRef<HTMLDivElement>(null);
   const fileRef  = useRef<HTMLInputElement>(null);
 
-  const { currentUser, isIamAuthenticated } = useRBAC();
+  const { currentUser, isAuthenticated } = useRBAC();
   const router = useRouter();
-  const isAuthenticated = isIamAuthenticated;
 
   const redirectToLogin = useCallback(() => {
     router.push('/login?redirect=/qxr');
@@ -132,6 +132,10 @@ export default function QXRPage() {
   /* ── upload handlers ── */
   const startUpload = async (files: File[]) => {
     if (!files.length) return;
+    if (!isAuthenticated || !currentUser?.id) {
+      redirectToLogin();
+      return;
+    }
     setUploadError(null);
     const file = files[0];
     const name = file.name.toLowerCase();
@@ -154,6 +158,7 @@ export default function QXRPage() {
     try {
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('serviceId', 'qxr');
       setUploadPct(65);
       setUploadPhase('processing');
 
@@ -170,13 +175,70 @@ export default function QXRPage() {
       setUploadPct(100);
       setUploadPhase('done');
 
-      // Save study and redirect to Doctor Workstation
+      // Save the AI-assisted draft.  A model score is not a certified diagnosis.
+      try {
+        const pts = await clinicalApiService.getPatients();
+        const isAuthPatient = currentUser && currentUser.id && currentUser.role === 'patient';
+        const targetPt = pts.length > 0 ? pts[0] : null;
+
+        const effectivePatientId = isAuthPatient
+          ? currentUser.id
+          : targetPt?.id || 'ANON-PATIENT';
+        const effectivePatientName = targetPt?.name
+          || (currentUser?.name && !currentUser.name.includes('Registered') ? currentUser.name : 'Anonymous patient');
+        const effectiveMrn = targetPt?.mrn || 'MRN-NOT-AVAILABLE';
+
+        const primaryDiagnosis = json.data?.primary_diagnosis || 'No high-confidence abnormality detected';
+        const noHighConfidence = Boolean(json.data?.no_high_confidence_finding);
+        const severity = String(json.data?.severity || 'NOT_ASSESSED');
+        const confidencePct = Number(json.data?.confidence_percentage);
+        const reportText = json.data?.patient_report?.what_we_found
+          || json.data?.report?.findings_narrative
+          || 'AI-assisted chest radiograph analysis completed. Clinical correlation is required.';
+
+        await clinicalApiService.saveDiagnosticReport({
+          patientId: effectivePatientId,
+          patientName: effectivePatientName,
+          mrn: effectiveMrn,
+          serviceId: 'qxr',
+          serviceName: 'qXR Chest Radiography AI',
+          findings: primaryDiagnosis,
+          confidence: noHighConfidence || !Number.isFinite(confidencePct)
+            ? 0
+            : Math.max(0, Math.min(1, confidencePct / 100)),
+          riskLevel:
+            severity === 'CRITICAL' || severity === 'HIGH'
+              ? 'High'
+              : severity === 'MODERATE'
+              ? 'Moderate'
+              : severity === 'NORMAL'
+              ? 'Low'
+              : 'Unknown',
+          recommendation: noHighConfidence
+            ? 'No high-confidence AI flag. Correlate with symptoms and prior imaging.'
+            : 'Clinician review of the AI-assisted finding and PACS overlay is required.',
+          clinicalSummary: `${noHighConfidence ? 'No high-confidence abnormality detected. ' : ''}${reportText}`,
+          certified: false,
+          radiologist: 'Pending clinician verification',
+          date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        });
+      } catch (saveErr) {
+        console.error('Failed to auto-save QXR report:', saveErr);
+      }
+
+      // Save study and redirect based on role
       if (typeof window !== 'undefined') {
         sessionStorage.setItem('mipaas_active_dicom_study', JSON.stringify(json.data));
       }
-      setTimeout(() => {
-        router.push('/doctor');
-      }, 500);
+      if (currentUser && currentUser.id && (currentUser.role === 'doctor' || currentUser.role === 'radiologist')) {
+        setTimeout(() => {
+          router.push('/doctor');
+        }, 500);
+      } else if (currentUser && currentUser.id && currentUser.role === 'patient') {
+        setTimeout(() => {
+          router.push('/emr?tab=results');
+        }, 500);
+      }
     } catch (err: unknown) {
       console.error('Upload failed:', err);
       setUploadError(err instanceof Error && err.message ? err.message : 'Error processing Chest X-Ray image');

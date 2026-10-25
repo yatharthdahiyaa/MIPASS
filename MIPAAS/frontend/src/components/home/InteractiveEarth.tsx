@@ -55,7 +55,7 @@ export const DATASET_PATIENTS: DatasetPatient[] = [
     lon: -71.0589,
     condition: 'Asthmatic Airway Management & Preventive Care',
     vitals: 'BP: 124/80 mmHg · Pulse: 72 bpm · SpO2: 98%',
-    attending: 'Dr. Elena Vance, MD',
+    attending: 'Dr. Sarah Mitchell, MD',
     aiPathway: 'qCT Lung & qTrack AI',
     status: 'Active Care',
     statusColor: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
@@ -75,7 +75,7 @@ export const DATASET_PATIENTS: DatasetPatient[] = [
     lon: -123.022,
     condition: 'Solitary Pulmonary Nodule, Essential Hypertension',
     vitals: 'BP: 132/84 mmHg · SpO2: 97%',
-    attending: 'Dr. Elena Vance, MD',
+    attending: 'Dr. Sarah Mitchell, MD',
     aiPathway: 'qCT Lung (Sybil 6-Year Risk)',
     status: 'Diagnostic Follow-up',
     statusColor: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
@@ -135,7 +135,7 @@ export const DATASET_PATIENTS: DatasetPatient[] = [
     lon: -74.006,
     condition: 'Essential Hypertension & Cardiovascular Review',
     vitals: 'BP: 138/88 mmHg · Pulse: 76 bpm',
-    attending: 'Dr. Elena Vance, MD',
+    attending: 'Dr. Sarah Mitchell, MD',
     aiPathway: 'qCardiac (ACDC Ventricle AI)',
     status: 'Active Care',
     statusColor: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
@@ -155,7 +155,7 @@ export const DATASET_PATIENTS: DatasetPatient[] = [
     lon: -0.1278,
     condition: 'Type 2 Diabetes Mellitus & Glycemic Adherence',
     vitals: 'Fasting Glucose: 114 mg/dL · HbA1c: 6.2%',
-    attending: 'Dr. Elena Vance, MD',
+    attending: 'Dr. Sarah Mitchell, MD',
     aiPathway: 'qThermo (Plantar Thermogram)',
     status: 'Stable',
     statusColor: 'bg-teal-500/15 text-teal-300 border-teal-500/30',
@@ -195,7 +195,7 @@ export const DATASET_PATIENTS: DatasetPatient[] = [
     lon: -79.3832,
     condition: 'Thyroid Dysregulation & Preventive Endocrine Review',
     vitals: 'TSH: 2.4 mIU/L · BP: 118/76 mmHg',
-    attending: 'Dr. Elena Vance, MD',
+    attending: 'Dr. Sarah Mitchell, MD',
     aiPathway: 'qDerm & Endocrine AI',
     status: 'Stable',
     statusColor: 'bg-teal-500/15 text-teal-300 border-teal-500/30',
@@ -275,7 +275,7 @@ export const DATASET_PATIENTS: DatasetPatient[] = [
     lon: 103.8198,
     condition: 'Melanocytic Lesion 7-Class AI Assessment',
     vitals: 'Lesion Risk: Benign Dysplastic Nevus',
-    attending: 'Dr. Elena Vance, MD',
+    attending: 'Dr. Sarah Mitchell, MD',
     aiPathway: 'qDerm (HAM10000 Trained)',
     status: 'Stable',
     statusColor: 'bg-teal-500/15 text-teal-300 border-teal-500/30',
@@ -315,7 +315,7 @@ export const DATASET_PATIENTS: DatasetPatient[] = [
     lon: 151.2093,
     condition: 'Preventive Chest Radiography & Nodule Triage',
     vitals: 'Lungs Clear · Cardio-Thoracic Ratio 0.44',
-    attending: 'Dr. Elena Vance, MD',
+    attending: 'Dr. Sarah Mitchell, MD',
     aiPathway: 'qXR (Chest X-Ray 14-Pathology)',
     status: 'Stable',
     statusColor: 'bg-teal-500/15 text-teal-300 border-teal-500/30',
@@ -682,6 +682,7 @@ export default function InteractiveEarth() {
   const [selectedPatient, setSelectedPatient] = useState<DatasetPatient | null>(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [isHoveringMarker, setIsHoveringMarker] = useState(false);
+  const [webglUnavailable, setWebglUnavailable] = useState(false);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -696,7 +697,15 @@ export default function InteractiveEarth() {
     camera.position.set(0, 15, 370);
 
     // 2. High-Fidelity WebGL Renderer with ACES Filmic Tone Mapping
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+    } catch (error) {
+      // WebGL can be blocked (GPU deny-list, privacy settings, low-memory devices)
+      console.warn('WebGL unavailable; showing static globe fallback.', error);
+      queueMicrotask(() => setWebglUnavailable(true));
+      return;
+    }
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -1078,11 +1087,13 @@ export default function InteractiveEarth() {
 
     // 12. Animation Loop with Real Planetary Dynamics
     let animationFrameId: number;
-    let clock = new THREE.Clock();
+    const timer = new THREE.Timer();
+    timer.connect(document);
 
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
-      const elapsedTime = clock.getElapsedTime();
+      timer.update();
+      const elapsedTime = timer.getElapsed();
 
       // Gentle auto-spin
       if (autoRotate && !selectedPatient) {
@@ -1127,6 +1138,7 @@ export default function InteractiveEarth() {
       if (domElement && domElement.parentNode) {
         domElement.parentNode.removeChild(domElement);
       }
+      timer.dispose();
       renderer.dispose();
       earthGeometry.dispose();
       earthMaterial.dispose();
@@ -1140,10 +1152,22 @@ export default function InteractiveEarth() {
   return (
     <div className="relative w-full h-[520px] sm:h-[600px] lg:h-[660px] flex items-center justify-center select-none">
       {/* Three.js Canvas Container */}
-      <div
-        ref={containerRef}
-        className={`w-full h-full ${isHoveringMarker ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'}`}
-      />
+      {webglUnavailable ? (
+        <div className="w-full h-full flex flex-col items-center justify-center gap-4">
+          <div
+            aria-hidden="true"
+            className="w-[260px] h-[260px] sm:w-[380px] sm:h-[380px] rounded-full bg-[radial-gradient(circle_at_32%_28%,#bae6fd_0%,#38bdf8_18%,#1d4ed8_52%,#0f172a_100%)] shadow-[0_30px_90px_rgba(29,78,216,0.35)] ring-1 ring-white/40"
+          />
+          <p className="text-xs text-white bg-slate-950/60 backdrop-blur-md px-4 py-2 rounded-full border border-white/20">
+            3D globe is unavailable on this device. The clinical dataset is still available below.
+          </p>
+        </div>
+      ) : (
+        <div
+          ref={containerRef}
+          className={`w-full h-full ${isHoveringMarker ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'}`}
+        />
+      )}
 
       {/* Floating Medical Badges matching Carevia Theme */}
       {/* Node 1: Medical Cross */}
@@ -1197,15 +1221,17 @@ export default function InteractiveEarth() {
       </div>
 
       {/* Interactive Helper Banner */}
-      <div className="absolute bottom-2 left-4 z-10 text-[11px] text-slate-600 bg-white/85 px-3 py-1.5 rounded-full border border-white/80 shadow-xs pointer-events-none flex items-center gap-1.5 backdrop-blur-md">
-        <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-        <span>Click any blinking patient dot to view clinical details</span>
-      </div>
+      {!webglUnavailable && (
+        <div className="hidden sm:flex absolute bottom-2 left-4 z-10 text-[11px] text-slate-600 bg-white/85 px-3 py-1.5 rounded-full border border-white/80 shadow-xs pointer-events-none items-center gap-1.5 backdrop-blur-md">
+          <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+          <span>Click a patient dot for details</span>
+        </div>
+      )}
 
       {/* Dataset Legend */}
       <div className="absolute bottom-2 right-4 z-10 text-[11px] font-mono text-slate-600 bg-white/85 px-3 py-1.5 rounded-full border border-white/80 shadow-xs pointer-events-none backdrop-blur-md">
         <span className="w-2 h-2 rounded-full bg-blue-600 inline-block mr-1.5 animate-pulse" />
-        Clinical Dataset Cohort · {DATASET_PATIENTS.length} Mapped Patients
+        {DATASET_PATIENTS.length} mapped patients
       </div>
 
       {/* ==============================================================

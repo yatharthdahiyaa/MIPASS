@@ -12,16 +12,12 @@ import {
   Lock,
   Unlock,
   CheckCircle2,
-  AlertTriangle,
   FileText,
   Sliders,
-  Eye,
   RefreshCw,
   Upload,
-  Layers,
   Zap,
   Clock,
-  Crosshair,
   ArrowRight,
   Siren,
   Maximize2,
@@ -31,6 +27,7 @@ import {
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import AnatomyViewer from '@/components/common/AnatomyViewer';
+import { clinicalApiService } from '@/services/clinicalApiService';
 
 /* ── colour tokens ── */
 const C = {
@@ -68,84 +65,14 @@ const FEATURES = [
   { tag: 'Level 1 Trauma', title: 'STAT PACS & Pager Push', desc: 'Native HL7/FHIR push alerts to EPIC, Cerner, and trauma on-call smartphones with interactive thumbnail views.', stat: 'Zero PACS Delay' },
 ];
 
-/* ── emergency clinical cases ── */
-const EMERGENCY_CASES = [
-  {
-    id: 'qer-01',
-    label: 'Case A: Acute Right Subdural Hematoma (SDH)',
-    demographics: '59M · Trauma Code STAT · GCS 9',
-    bleedType: 'Acute Subdural Hematoma',
-    volume: '38.4 cc',
-    midlineShift: '6.8 mm (Right to Left)',
-    isStatCritical: true,
-    herniationRisk: 'High (Impending Uncal)',
-    findings: 'Hyperdense crescentic extra-axial fluid collection along right cerebral convexity crossing suture lines. 6.8 mm midline shift with marked compression of ipsilateral lateral ventricle.',
-    abnormalities: [
-      { name: 'Acute Subdural Hemorrhage', probability: 98.7, critical: true, location: 'Right Frontoparietal' },
-      { name: 'Midline Shift (>5mm)', probability: 96.2, critical: true, location: '6.8 mm deviation' },
-      { name: 'Mass Effect / Effacement', probability: 91.5, critical: true, location: 'Right Lateral Ventricle' },
-      { name: 'Impending Uncal Herniation', probability: 84.0, critical: true, location: 'Medial Temporal Lobe' },
-      { name: 'Calvarial Skull Fracture', probability: 14.2, critical: false, location: 'None detected' },
-    ],
-    recommendedAction: 'EMERGENCY: Immediate neurosurgical consultation for decompressive craniotomy / evacuation.',
-  },
-  {
-    id: 'qer-02',
-    label: 'Case B: Spontaneous Subarachnoid Hemorrhage (SAH)',
-    demographics: '48F · Thunderclap Headache · GCS 13',
-    bleedType: 'Subarachnoid Hemorrhage',
-    volume: '14.2 cc (Basal Cisterns)',
-    midlineShift: '0.8 mm (Minimal)',
-    isStatCritical: true,
-    herniationRisk: 'Low (Hydrocephalus Risk)',
-    findings: 'Extensive hyperattenuation in basal cisterns, bilateral sylvian fissures, and anterior interhemispheric fissure consistent with ruptured anterior communicating artery aneurysm.',
-    abnormalities: [
-      { name: 'Subarachnoid Hemorrhage', probability: 99.1, critical: true, location: 'Basal Cisterns & Sylvian' },
-      { name: 'Early Acute Hydrocephalus', probability: 82.0, critical: true, location: 'Temporal Horn Dilatation' },
-      { name: 'Intraventricular Extension', probability: 74.6, critical: true, location: '4th Ventricle Sump' },
-      { name: 'Midline Shift', probability: 6.4, critical: false, location: '0.8 mm (Within Normal)' },
-      { name: 'Parenchymal Hematoma', probability: 8.1, critical: false, location: 'Absent' },
-    ],
-    recommendedAction: 'STAT CTA head/neck to identify ruptured aneurysm + NICU admission with BP control.',
-  },
-  {
-    id: 'qer-03',
-    label: 'Case C: Traumatic Intraparenchymal Bleed & Contusion',
-    demographics: '31M · Motor Vehicle Accident · GCS 11',
-    bleedType: 'Intracerebral Hemorrhage (ICH)',
-    volume: '22.8 cc',
-    midlineShift: '3.4 mm (Left to Right)',
-    isStatCritical: true,
-    herniationRisk: 'Moderate (Subfalcine Vector)',
-    findings: 'High-density focus in left frontal lobe parenchyma with surrounding rim of hypodense perilesional vasogenic edema and contralateral midline displacement of 3.4 mm.',
-    abnormalities: [
-      { name: 'Intraparenchymal Bleed (ICH)', probability: 97.4, critical: true, location: 'Left Frontal Polar' },
-      { name: 'Perilesional Vasogenic Edema', probability: 93.1, critical: true, location: 'Surrounding Parenchyma' },
-      { name: 'Midline Falx Shift', probability: 88.5, critical: true, location: '3.4 mm displacement' },
-      { name: 'Linear Calvarial Fracture', probability: 79.2, critical: true, location: 'Left Frontal Bone' },
-      { name: 'Subdural Fluid Collection', probability: 21.0, critical: false, location: 'Trace Non-surgical' },
-    ],
-    recommendedAction: 'Trauma ICU neuro-monitoring, serial repeat CT head in 4-6h, ICP monitor placement eval.',
-  },
-];
-
-/* ── CT window presets ── */
-const WINDOW_PRESETS = [
-  { id: 'brain', label: 'Brain (WW: 80, WL: 40)', ww: 80, wl: 40 },
-  { id: 'subdural', label: 'Subdural (WW: 150, WL: 75)', ww: 150, wl: 75 },
-  { id: 'bone', label: 'Bone (WW: 2500, WL: 500)', ww: 2500, wl: 500 },
-  { id: 'stroke', label: 'Stroke (WW: 30, WL: 30)', ww: 30, wl: 30 },
-];
-
 type UploadPhase = 'idle' | 'uploading' | 'processing' | 'done';
 
 export default function QERPage() {
   const stepsRef = useRef<HTMLDivElement>(null);
   const fileRef  = useRef<HTMLInputElement>(null);
 
-  const { currentUser, hasPermission, addAuditLog } = useRBAC();
+  const { currentUser, isAuthenticated } = useRBAC();
   const router = useRouter();
-  const isAuthenticated = hasPermission('jobs:create') || hasPermission('jobs:read');
 
   const redirectToLogin = useCallback(() => {
     router.push('/login?redirect=/qer');
@@ -159,16 +86,6 @@ export default function QERPage() {
   const [dragOver, setDragOver] = useState(false);
   const [countersStarted, setCountersStarted] = useState(false);
   const [counters, setCounters] = useState([0, 0, 0, 0]);
-
-  /* ── workstation state ── */
-  const [selectedCase, setSelectedCase] = useState(EMERGENCY_CASES[0]);
-  const [selectedWindow, setSelectedWindow] = useState(WINDOW_PRESETS[0]);
-  const [showBleedMask, setShowBleedMask] = useState(true);
-  const [showMidlineCaliper, setShowMidlineCaliper] = useState(true);
-  const [showVentricles, setShowVentricles] = useState(true);
-  const [statPagingActivated, setStatPagingActivated] = useState(false);
-  const [reportSigned, setReportSigned] = useState(false);
-  const [signedAt, setSignedAt] = useState<string | null>(null);
 
   const COUNTER_TARGETS = [98.7, 12, 0.1, 5];
   const COUNTER_SUFFIXES = ['%', 's', 'mm', ''];
@@ -220,6 +137,10 @@ export default function QERPage() {
   /* ── real DICOM file upload & auto-redirect ── */
   const handleFileSelect = async (files: FileList | File[] | null) => {
     if (!files || files.length === 0) return;
+    if (!isAuthenticated || !currentUser?.id) {
+      redirectToLogin();
+      return;
+    }
     setUploadError(null);
     const file = files[0];
     const name = file.name.toLowerCase();
@@ -239,6 +160,7 @@ export default function QERPage() {
     try {
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('serviceId', 'qer');
       setUploadPct(65);
       setUploadPhase('processing');
 
@@ -255,50 +177,59 @@ export default function QERPage() {
       setUploadPct(100);
       setUploadPhase('done');
 
-      // Save study and auto-redirect to Doctor Workstation
+      // Auto-save the AI-assisted draft to backend clinical records
+      try {
+        const pts = await clinicalApiService.getPatients();
+        const isAuthPatient = currentUser && currentUser.id && currentUser.role === 'patient';
+        const targetPt = pts.length > 0 ? pts[0] : null;
+
+        const effectivePatientId = isAuthPatient
+          ? currentUser.id
+          : (targetPt ? targetPt.id : 'ANON-PATIENT');
+
+        const effectivePatientName = isAuthPatient
+          ? currentUser.name
+          : (targetPt ? targetPt.name : 'Anonymous patient');
+
+        const effectiveMrn = (targetPt && targetPt.mrn) ? targetPt.mrn : 'MRN-NOT-AVAILABLE';
+
+        await clinicalApiService.saveDiagnosticReport({
+          patientId: effectivePatientId,
+          patientName: effectivePatientName,
+          mrn: effectiveMrn,
+          serviceId: 'qer',
+          serviceName: 'qER Emergency Head CT AI',
+          findings: json.data?.findings?.[0]?.label || 'Emergency CT Neuro-Triage Completed',
+          confidence: json.data?.findings?.[0]?.probability || 0.95,
+          riskLevel: 'Critical',
+          recommendation: 'Immediate neurosurgical consult and emergent care escalation.',
+          clinicalSummary: `Emergency Head CT triage analysis completed. Finding: ${json.data?.findings?.[0]?.label || 'Intracranial Assessment Complete'}.`,
+          certified: false,
+          radiologist: 'Pending clinician verification',
+          date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        });
+      } catch (saveErr) {
+        console.error('Failed to auto-save qER report to clinical backend:', saveErr);
+      }
+
+      // Save study and redirect based on role
       if (typeof window !== 'undefined') {
         sessionStorage.setItem('mipaas_active_dicom_study', JSON.stringify(json.data));
       }
-      setTimeout(() => {
-        router.push('/doctor');
-      }, 500);
+      if (currentUser && currentUser.id && (currentUser.role === 'doctor' || currentUser.role === 'radiologist')) {
+        setTimeout(() => {
+          router.push('/doctor');
+        }, 500);
+      } else if (currentUser && currentUser.id && currentUser.role === 'patient') {
+        setTimeout(() => {
+          router.push('/emr?tab=results');
+        }, 500);
+      }
     } catch (err: unknown) {
       console.error('Upload failed:', err);
       setUploadError(err instanceof Error && err.message ? err.message : 'Error processing DICOM image');
       setUploadPhase('idle');
     }
-  };
-
-  const handleActivateSTAT = () => {
-    setStatPagingActivated(true);
-    addAuditLog(
-      'trauma:or_escalation',
-      `study:${selectedCase.id}`,
-      'allow',
-      {
-        bleedType: selectedCase.bleedType,
-        volume: selectedCase.volume,
-        midlineShift: selectedCase.midlineShift,
-        escalatedBy: currentUser.name,
-        role: currentUser.role,
-      }
-    );
-  };
-
-  const handleSignReport = () => {
-    const time = new Date().toLocaleTimeString();
-    setReportSigned(true);
-    setSignedAt(time);
-    addAuditLog(
-      'report:signed',
-      `study:${selectedCase.id}`,
-      'allow',
-      {
-        verifiedBy: currentUser.name,
-        role: currentUser.role,
-        findings: selectedCase.findings,
-      }
-    );
   };
 
   return (
@@ -314,8 +245,8 @@ export default function QERPage() {
         .qer-btn { display: inline-flex; align-items: center; gap: 8px; border-radius: 10px; padding: 13px 26px; font-weight: 600; font-size: 14px; border: 1px solid ${C.line}; background: ${C.bg2}; color: ${C.ink}; cursor: pointer; transition: background .2s, border-color .2s; text-decoration: none; }
         .qer-btn:hover { border-color: ${C.teal}; background: ${C.bg3}; }
         .qer-btn:focus-visible { outline: 2px solid ${C.teal}; outline-offset: 3px; }
-        .qer-btn-p, .qer-btn-stat { background: ${C.coral}; border: 1px solid ${C.coral}; color: #0B1926; font-weight: 700; }
-        .qer-btn-p:hover, .qer-btn-stat:hover { background: #F48C7E; border-color: #F48C7E; }
+        .qer-btn-p { background: ${C.coral}; border: 1px solid ${C.coral}; color: #0B1926; font-weight: 700; }
+        .qer-btn-p:hover { background: #F48C7E; border-color: #F48C7E; }
         .qer-tag { font-size: 12px; padding: 5px 12px; border-radius: 6px; background: ${C.bg2}; color: ${C.teal}; font-weight: 600; letter-spacing: .02em; }
         
         .qer-hero { position: relative; min-height: 100vh; display: flex; align-items: center; padding: 120px 0 80px; overflow: hidden; }
@@ -348,9 +279,6 @@ export default function QERPage() {
         .qer-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; text-align: center; }
         .qer-stat-n { font: 700 clamp(36px, 4.5vw, 54px) Sora; font-variant-numeric: tabular-nums; color: ${C.ink}; }
         .qer-stat-l { color: ${C.mute}; font-size: 13px; margin-top: 4px; }
-
-        .qer-station { border-radius: 24px; border: 1px solid rgba(255,255,255,.1); background: #0A1823; overflow: hidden; }
-        .qer-station-header { padding: 18px 24px; border-bottom: 1px solid rgba(255,255,255,.08); display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,.25); }
 
         @media(max-width:960px){ .qer-hero-grid { grid-template-columns: 1fr; } .qer-steps, .qer-grid, .qer-stats { grid-template-columns: 1fr 1fr; } .qer-stage { height: 380px; } }
         @media(max-width:600px){ .qer-steps, .qer-grid { grid-template-columns: 1fr; } .qer-stats { grid-template-columns: 1fr 1fr; } }
@@ -492,8 +420,8 @@ export default function QERPage() {
               {uploadPhase === 'done' && (
                 <>
                   <CheckCircle2 style={{ width: 44, height: 44, color: C.teal }} />
-                  <div style={{ font: '600 18px Sora', color: '#fff' }}>STAT Triage Complete: Acute Hemorrhage Detected</div>
-                  <div style={{ color: C.mute, fontSize: 13 }}>Bleed Volume: 38.4 cc · Midline Shift: 6.8 mm · High Herniation Risk</div>
+                  <div style={{ font: '600 18px Sora', color: '#fff' }}>STAT Triage Complete — Transferring to Workstation...</div>
+                  <div style={{ color: C.mute, fontSize: 13 }}>Transferring study to Doctor Workstation</div>
                   <a href="#clinical-station" className="qer-btn qer-btn-p" style={{ marginTop: 8 }}>
                     Open Emergency Trauma Workstation
                   </a>
@@ -564,298 +492,31 @@ export default function QERPage() {
         {/* ━━━━━ EMERGENCY TRAUMA WORKSTATION ━━━━━ */}
         <section className="qer-section qer-alt" id="clinical-station">
           <div className="qer-wrap">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 24, flexWrap: 'wrap', gap: 16 }}>
-              <div>
-                <span className="qer-tag">STAT Trauma Diagnostic Console</span>
-                <h2 className="qer-h2" style={{ margin: '8px 0 0' }}>Emergency Head CT Workstation & Caliper</h2>
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                {EMERGENCY_CASES.map((c) => (
-                  <button
-                    key={c.id}
-                    onClick={() => { setSelectedCase(c); setReportSigned(false); setStatPagingActivated(false); }}
-                    className="qer-btn"
-                    style={{
-                      background: selectedCase.id === c.id ? 'rgba(255,120,105,.15)' : 'rgba(255,255,255,.03)',
-                      borderColor: selectedCase.id === c.id ? C.coral : C.line,
-                      color: selectedCase.id === c.id ? '#fff' : C.mute,
-                      fontSize: 13,
-                      padding: '8px 16px',
-                    }}
-                  >
-                    {c.id.toUpperCase()}
-                  </button>
-                ))}
-              </div>
+            <div style={{ marginBottom: 24 }}>
+              <span className="qer-tag">STAT Trauma Diagnostic Console</span>
+              <h2 className="qer-h2" style={{ margin: '8px 0 0' }}>Emergency Head CT Workstation</h2>
             </div>
+            <p className="qer-sub" style={{ marginBottom: 36 }}>
+              Upload a head CT above to run it through the live emergency triage pipeline.
+            </p>
 
-            <div className="qer-station">
-              <div className="qer-station-header">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <Siren style={{ width: 18, height: 18, color: C.coral }} />
-                  <span style={{ font: '600 14px Sora' }}>{selectedCase.label}</span>
-                  <span style={{ fontSize: 12, color: C.mute }}>· {selectedCase.demographics}</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: selectedCase.isStatCritical ? C.red : C.teal, fontWeight: 700 }}>
-                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: selectedCase.isStatCritical ? C.red : C.teal }} />
-                    {selectedCase.isStatCritical ? 'STAT EMERGENCY CODE 1' : 'STABLE / ROUTINE'}
-                  </div>
-                </div>
+            <div
+              style={{
+                borderRadius: 28,
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                background: '#091927',
+                padding: '32px',
+                boxShadow: '0 20px 50px rgba(0, 0, 0, 0.5)',
+                textAlign: 'center',
+              }}
+            >
+              <FileText style={{ width: 28, height: 28, color: C.teal, marginBottom: 12 }} />
+              <div style={{ fontSize: 17, fontWeight: 700, color: '#fff', marginBottom: 6 }}>
+                No clinical cases available
               </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 24, padding: 24 }}>
-                {/* Visualizer Canvas & Controls */}
-                <div>
-                  <div style={{ position: 'relative', height: 420, borderRadius: 18, background: '#030609', border: '1px solid rgba(255,255,255,.08)', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    {/* Simulated Axial Head CT Slice */}
-                    <div style={{ position: 'absolute', inset: 0, opacity: 0.9, background: 'radial-gradient(ellipse at 50% 50%, #15222E 0%, #060B11 75%)' }}>
-                      <svg viewBox="0 0 400 400" style={{ width: '100%', height: '100%' }}>
-                        {/* Cranium Calvarium (Skull bone ring) */}
-                        <ellipse cx="200" cy="200" rx="135" ry="165" fill="#0C141C" stroke={selectedWindow.id === 'bone' ? '#fff' : '#6A8092'} strokeWidth={selectedWindow.id === 'bone' ? '12' : '6'} />
-                        {/* Brain parenchyma outline */}
-                        <ellipse cx="200" cy="200" rx="122" ry="152" fill="#182836" stroke="none" />
-                        
-                        {/* Lateral Ventricles (compressed by bleed) */}
-                        {showVentricles && (
-                          <g opacity="0.6">
-                            {/* Left ventricle (normal or dilated) */}
-                            <path d="M 175 160 Q 155 200 170 230 Q 185 205 175 160" fill="#060B11" stroke="#334C60" strokeWidth="1.5" />
-                            {/* Right ventricle (effaced/compressed) */}
-                            <path d="M 215 175 Q 225 200 220 220 Q 212 205 215 175" fill="#060B11" stroke="#334C60" strokeWidth="1.5" opacity={selectedCase.id === 'qer-01' ? '0.3' : '0.8'} />
-                          </g>
-                        )}
-
-                        {/* Midline Falx Cerebri Deviation Caliper */}
-                        {showMidlineCaliper && (
-                          <g>
-                            {/* True Anatomical Midline (Dashed white) */}
-                            <line x1="200" y1="50" x2="200" y2="350" stroke="#7B8FA0" strokeWidth="1.5" strokeDasharray="6 4" opacity="0.6" />
-                            {/* Shifted Midline (Solid coral) */}
-                            {selectedCase.id === 'qer-01' && (
-                              <>
-                                <path d="M 200 50 Q 165 200 200 350" fill="none" stroke={C.coral} strokeWidth="2.5" />
-                                {/* Caliper measurement line */}
-                                <line x1="200" y1="200" x2="168" y2="200" stroke="#fff" strokeWidth="2" />
-                                <circle cx="200" cy="200" r="3" fill="#fff" />
-                                <circle cx="168" cy="200" r="3" fill={C.coral} />
-                                <text x="145" y="195" fill={C.coral} fontSize="12" fontWeight="700">6.8mm</text>
-                              </>
-                            )}
-                            {selectedCase.id === 'qer-03' && (
-                              <>
-                                <path d="M 200 50 Q 218 200 200 350" fill="none" stroke={C.coral} strokeWidth="2.5" />
-                                <line x1="200" y1="200" x2="217" y2="200" stroke="#fff" strokeWidth="2" />
-                                <text x="222" y="195" fill={C.coral} fontSize="12" fontWeight="700">3.4mm</text>
-                              </>
-                            )}
-                          </g>
-                        )}
-                      </svg>
-                    </div>
-
-                    {/* Hyperdense Hemorrhage Segmentation Overlays */}
-                    {showBleedMask && selectedCase.id === 'qer-01' && (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          top: '25%',
-                          right: '18%',
-                          width: 70,
-                          height: 180,
-                          borderRadius: '0 80px 80px 0',
-                          border: `3px solid ${C.coral}`,
-                          background: 'radial-gradient(circle, rgba(255,69,58,0.7) 0%, rgba(255,120,105,0.4) 80%)',
-                          animation: 'pulse 1.8s infinite',
-                        }}
-                      >
-                        <div style={{ position: 'absolute', top: 10, right: -12, fontSize: 10, background: C.red, color: '#fff', padding: '2px 6px', borderRadius: 4, fontWeight: 700, whiteSpace: 'nowrap' }}>
-                          SDH: 38.4 cc
-                        </div>
-                      </div>
-                    )}
-
-                    {showBleedMask && selectedCase.id === 'qer-02' && (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          top: '40%',
-                          left: '42%',
-                          width: 65,
-                          height: 65,
-                          borderRadius: '50%',
-                          background: 'radial-gradient(circle, rgba(255,69,58,0.8) 0%, rgba(255,120,105,0.3) 70%)',
-                        }}
-                      >
-                        <div style={{ position: 'absolute', top: -18, left: -20, fontSize: 10, background: C.red, color: '#fff', padding: '2px 6px', borderRadius: 4, fontWeight: 700, whiteSpace: 'nowrap' }}>
-                          SAH: Basal Cisterns
-                        </div>
-                      </div>
-                    )}
-
-                    {showBleedMask && selectedCase.id === 'qer-03' && (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          top: '28%',
-                          left: '26%',
-                          width: 75,
-                          height: 75,
-                          borderRadius: '50%',
-                          border: `2px solid ${C.red}`,
-                          background: 'radial-gradient(circle, rgba(255,69,58,0.75) 0%, rgba(245,166,35,0.3) 70%)',
-                        }}
-                      >
-                        <div style={{ position: 'absolute', top: -16, left: 0, fontSize: 10, background: C.red, color: '#fff', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>
-                          ICH: 22.8 cc
-                        </div>
-                      </div>
-                    )}
-
-                    {/* HUD Overlay Stats */}
-                    <div style={{ position: 'absolute', bottom: 16, left: 16, right: 16, display: 'flex', justifyContent: 'space-between', background: 'rgba(6,11,17,.82)', padding: '10px 14px', borderRadius: 12, border: '1px solid rgba(255,255,255,.08)', fontSize: 12 }}>
-                      <div>Window: <b style={{ color: '#fff' }}>{selectedWindow.label}</b></div>
-                      <div>Herniation: <b style={{ color: C.coral }}>{selectedCase.herniationRisk}</b></div>
-                    </div>
-                  </div>
-
-                  {/* Window Presets & Layer Toggles */}
-                  <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
-                    {WINDOW_PRESETS.map((w) => (
-                      <button
-                        key={w.id}
-                        onClick={() => setSelectedWindow(w)}
-                        className="qer-btn"
-                        style={{
-                          padding: '6px 12px',
-                          fontSize: 11,
-                          background: selectedWindow.id === w.id ? 'rgba(255,120,105,.2)' : 'rgba(255,255,255,.03)',
-                          borderColor: selectedWindow.id === w.id ? C.coral : C.line,
-                          color: selectedWindow.id === w.id ? '#fff' : C.mute,
-                        }}
-                      >
-                        {w.label.split(' ')[0]} Window
-                      </button>
-                    ))}
-                  </div>
-
-                  <div style={{ display: 'flex', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
-                    <button
-                      onClick={() => setShowBleedMask(!showBleedMask)}
-                      className="qer-btn"
-                      style={{ padding: '6px 14px', fontSize: 12, background: showBleedMask ? 'rgba(255,69,58,.15)' : 'rgba(255,255,255,.03)', borderColor: showBleedMask ? C.red : C.line }}
-                    >
-                      <Layers style={{ width: 14, height: 14 }} /> Bleed Segmentation
-                    </button>
-                    <button
-                      onClick={() => setShowMidlineCaliper(!showMidlineCaliper)}
-                      className="qer-btn"
-                      style={{ padding: '6px 14px', fontSize: 12, background: showMidlineCaliper ? 'rgba(255,120,105,.15)' : 'rgba(255,255,255,.03)', borderColor: showMidlineCaliper ? C.coral : C.line }}
-                    >
-                      <Crosshair style={{ width: 14, height: 14 }} /> Midline Caliper
-                    </button>
-                    <button
-                      onClick={() => setShowVentricles(!showVentricles)}
-                      className="qer-btn"
-                      style={{ padding: '6px 14px', fontSize: 12, background: showVentricles ? 'rgba(0,220,206,.15)' : 'rgba(255,255,255,.03)', borderColor: showVentricles ? C.teal : C.line }}
-                    >
-                      <Eye style={{ width: 14, height: 14 }} /> Ventricle Effacement
-                    </button>
-                  </div>
-                </div>
-
-                {/* Quantitative Emergency Metrics & STAT Action */}
-                <div>
-                  {/* Critical Volumetric Dashboard */}
-                  <div style={{ background: 'rgba(255,69,58,.08)', border: '1px solid rgba(255,69,58,.3)', borderRadius: 16, padding: 18, marginBottom: 16 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                      <span style={{ fontSize: 13, color: '#fff', fontWeight: 600 }}>Emergency Caliper & Volumetrics</span>
-                      <span style={{ font: '700 13px Sora', color: C.coral }}>STAT PRIORITY</span>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, margin: '10px 0' }}>
-                      <div style={{ background: 'rgba(0,0,0,.3)', padding: '10px 14px', borderRadius: 12 }}>
-                        <span style={{ fontSize: 11, color: C.mute }}>Bleed Volume</span>
-                        <div style={{ font: '700 20px Sora', color: C.red, marginTop: 2 }}>{selectedCase.volume}</div>
-                      </div>
-                      <div style={{ background: 'rgba(0,0,0,.3)', padding: '10px 14px', borderRadius: 12 }}>
-                        <span style={{ fontSize: 11, color: C.mute }}>Midline Falx Shift</span>
-                        <div style={{ font: '700 20px Sora', color: C.coral, marginTop: 2 }}>{selectedCase.midlineShift}</div>
-                      </div>
-                    </div>
-
-                    <div style={{ fontSize: 12, color: C.mute, marginTop: 6, lineHeight: 1.5 }}>
-                      <b>Findings:</b> {selectedCase.findings}
-                    </div>
-                  </div>
-
-                  {/* Abnormalities Breakdown */}
-                  <div style={{ background: 'rgba(255,255,255,.02)', border: '1px solid rgba(255,255,255,.07)', borderRadius: 16, padding: 16, marginBottom: 16 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12, color: '#fff' }}>Hemorrhage & Calvarial Abnormalities</div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {selectedCase.abnormalities.map((a, idx) => (
-                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, padding: '4px 0', borderBottom: idx < selectedCase.abnormalities.length - 1 ? '1px solid rgba(255,255,255,.04)' : 'none' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            {a.critical ? <AlertTriangle style={{ width: 13, height: 13, color: C.red }} /> : <CheckCircle2 style={{ width: 13, height: 13, color: C.teal }} />}
-                            <span style={{ color: a.critical ? '#fff' : C.mute }}>{a.name}</span>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span style={{ color: C.mute, fontSize: 11 }}>{a.location}</span>
-                            <span style={{ fontWeight: 600, color: a.probability > 80 ? C.red : C.mute }}>
-                              {a.probability}%
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* STAT Neuro-OR Activation Button */}
-                  <div style={{ background: 'rgba(255,69,58,.06)', border: '1px solid rgba(255,69,58,.3)', borderRadius: 16, padding: 16, marginBottom: 16 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                      <div style={{ font: '600 13px Sora', color: '#fff' }}>Trauma Center Escalation</div>
-                      {statPagingActivated && (
-                        <span style={{ fontSize: 11, color: C.teal, fontWeight: 700 }}>PAGER DISPATCHED</span>
-                      )}
-                    </div>
-                    <p style={{ margin: '0 0 12px', fontSize: 12, color: C.mute, lineHeight: 1.5 }}>
-                      {selectedCase.recommendedAction}
-                    </p>
-                    <button
-                      onClick={handleActivateSTAT}
-                      className={`qer-btn ${statPagingActivated ? 'qer-btn' : 'qer-btn-stat'}`}
-                      style={{ width: '100%', justifyContent: 'center' }}
-                    >
-                      <Siren style={{ width: 16, height: 16 }} />
-                      {statPagingActivated ? 'Neurosurgery & OR Team Notified (ACK Received)' : 'Activate STAT Neuro-OR Pager & Trauma Escalation'}
-                    </button>
-                  </div>
-
-                  {/* RBAC Sign-off Console */}
-                  <div style={{ background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.08)', borderRadius: 16, padding: 16 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <div style={{ font: '600 13px Sora', color: '#fff' }}>STAT Physician Sign-Off</div>
-                        <div style={{ fontSize: 11, color: C.mute }}>
-                          Active User: {currentUser.name} ({currentUser.role})
-                        </div>
-                      </div>
-                      {reportSigned ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: C.teal, fontSize: 12, fontWeight: 600 }}>
-                          <CheckCircle2 style={{ width: 15, height: 15 }} /> Signed at {signedAt}
-                        </div>
-                      ) : (
-                        <button
-                          onClick={handleSignReport}
-                          className="qer-btn qer-btn-p"
-                          style={{ padding: '6px 16px', fontSize: 12 }}
-                        >
-                          Sign STAT Report
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
+              <div style={{ fontSize: 13, color: C.mute, maxWidth: 460, margin: '0 auto' }}>
+                Sample head CTs and their model outputs have been removed. Upload a study above to run it through
+                the live emergency triage pipeline.
               </div>
             </div>
           </div>

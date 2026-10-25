@@ -88,6 +88,13 @@ export default function LungCancerEnhanced() {
     isIamAuthenticated,
   } = useRBAC();
 
+  const userRoleDef = (currentUser?.role && ROLE_DEFINITIONS[currentUser.role]) || ROLE_DEFINITIONS['radiologist'] || {
+    title: 'Clinical User',
+    badgeBg: '#f1f5f9',
+    borderColor: '#cbd5e1',
+    badgeColor: '#475569',
+  };
+
   /* ── router for login redirect ── */
   const router = useRouter();
 
@@ -188,6 +195,7 @@ export default function LungCancerEnhanced() {
     try {
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('serviceId', 'lung-cancer');
       setUploadPct(65);
       setUploadPhase('processing');
 
@@ -400,11 +408,11 @@ export default function LungCancerEnhanced() {
                       gap: 8,
                       padding: '6px 14px',
                       borderRadius: 999,
-                      background: ROLE_DEFINITIONS[currentUser.role].badgeBg,
-                      border: `1px solid ${ROLE_DEFINITIONS[currentUser.role].borderColor}`,
+                      background: userRoleDef.badgeBg,
+                      border: `1px solid ${userRoleDef.borderColor}`,
                       fontSize: 12,
                       fontWeight: 600,
-                      color: ROLE_DEFINITIONS[currentUser.role].badgeColor,
+                      color: userRoleDef.badgeColor,
                     }}
                   >
                     <Unlock style={{ width: 12, height: 12 }} />
@@ -662,7 +670,7 @@ export default function LungCancerEnhanced() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <Unlock style={{ width: 15, height: 15, color: C.teal }} />
                   <span>
-                    Authenticated Session: <strong style={{ color: '#fff' }}>{currentUser.name}</strong> ({ROLE_DEFINITIONS[currentUser.role].title})
+                    Authenticated Session: <strong style={{ color: '#fff' }}>{currentUser.name}</strong> ({userRoleDef.title})
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
@@ -946,15 +954,15 @@ export default function LungCancerEnhanced() {
                       gap: 8,
                       padding: '6px 14px',
                       borderRadius: 999,
-                      background: ROLE_DEFINITIONS[currentUser.role].badgeBg,
-                      border: `1px solid ${ROLE_DEFINITIONS[currentUser.role].borderColor}`,
+                      background: userRoleDef.badgeBg,
+                      border: `1px solid ${userRoleDef.borderColor}`,
                       fontSize: 12,
                       fontWeight: 600,
-                      color: ROLE_DEFINITIONS[currentUser.role].badgeColor,
+                      color: userRoleDef.badgeColor,
                     }}
                   >
                     <CheckCircle2 style={{ width: 12, height: 12 }} />
-                    <span>{currentUser.name.split(',')[0].split(' ').slice(0, 2).join(' ')} · {ROLE_DEFINITIONS[currentUser.role].title}</span>
+                    <span>{currentUser.name.split(',')[0].split(' ').slice(0, 2).join(' ')} · {userRoleDef.title}</span>
                   </div>
                 ) : (
                   <button
@@ -1030,9 +1038,9 @@ export default function LungCancerEnhanced() {
                       display: 'flex',
                       alignItems: 'center',
                       gap: 6,
-                      border: `1px solid ${ROLE_DEFINITIONS[currentUser.role].borderColor}`,
-                      background: ROLE_DEFINITIONS[currentUser.role].badgeBg,
-                      color: ROLE_DEFINITIONS[currentUser.role].badgeColor,
+                      border: `1px solid ${ROLE_DEFINITIONS[currentUser?.role]?.borderColor || '#cbd5e1'}`,
+                      background: ROLE_DEFINITIONS[currentUser?.role]?.badgeBg || '#f1f5f9',
+                      color: ROLE_DEFINITIONS[currentUser?.role]?.badgeColor || '#475569',
                     }}
                   >
                     {hasPermission('reports:sign') ? (
@@ -1152,7 +1160,7 @@ export default function LungCancerEnhanced() {
                                 Clinical Sign-Off Complete
                               </div>
                               <div style={{ fontSize: 12, color: C.mute, marginTop: 2 }}>
-                                Signed by <b>{currentUser.name}</b> ({ROLE_DEFINITIONS[currentUser.role].title}) at {signedAt}.
+                                Signed by <b>{currentUser.name}</b> ({userRoleDef.title}) at {signedAt}.
                               </div>
                             </div>
                           </div>
@@ -1165,11 +1173,11 @@ export default function LungCancerEnhanced() {
                           <p style={{ fontSize: 13, color: '#CCD6DD', margin: '0 0 16px', lineHeight: 1.6 }}>
                             {hasPermission('reports:sign') ? (
                               <>
-                                As a licensed <b>{ROLE_DEFINITIONS[currentUser.role].title}</b> ({currentUser.name}), you have authorization to validate AI risk predictions and issue a signed clinical diagnostic report.
+                                As a licensed <b>{userRoleDef.title}</b> ({currentUser.name}), you have authorization to validate AI risk predictions and issue a signed clinical diagnostic report.
                               </>
                             ) : (
                               <>
-                                Your active persona is <b>{currentUser.name}</b> ({ROLE_DEFINITIONS[currentUser.role].title}). Institutional policy restricts final diagnostic sign-offs to licensed <b>Thoracic Radiologists</b>.
+                                Your active persona is <b>{currentUser.name}</b> ({userRoleDef.title}). Institutional policy restricts final diagnostic sign-offs to licensed <b>Thoracic Radiologists</b>.
                               </>
                             )}
                           </p>

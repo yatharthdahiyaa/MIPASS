@@ -160,6 +160,7 @@ export default function BrainTumorEnhanced() {
     try {
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('serviceId', 'brain-tumor');
       setUploadPct(65);
       setUploadPhase('processing');
 

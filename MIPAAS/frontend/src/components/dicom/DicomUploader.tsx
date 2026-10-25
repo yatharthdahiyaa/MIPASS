@@ -39,6 +39,7 @@ export default function DicomUploader({
 
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('serviceId', 'qxr');
 
       setStatusMessage('Executing trained neural model (DenseNet-121, zero fallback)...');
 

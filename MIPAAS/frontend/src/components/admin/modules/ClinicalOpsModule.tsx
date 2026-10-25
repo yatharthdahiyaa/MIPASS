@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useMultiLevelAdmin } from '@/context/MultiLevelAdminContext';
 import DataTable, { Column } from '../common/DataTable';
+import AdminNotice from '../common/AdminNotice';
 import {
   Activity,
   AlertTriangle,
@@ -33,6 +34,7 @@ export default function ClinicalOpsModule() {
   const { activeOrg, activeSite, hasPermission, addAuditLog } = useMultiLevelAdmin();
 
   const [activeTab, setActiveTab] = useState<'worklist' | 'sla' | 'referrals'>('worklist');
+  const [notice, setNotice] = useState<string | null>(null);
 
   const [worklist, setWorklist] = useState<WorklistStudy[]>([
     {
@@ -283,7 +285,7 @@ export default function ClinicalOpsModule() {
             <div className="pt-2">
               <button
                 onClick={() => {
-                  alert('SLA Turnaround Settings saved.');
+                  setNotice('SLA turnaround settings saved.');
                   addAuditLog({
                     action: 'sla:update',
                     resource: 'clinical_ops',
@@ -299,6 +301,8 @@ export default function ClinicalOpsModule() {
           </div>
         </div>
       )}
+
+      <AdminNotice message={notice} onDismiss={() => setNotice(null)} />
     </div>
   );
 }

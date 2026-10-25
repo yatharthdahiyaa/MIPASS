@@ -16,7 +16,6 @@ Unifies data persistence across:
 database/
 ├── docker-compose.db.yml     # Standalone Docker stack (PostgreSQL 16 + Adminer GUI)
 ├── init_db.py                # Database initialization & table generation CLI
-├── seed.py                   # Production baseline data seeding CLI
 ├── schema.sql                # Raw SQL DDL schema (PostgreSQL 16 / ANSI SQL)
 ├── session.py                # SQLAlchemy 2.0 engine, connection pool, WAL mode, get_db()
 ├── README.md                 # Documentation and operations guide
@@ -38,9 +37,6 @@ By default, the database runs automatically on SQLite with WAL mode enabled:
 ```bash
 # Initialize all 18 tables
 python database/init_db.py
-
-# Initialize and seed with baseline clinical records
-python database/init_db.py --seed
 
 # Inspect live table row counts
 python database/init_db.py --stats
@@ -68,7 +64,6 @@ DATABASE_URL=postgresql://mipaas:mipaas_dev_pass@localhost:5432/mipaas_central
 
 DATABASE_POOL_SIZE=10
 DATABASE_MAX_OVERFLOW=20
-DATABASE_AUTO_SEED=true
 ```
 
 ---

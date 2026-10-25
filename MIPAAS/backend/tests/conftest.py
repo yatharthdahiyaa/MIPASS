@@ -1,6 +1,23 @@
-"""
-Pytest configuration and shared fixtures for MIPAAS backend tests.
-"""
+import os
+import sys
+
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
+import torch
+try:
+    orig_register_fake = torch.library.register_fake
+    def safe_register_fake(op_name, *args, **kwargs):
+        try:
+            dec = orig_register_fake(op_name, *args, **kwargs)
+            def wrapped_dec(f):
+                try: return dec(f)
+                except Exception: return f
+            return wrapped_dec
+        except Exception:
+            return lambda f: f
+    torch.library.register_fake = safe_register_fake
+except Exception:
+    pass
 
 import pytest
 from app import create_app

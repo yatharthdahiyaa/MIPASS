@@ -16,8 +16,12 @@ import {
   Eye,
   CheckCircle2,
   XCircle,
-  AlertCircle
+  AlertCircle,
+  Lock
 } from 'lucide-react';
+import { useRBAC } from '@/context/RBACContext';
+import { useIndicLanguage } from '@/context/IndicLanguageContext';
+import IndicLanguageSelector from '@/components/common/IndicLanguageSelector';
 
 interface CaseItem {
   case_id: string;
@@ -34,6 +38,8 @@ interface CaseItem {
 }
 
 export default function StaffPortal() {
+  const { currentUser, isAuthenticated, isSessionReady } = useRBAC();
+  const { t } = useIndicLanguage();
   const [searchTerm, setSearchTerm] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -150,6 +156,55 @@ export default function StaffPortal() {
       c.study_description.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  if (!isSessionReady) {
+    return (
+      <div className="min-h-screen bg-[#071118] text-white flex items-center justify-center p-4">
+        <div className="flex items-center gap-3 text-sm text-slate-300">
+          <RefreshCw className="w-4 h-4 animate-spin text-[#00DCCE]" />
+          <span>Verifying staff session...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated || !currentUser?.id) {
+    return (
+      <div className="min-h-screen bg-[#071118] text-white flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-[#0B1724] border border-white/10 rounded-3xl p-8 text-center space-y-6 shadow-2xl">
+          <div className="w-16 h-16 rounded-2xl bg-teal-500/10 border border-teal-500/30 text-[#00DCCE] mx-auto flex items-center justify-center">
+            <Lock className="w-8 h-8" />
+          </div>
+          <div>
+            <span className="px-3 py-1 rounded-full bg-teal-500/20 text-[#00DCCE] text-xs font-bold uppercase tracking-wider">
+              Staff Portal
+            </span>
+            <h2 className="text-2xl font-black text-white mt-3">
+              Staff Sign In Required
+            </h2>
+            <p className="text-sm text-slate-400 mt-2">
+              Access to hospital DICOM ingestion queues, blur analysis metrics, and clinical cases requires staff credentials.
+            </p>
+          </div>
+          <div className="space-y-3 pt-2">
+            <Link
+              href="/login?redirect=/staff"
+              className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-[#00DCCE] to-[#008280] text-black font-bold text-sm shadow-lg hover:brightness-110 transition-all flex items-center justify-center gap-2"
+            >
+              <Lock className="w-4 h-4" />
+              <span>Sign In with Staff Account</span>
+            </Link>
+            <Link
+              href="/"
+              className="block text-xs text-slate-400 hover:text-white transition-colors pt-2"
+            >
+              Return to MiPAAS Home
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-800 p-6 md:p-8">
       {/* Top Banner */}
@@ -158,14 +213,14 @@ export default function StaffPortal() {
           <div>
             <div className="flex items-center gap-3">
               <span className="px-3 py-1 rounded-full bg-teal-50 border border-teal-200 text-teal-800 text-xs font-semibold uppercase tracking-wider">
-                Persona: Hospital &amp; Lab Staff
+                {t('staff_portal_title', 'Persona: Hospital & Lab Staff')}
               </span>
               <span className="px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold">
                 Agent 1 (Intake &amp; Quality L2) Active
               </span>
             </div>
             <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 mt-2">
-              DICOM Ingestion &amp; Case Timeline Hub
+              {t('staff_dicom_hub', 'DICOM Ingestion & Case Timeline Hub')}
             </h1>
             <p className="text-sm text-slate-500 mt-1">
               Multi-channel resumable chunk upload, pseudonymous patient timeline, and instant blur/motion quality gate.
@@ -173,13 +228,16 @@ export default function StaffPortal() {
           </div>
 
           <div className="flex items-center gap-3">
-            <Link
-              href="/doctor"
-              className="px-4 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-2 shadow-xs transition-all"
-            >
-              <span>Clinician Worklist</span>
-              <ArrowRight className="w-3.5 h-3.5 text-teal-600" />
-            </Link>
+            <IndicLanguageSelector />
+            {(currentUser?.role === 'doctor' || currentUser?.role === 'radiologist') && (
+              <Link
+                href="/doctor"
+                className="px-4 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-2 shadow-xs transition-all"
+              >
+                <span>{t('staff_clinician_worklist', 'Clinician Worklist')}</span>
+                <ArrowRight className="w-3.5 h-3.5 text-teal-600" />
+              </Link>
+            )}
           </div>
         </div>
       </div>
@@ -191,7 +249,7 @@ export default function StaffPortal() {
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                 <Upload className="w-5 h-5 text-teal-600" />
-                <span>Resumable Upload Station</span>
+                <span>{t('staff_resumable_upload', 'Resumable Upload Station')}</span>
               </h2>
               <span className="text-xs text-slate-600 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-md font-mono">
                 GCS Chunked (V4)
