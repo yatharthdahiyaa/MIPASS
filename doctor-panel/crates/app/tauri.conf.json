@@ -4,19 +4,21 @@
   "version": "0.1.0",
   "identifier": "com.mipaas.doctorpanel",
   "build": {
-    "beforeDevCommand": "pnpm --dir ../../ui dev",
-    "devUrl": "http://localhost:5173",
     "beforeBuildCommand": "pnpm --dir ../../ui build",
     "frontendDist": "../../ui/dist"
   },
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "mipaas Doctor Panel — Clinical Decision Support",
         "width": 1280,
         "height": 860,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "center": true,
+        "focus": true,
+        "visible": true
       }
     ],
     "security": {
