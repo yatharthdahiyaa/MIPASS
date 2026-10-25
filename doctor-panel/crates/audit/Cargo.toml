@@ -1,0 +1,17 @@
+[package]
+name    = "audit"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+doctor_core = { path = "../core", package = "doctor-core" }
+store       = { path = "../store" }
+serde       = { workspace = true }
+serde_json  = { workspace = true }
+uuid        = { workspace = true }
+chrono      = { workspace = true }
+thiserror   = { workspace = true }
+sha2        = { workspace = true }
+hex         = { workspace = true }
+log         = { workspace = true }
+rusqlite    = { version = "0.41.0", features = ["bundled-sqlcipher"] }

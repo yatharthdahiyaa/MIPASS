@@ -1,0 +1,13 @@
+# Build artifacts
+/target
+ui/node_modules
+ui/dist
+
+# SQLite databases & temp files
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+
+# Local environment configs
+.cargo/config.toml

@@ -1,0 +1,21 @@
+[package]
+name    = "infer-worker"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "infer-worker"
+path = "src/main.rs"
+
+[dependencies]
+infer       = { path = "../infer" }
+doctor_core = { path = "../core", package = "doctor-core" }
+serde       = { workspace = true }
+serde_json  = { workspace = true }
+uuid        = { workspace = true }
+chrono      = { workspace = true }
+thiserror   = { workspace = true }
+anyhow      = { workspace = true }
+log         = { workspace = true }
+env_logger  = { workspace = true }
+tokio       = { workspace = true }
