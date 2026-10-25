@@ -36,11 +36,26 @@ pub fn run() {
     let shared_db: SharedDb = Arc::new(Mutex::new(conn));
     let shared_session: SharedSession = Arc::new(Mutex::new(None));
     let shared_worker = Arc::new(Mutex::new(WorkerClient::new()));
+    let worker_init_ref = Arc::clone(&shared_worker);
 
     tauri::Builder::default()
         .manage(shared_db)
         .manage(shared_session)
         .manage(shared_worker)
+        .setup(move |_app| {
+            tauri::async_runtime::spawn(async move {
+                let sidecar = std::env::current_exe()
+                    .ok()
+                    .and_then(|p| p.parent().map(|dir| dir.join("infer-worker.exe")));
+                let mut guard = worker_init_ref.lock().await;
+                if let Some(path) = sidecar.as_ref().and_then(|p| p.to_str()) {
+                    guard.init(Some(path)).await;
+                } else {
+                    guard.init(None).await;
+                }
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             login,
             lock_screen,
