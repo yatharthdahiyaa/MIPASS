@@ -104,12 +104,9 @@ docker-compose.override.yml
 *.mov
 
 # External / Local ML weights directory (too large for git)
-/MIPAAS/MODELS/
-/MODELS/
+/ml/
 !**/database/models/
-!database/models/
-!**/backend/models/
-!MIPAAS/backend/models/
+!apps/backend/models/
 
 # Local Python cache
 Python/
@@ -123,3 +120,9 @@ Python/
 
 # Qoder
 .qoder/
+
+# Local runtime data (keep folder skeleton only)
+data/**
+!data/**/
+!data/**/.gitkeep
+!data/README.md
