@@ -2,7 +2,7 @@
 MiPAAS Central Database Package.
 
 Exported Models and Utilities:
-- Session & Engine: get_db, get_engine, init_db, check_db_health, get_db_stats, seed_database
+- Session & Engine: get_db, get_engine, init_db, check_db_health, get_db_stats
 - IAM: User, Role, UserSession, AuditLog
 - Clinical: ClinicalProvider, ClinicalPatient, ClinicalEncounter, ProcedureOrder, ProcedureReport
 - Consumer Health: FamilyMember, Medication, VitalRecord, HealthRecord, ConsumerAppointment
@@ -40,7 +40,6 @@ from database.session import (
     get_session_factory,
     init_db,
 )
-from database.seed import seed_database
 
 __all__ = [
     # Engine & Session
@@ -49,7 +48,6 @@ __all__ = [
     "get_db",
     "get_session_factory",
     "init_db",
-    "seed_database",
     "check_db_health",
     "get_db_stats",
     "get_database_url",

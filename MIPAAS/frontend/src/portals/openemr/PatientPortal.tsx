@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import {
   FileText,
   Shield,
@@ -40,6 +40,9 @@ import {
   FileCheck2,
   ArrowUpRight,
   Heart,
+  LogOut,
+  LayoutDashboard,
+  HeartPulse,
 } from 'lucide-react';
 import { useServices } from '@/context/ServicesContext';
 import { useRBAC } from '@/context/RBACContext';
@@ -91,10 +94,21 @@ interface AgentPipelineResult {
 }
 
 export default function PatientPortal() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const serviceParam = searchParams.get('service');
   const { services, getService } = useServices();
-  const { currentUser, isIamAuthenticated, iamUser } = useRBAC();
+  const { currentUser, isIamAuthenticated, iamUser, logout, logoutIAM } = useRBAC();
+
+  const handleSignOut = async () => {
+    try {
+      await logoutIAM();
+    } catch {
+      // Continue cleanup even if network request fails
+    }
+    logout();
+    router.push('/');
+  };
 
   // Active Tab
   const [activeTab, setActiveTab] = useState<'studio' | 'ehr' | 'abha' | 'consent'>('studio');
@@ -287,33 +301,38 @@ ${pipelineResult.report.medical_disclaimer}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-6">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="px-3 py-1 rounded-full bg-teal-50 border border-teal-200 text-teal-800 text-xs font-semibold uppercase tracking-wider">
+              <span className="px-3 py-1 rounded-full bg-teal-50 border border-teal-200 text-teal-800 text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5">
+                <Heart className="w-3.5 h-3.5 text-teal-600 fill-teal-600/20" />
                 Personalized Patient Portal
               </span>
               <span className="px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold">
                 DPDP Act 2023 &amp; HIPAA Sovereign Consent
               </span>
-              <span className="px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold">
-                Demonstration Mode (Synthetic Cohort)
-              </span>
+              {isIamAuthenticated && (
+                <span className="px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-800 text-xs font-semibold flex items-center gap-1.5">
+                  <Shield className="w-3 h-3 text-blue-600" />
+                  IAM Active: {iamUser?.username || currentUser?.name}
+                </span>
+              )}
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 mt-2">
-              Welcome back, Rahul Sharma
+              Welcome back, {currentUser?.name || iamUser?.username || 'Alex Taylor'}
             </h1>
             <p className="text-xs sm:text-sm text-slate-500 mt-1">
-              Patient ID: <span className="font-mono text-slate-900 font-semibold">MIP-8842-X</span> · Age: 54Y · Male · Facility: Metro General Hospital · ABHA:{' '}
+              Patient ID: <span className="font-mono text-slate-900 font-semibold">{currentUser?.id?.startsWith('pat-') ? 'MIP-8842-X' : (currentUser?.id || 'MIP-8842-X')}</span> · Email: <span className="text-slate-700 font-medium">{currentUser?.email || 'alex.taylor@carenest.health'}</span> · ABHA:{' '}
               {abhaVerified ? <span className="text-emerald-700 font-bold">Verified</span> : <span className="text-slate-500">Not Linked</span>}
             </p>
           </div>
 
-          {/* Service Switcher & Quick Meta */}
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-white border border-slate-200 text-xs flex items-center gap-2 shadow-xs">
-              <span className="text-slate-500 font-medium">Target Service:</span>
+          {/* Action Buttons: AI Target Service and Sign Out */}
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            {/* AI Target Service Selector */}
+            <div className="p-2 rounded-xl bg-white border border-slate-200 text-xs flex items-center gap-1.5 shadow-xs">
+              <span className="text-slate-500 font-medium hidden lg:inline">AI Service:</span>
               <select
                 value={selectedServiceId}
                 onChange={(e) => setSelectedServiceId(e.target.value)}
-                className="bg-slate-50 border border-slate-200 text-teal-800 font-bold rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-teal-600 focus:bg-white"
+                className="bg-slate-50 border border-slate-200 text-teal-800 font-bold rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-teal-600 focus:bg-white cursor-pointer"
               >
                 {services.map((srv) => (
                   <option key={srv.id} value={srv.id} className="bg-white text-slate-900">
@@ -323,19 +342,21 @@ ${pipelineResult.report.medical_disclaimer}
               </select>
             </div>
 
-            <Link
-              href="/eka"
-              className="px-3.5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
-              title="Open Eka.care Day-to-Day Health Manager"
+            {/* Sign Out Icon-Only Button */}
+            <button
+              type="button"
+              id="patient-header-signout-btn"
+              onClick={handleSignOut}
+              className="w-10 h-10 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 hover:text-rose-700 transition-all cursor-pointer shadow-xs flex items-center justify-center shrink-0"
+              title="Sign Out"
+              aria-label="Sign Out"
             >
-              <Heart className="w-3.5 h-3.5 fill-white" />
-              <span>Eka.care Day-to-Day Hub</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
+              <LogOut className="w-4 h-4 text-rose-600" />
+            </button>
           </div>
         </div>
 
-        {/* Navigation Tabs */}
+        {/* Navigation Tabs with Diagnostic System and Dashboard in the same row */}
         <div className="flex items-center gap-2 overflow-x-auto border-b border-slate-200 pt-4 pb-1">
           <button
             type="button"
@@ -347,8 +368,18 @@ ${pipelineResult.report.medical_disclaimer}
             }`}
           >
             <Sparkles className="w-4 h-4" />
-            <span>AI Diagnostic Studio</span>
+            <span>Diagnostic System</span>
           </button>
+
+          <Link
+            href="/emr"
+            id="patient-dashboard-tab-btn"
+            className="px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer text-slate-600 hover:text-teal-800 hover:bg-teal-50"
+            title="Open Patient Health Dashboard"
+          >
+            <LayoutDashboard className="w-4 h-4 text-[#0F9D9A]" />
+            <span>Dashboard</span>
+          </Link>
 
           <button
             type="button"
@@ -393,100 +424,224 @@ ${pipelineResult.report.medical_disclaimer}
 
       <div className="max-w-6xl mx-auto">
         {/* ============================================================== */}
-        {/* TAB 1: AI DIAGNOSTIC STUDIO & MULTI-AGENT WORKFLOW */}
+        {/* TAB 1: DIAGNOSTIC SYSTEM & IMAGE ANALYSIS */}
         {/* ============================================================== */}
         {activeTab === 'studio' && (
           <div className="space-y-8 animate-in fade-in duration-200">
-            {/* Service Scope & Medical Disclaimer Banner */}
-            <div className="rounded-2xl bg-gradient-to-r from-teal-50/70 via-emerald-50/40 to-teal-50/50 border border-teal-200 p-5 sm:p-6 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 text-xs font-bold text-teal-800 uppercase tracking-wider">
-                  <Stethoscope className="w-4 h-4 text-teal-600" />
-                  <span>Selected Service: {activeService.name}</span>
-                </div>
-                <p className="text-sm font-bold text-slate-900">{activeService.tagline}</p>
-                <p className="text-xs text-slate-600 max-w-2xl leading-relaxed">
-                  Supported formats: <strong className="text-slate-800">DICOM (.dcm, .dicom)</strong>, PNG, JPEG. Validated for{' '}
-                  <strong className="text-slate-800">{activeService.modality}</strong> imaging. Outputs are clinical decision-support
-                  recommendations requiring qualified physician review.
+            {/* Upload Your Medical Image Section (Matching Reference Design) */}
+            <div className="rounded-3xl bg-white border border-slate-200/90 p-6 sm:p-10 shadow-xs space-y-7">
+              {/* Heading */}
+              <div>
+                <h2 className="text-2xl sm:text-3xl font-extrabold text-[#17324D] tracking-tight">
+                  Upload Your Medical Image
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-500 mt-1.5 font-medium">
+                  Get AI-powered analysis of your medical images in a few simple steps.
                 </p>
               </div>
-              <div className="flex-shrink-0">
-                <span className="px-3 py-1 rounded-xl bg-white border border-teal-200 text-teal-800 text-xs font-mono font-semibold shadow-xs">
-                  Engine: DenseNet-121 NIH
-                </span>
+
+              {/* 3-Step Progress Stepper matching reference image */}
+              <div className="max-w-2xl mx-auto py-2">
+                <div className="flex items-center justify-between relative">
+                  {/* Step 1 */}
+                  <div className="flex flex-col items-center text-center z-10 flex-1">
+                    <div
+                      className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm shadow-xs transition-all ${
+                        pipelineResult
+                          ? 'bg-[#0F9D9A] text-white'
+                          : 'bg-[#0F9D9A] text-white ring-4 ring-teal-50'
+                      }`}
+                    >
+                      {pipelineResult ? <Check className="w-4 h-4 stroke-[3]" /> : '1'}
+                    </div>
+                    <span className="font-bold text-xs sm:text-sm text-[#0F9D9A] mt-2">Upload</span>
+                    <span className="text-[11px] text-slate-500">Select your image</span>
+                  </div>
+
+                  {/* Horizontal Line between Step 1 and 2 */}
+                  <div
+                    className={`h-0.5 flex-1 -mt-8 mx-1 sm:mx-2 transition-colors ${
+                      isProcessing || pipelineResult ? 'bg-[#0F9D9A]' : 'bg-slate-200'
+                    }`}
+                  />
+
+                  {/* Step 2 */}
+                  <div className="flex flex-col items-center text-center z-10 flex-1">
+                    <div
+                      className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm transition-all ${
+                        pipelineResult
+                          ? 'bg-[#0F9D9A] text-white'
+                          : isProcessing
+                          ? 'bg-[#0F9D9A] text-white animate-pulse ring-4 ring-teal-50'
+                          : 'bg-slate-100 text-slate-600 border border-slate-200'
+                      }`}
+                    >
+                      {pipelineResult ? <Check className="w-4 h-4 stroke-[3]" /> : '2'}
+                    </div>
+                    <span
+                      className={`font-bold text-xs sm:text-sm mt-2 ${
+                        isProcessing || pipelineResult ? 'text-[#0F9D9A]' : 'text-slate-800'
+                      }`}
+                    >
+                      AI Analysis
+                    </span>
+                    <span className="text-[11px] text-slate-500">Our system analyzes it</span>
+                  </div>
+
+                  {/* Horizontal Line between Step 2 and 3 */}
+                  <div
+                    className={`h-0.5 flex-1 -mt-8 mx-1 sm:mx-2 transition-colors ${
+                      pipelineResult ? 'bg-[#0F9D9A]' : 'bg-slate-200'
+                    }`}
+                  />
+
+                  {/* Step 3 */}
+                  <div className="flex flex-col items-center text-center z-10 flex-1">
+                    <div
+                      className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm transition-all ${
+                        pipelineResult
+                          ? 'bg-[#0F9D9A] text-white ring-4 ring-teal-50'
+                          : 'bg-slate-100 text-slate-600 border border-slate-200'
+                      }`}
+                    >
+                      3
+                    </div>
+                    <span
+                      className={`font-bold text-xs sm:text-sm mt-2 ${
+                        pipelineResult ? 'text-[#0F9D9A]' : 'text-slate-800'
+                      }`}
+                    >
+                      View Results
+                    </span>
+                    <span className="text-[11px] text-slate-500">Get easy-to-understand report</span>
+                  </div>
+                </div>
               </div>
-            </div>
 
-            {/* Upload & Ingestion Zone */}
-            <div className="rounded-2xl bg-white border border-slate-200 p-6 shadow-xs">
-              <h2 className="text-base font-bold text-slate-900 mb-2 flex items-center gap-2">
-                <Upload className="w-5 h-5 text-teal-600" />
-                <span>Upload Medical Study For 7-Agent Diagnostic Pipeline</span>
-              </h2>
-              <p className="text-xs text-slate-500 mb-6">
-                Uploaded files pass through rigorous validation, image quality assessment, modality-specific preprocessing, neural inference, and Grad-CAM explainability.
-              </p>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* Drag-and-drop file selector */}
+              {/* Dashed Upload Box matching reference image */}
+              <div className="border-2 border-dashed border-[#A8CEEC] hover:border-[#1E88E5] bg-[#F7FAFD]/80 hover:bg-[#F2F7FC] rounded-3xl p-6 sm:p-10 text-center transition-all">
+                {/* Blue Circular Cloud Upload Icon */}
                 <div
                   onClick={() => fileInputRef.current?.click()}
-                  className="md:col-span-2 border-2 border-dashed border-slate-300 hover:border-teal-500 rounded-2xl p-6 sm:p-8 flex flex-col items-center justify-center text-center cursor-pointer transition-all bg-slate-50/60 hover:bg-teal-50/30 group"
+                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-[#EBF5FE] text-[#1E88E5] flex items-center justify-center mx-auto mb-3 shadow-2xs cursor-pointer hover:scale-105 transition-transform"
                 >
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".dcm,.dicom,.png,.jpg,.jpeg"
-                    onChange={handleFileChange}
-                    className="hidden"
-                  />
-                  <div className="w-12 h-12 rounded-2xl bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-600 mb-3 group-hover:scale-105 transition-transform">
-                    <Upload className="w-6 h-6" />
-                  </div>
-                  <span className="text-sm font-bold text-slate-900 block">
-                    {selectedFile ? selectedFile.name : 'Click to select or drag and drop a medical image study'}
-                  </span>
-                  <span className="text-xs text-slate-500 mt-1 block">
-                    DICOM (.dcm), Frontal Radiograph (.png, .jpg) · Up to 100MB
-                  </span>
+                  <svg className="w-8 h-8 sm:w-10 sm:h-10 fill-current" viewBox="0 0 24 24">
+                    <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z" />
+                  </svg>
                 </div>
 
-                {/* Instant 1-Click Demo Study Button */}
-                <div className="border border-slate-200 rounded-2xl p-6 bg-slate-50 flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center gap-2 text-amber-700 text-xs font-bold uppercase tracking-wider mb-2">
-                      <Sparkles className="w-4 h-4 text-amber-600" />
-                      <span>Instant Clinical Demo</span>
-                    </div>
-                    <h3 className="text-sm font-bold text-slate-900 mb-1">Standard Chest Study</h3>
-                    <p className="text-xs text-slate-600 leading-relaxed mb-4">
-                      Test the pipeline immediately with our pre-loaded certified Chest X-Ray DICOM study (<code className="text-teal-700 font-mono font-semibold">sample_cxr.dcm</code>).
-                    </p>
+                <h3 className="text-base sm:text-lg font-bold text-slate-900">
+                  Click to upload or drag and drop your medical image
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-500 mt-1">
+                  You can upload images from your reports, scans or photos.
+                </p>
+
+                {/* Formats and size pill */}
+                <div className="my-4 inline-block px-5 py-2.5 rounded-2xl bg-[#EAF2F9] border border-[#D5E3EE] text-slate-600 text-xs text-center max-w-lg">
+                  <div className="font-medium text-slate-700">Supported formats: DICOM (.dcm, .dicom), PNG, JPG, JPEG</div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">Maximum file size: 100 MB</div>
+                </div>
+
+                {/* Hidden File Input */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".dcm,.dicom,.png,.jpg,.jpeg"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+
+                {/* Selected File Badge */}
+                {selectedFile && (
+                  <div className="mb-4 inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-teal-50 border border-teal-200 text-teal-800 text-xs font-semibold">
+                    <CheckCircle2 className="w-4 h-4 text-teal-600" />
+                    <span>Selected: {selectedFile.name} ({(selectedFile.size / (1024 * 1024)).toFixed(2)} MB)</span>
                   </div>
+                )}
+
+                {/* All buttons aligned cleanly in the same row */}
+                <div className="flex flex-wrap sm:flex-nowrap items-center justify-center gap-3 sm:gap-4 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-6 py-3 rounded-xl bg-[#1E88E5] hover:bg-[#1976D2] text-white font-bold text-xs sm:text-sm shadow-sm hover:shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Upload className="w-4 h-4" />
+                    <span>Choose File</span>
+                  </button>
+
                   <button
                     type="button"
                     disabled={isProcessing}
                     onClick={handleLoadDemo}
-                    className="w-full py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                    className="px-6 py-3 rounded-xl bg-white hover:bg-slate-50 border border-slate-300 hover:border-slate-400 text-slate-800 font-bold text-xs sm:text-sm shadow-2xs hover:shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                   >
                     {isProcessing ? (
                       <>
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                        <span>Running Pipeline…</span>
+                        <RefreshCw className="w-4 h-4 animate-spin text-[#1E88E5]" />
+                        <span>Analyzing Study…</span>
                       </>
                     ) : (
                       <>
-                        <span>Load Demo DICOM Study</span>
-                        <ArrowRight className="w-4 h-4" />
+                        <Sparkles className="w-4 h-4 text-amber-500" />
+                        <span>Load Sample Demo Study</span>
                       </>
                     )}
                   </button>
+
+                  <Link
+                    href="/emr"
+                    className="px-5 py-3 rounded-xl bg-[#E8F8F5] hover:bg-[#d6f4ee] border border-teal-200 text-[#0F9D9A] font-bold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 cursor-pointer shadow-2xs"
+                    title="View your Doctor Care Plan, Vitals, and Appointments"
+                  >
+                    <LayoutDashboard className="w-4 h-4 text-[#0F9D9A]" />
+                    <span>Dashboard</span>
+                  </Link>
+                </div>
+
+                {/* Patient Information & Assurances Row */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl mx-auto mt-6 pt-5 border-t border-slate-200/80 text-left">
+                  <div className="flex items-start gap-2.5 p-2 rounded-xl">
+                    <div className="w-6 h-6 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0 mt-0.5">
+                      <Lock className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-slate-800">Private &amp; HIPAA Compliant</div>
+                      <p className="text-[11px] text-slate-500 leading-snug mt-0.5">
+                        Your scan is protected with sovereign consent and end-to-end clinical encryption.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-2.5 p-2 rounded-xl">
+                    <div className="w-6 h-6 rounded-lg bg-sky-50 text-sky-700 flex items-center justify-center shrink-0 mt-0.5">
+                      <Clock className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-slate-800">Fast 5-Second Analysis</div>
+                      <p className="text-[11px] text-slate-500 leading-snug mt-0.5">
+                        Automated multi-condition screening calibrated to clinical benchmarks.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-2.5 p-2 rounded-xl">
+                    <div className="w-6 h-6 rounded-lg bg-purple-50 text-purple-700 flex items-center justify-center shrink-0 mt-0.5">
+                      <Stethoscope className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-slate-800">Doctor-Friendly Report</div>
+                      <p className="text-[11px] text-slate-500 leading-snug mt-0.5">
+                        Plain-language explanations with actionable follow-up recommendations.
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
 
               {errorMessage && (
-                <div className="mt-4 p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-3">
+                <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-3">
                   <AlertTriangle className="w-5 h-5 flex-shrink-0 text-rose-600" />
                   <div>
                     <span className="font-bold block">Pipeline Exception</span>

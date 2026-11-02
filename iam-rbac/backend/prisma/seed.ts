@@ -6,48 +6,58 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('🌱 Starting database seed...');
 
-  // 1. Create or ensure sample Account
-  const accountAlias = 'aws-prod';
-  const existingAccount = await prisma.account.findUnique({
-    where: { accountAlias },
-  });
+  // 1. Provision an account and root user only when supplied via the
+  // environment. With nothing configured this seed creates no identities.
+  const accountId = process.env.SEED_ACCOUNT_ID;
+  const accountAlias = process.env.SEED_ACCOUNT_ALIAS;
+  const accountName = process.env.SEED_ACCOUNT_NAME;
+  const rootEmail = process.env.SEED_ROOT_EMAIL;
+  const rootUsername = process.env.SEED_ROOT_USERNAME || 'root';
+  const rootPassword = process.env.SEED_ROOT_PASSWORD;
 
-  if (existingAccount) {
-    console.log('Account already exists, skipping full seed.');
-    return;
+  let account: any = null;
+  let rootUser: any = null;
+
+  if (accountId && rootEmail && rootPassword) {
+    account = await prisma.account.upsert({
+      where: { id: accountId },
+      update: {},
+      create: {
+        id: accountId,
+        name: accountName || accountId,
+        accountAlias: accountAlias || null,
+      },
+    });
+
+    const salt = await bcrypt.genSalt(12);
+    rootUser = await prisma.user.findFirst({ where: { email: rootEmail } });
+    if (!rootUser) {
+      rootUser = await prisma.user.create({
+        data: {
+          accountId: account.id,
+          username: rootUsername,
+          email: rootEmail,
+          passwordHash: await bcrypt.hash(rootPassword, salt),
+          isRoot: true,
+          isMfaEnabled: false,
+        },
+      });
+    }
+
+    await prisma.account.update({
+      where: { id: account.id },
+      data: { rootUserId: rootUser.id },
+    });
+
+    console.log(`Provisioned account ${account.id} with root user ${rootUser.email}`);
+  } else {
+    account = await prisma.account.findFirst();
+    if (!account) {
+      console.log('No account to seed: set SEED_ACCOUNT_ID, SEED_ROOT_EMAIL and SEED_ROOT_PASSWORD, or create an account first.');
+      return;
+    }
+    console.log(`Seeding system policies and roles into existing account ${account.id}`);
   }
-
-  const account = await prisma.account.create({
-    data: {
-      id: '123456789012',
-      name: 'AWS Production Organization',
-      accountAlias,
-    },
-  });
-
-  console.log(`Created Account: ${account.name} (ID: ${account.id}, Alias: ${account.accountAlias})`);
-
-  // 2. Create Root User
-  const salt = await bcrypt.genSalt(12);
-  const rootPasswordHash = await bcrypt.hash('AdminRoot@123456', salt);
-
-  const rootUser = await prisma.user.create({
-    data: {
-      accountId: account.id,
-      username: 'root',
-      email: 'root@aws-example.com',
-      passwordHash: rootPasswordHash,
-      isRoot: true,
-      isMfaEnabled: false,
-    },
-  });
-
-  await prisma.account.update({
-    where: { id: account.id },
-    data: { rootUserId: rootUser.id },
-  });
-
-  console.log(`Created Root User: ${rootUser.email} (Password: AdminRoot@123456)`);
 
   // 3. Create Default System Policies
   const policiesData = [
@@ -197,6 +207,18 @@ async function main() {
       isSystem: true,
       policyNames: ['ReadOnlyAccess'],
     },
+    {
+      name: 'Doctor',
+      description: 'Attending physician and clinician with diagnostic imaging and orders permissions.',
+      isSystem: true,
+      policyNames: ['ReadOnlyAccess', 'DeveloperAccess'],
+    },
+    {
+      name: 'Patient',
+      description: 'Registered patient with personal health records and results access.',
+      isSystem: true,
+      policyNames: ['ReadOnlyAccess'],
+    },
   ];
 
   const createdRoles: Record<string, any> = {};
@@ -225,74 +247,15 @@ async function main() {
     console.log(`Created Role: ${r.name} with policies: ${r.policyNames.join(', ')}`);
   }
 
-  // Assign Root role to Root user
-  await prisma.userRole.create({
-    data: {
-      userId: rootUser.id,
-      roleId: createdRoles['Root'].id,
-    },
-  });
-
-  // 5. Create Sample IAM User (alice.dev)
-  const alicePasswordHash = await bcrypt.hash('AliceDev@123456', salt);
-  const aliceUser = await prisma.user.create({
-    data: {
-      accountId: account.id,
-      username: 'alice.dev',
-      email: 'alice@company.internal',
-      passwordHash: alicePasswordHash,
-      isRoot: false,
-      isMfaEnabled: false,
-    },
-  });
-
-  await prisma.userRole.create({
-    data: {
-      userId: aliceUser.id,
-      roleId: createdRoles['Developer'].id,
-    },
-  });
-
-  console.log(`Created Sample IAM User: ${aliceUser.username} (Password: AliceDev@123456) with role: Developer`);
-
-  // 6. Create Sample Group (Developers)
-  const devGroup = await prisma.group.create({
-    data: {
-      accountId: account.id,
-      name: 'EngineeringTeam',
-      description: 'Core Engineering development and delivery group.',
-    },
-  });
-
-  await prisma.groupRole.create({
-    data: {
-      groupId: devGroup.id,
-      roleId: createdRoles['Developer'].id,
-    },
-  });
-
-  await prisma.userGroup.create({
-    data: {
-      userId: aliceUser.id,
-      groupId: devGroup.id,
-    },
-  });
-
-  console.log(`Created Group: ${devGroup.name} with user ${aliceUser.username}`);
-
-  // 7. Seed Initial Audit Log
-  await prisma.auditLog.create({
-    data: {
-      accountId: account.id,
-      userId: rootUser.id,
-      action: 'account:initial_setup',
-      resource: `account:${account.id}`,
-      effect: 'ALLOW',
-      ipAddress: '127.0.0.1',
-      userAgent: 'System Seed Script',
-      details: { message: 'Organization account initialized with system roles and policies.' },
-    },
-  });
+  // Assign Root role to the provisioned root user, when one exists
+  if (rootUser) {
+    await prisma.userRole.create({
+      data: {
+        userId: rootUser.id,
+        roleId: createdRoles['Root'].id,
+      },
+    });
+  }
 
   console.log('✅ Database seed completed successfully!');
 }

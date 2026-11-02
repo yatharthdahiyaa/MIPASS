@@ -16,6 +16,8 @@ import {
   getMe,
   setupMfa,
   enableMfa,
+  registerPatient,
+  patientRegisterSchema,
 } from '../controllers/auth.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { validateBody } from '../middleware/validation.middleware';
@@ -25,6 +27,7 @@ const router = Router();
 
 // Rate-limited auth routes
 router.post('/signup', rateLimitByIp(10, 60000), validateBody(signupSchema), signup);
+router.post('/register', rateLimitByIp(10, 60000), validateBody(patientRegisterSchema), registerPatient);
 router.post('/verify-email', verifyEmail);
 router.post('/login', rateLimitByIp(20, 60000), signinStep2); // Direct login compatibility
 router.post('/signin/step1', rateLimitByIp(30, 60000), validateBody(signinStep1Schema), signinStep1);

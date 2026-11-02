@@ -16,44 +16,108 @@ export default function PathwaysSection() {
   );
 
   return (
-    <section id="products" className="pathways-section" aria-labelledby="pathways-heading">
+    <section id="features" className="py-20 bg-slate-50/70 border-b border-slate-200/80" aria-labelledby="pathways-heading">
       <div className="site-container">
-        <div className="section-intro">
+        {/* Section Intro */}
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 mb-10">
           <div>
-            <p className="eyebrow">Clinical pathways</p>
-            <h2 id="pathways-heading" className="section-heading">The right insight.<br />For the next step in care.</h2>
+            <p className="eyebrow mb-2 !text-blue-600 font-bold text-xs uppercase tracking-wider">Clinical pathways</p>
+            <h2 id="pathways-heading" className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight leading-tight">
+              The right insight.<br />For the next step in care.
+            </h2>
           </div>
-          <p className="section-description">Explore imaging and decision-support tools across oncology, cardiology, neurology, and global health. Start with the pathway that fits your workflow.</p>
+          <p className="text-slate-600 text-sm sm:text-base max-w-md leading-relaxed">
+            Explore imaging and decision-support tools across oncology, cardiology, neurology, and global health. Start with the pathway that fits your workflow.
+          </p>
         </div>
-        <div className="pathway-toolbar">
-          <label className="pathway-search"><Search size={18} aria-hidden="true" /><span className="sr-only">Search clinical pathways</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by specialty or scan type" /></label>
-          <label className="pathway-filter"><span>Scan type</span><select value={modality} onChange={(event) => setModality(event.target.value)}>{modalities.map((item) => <option key={item}>{item}</option>)}</select></label>
+
+        {/* Search & Filter Toolbar */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 mb-6">
+          <label className="flex items-center gap-2.5 px-4 h-12 bg-white border border-slate-200 rounded-xl text-slate-400 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100 flex-1 max-w-md shadow-xs transition-all">
+            <Search size={18} className="text-slate-400 shrink-0" />
+            <span className="sr-only">Search clinical pathways</span>
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search by specialty or scan type..."
+              className="bg-transparent text-slate-800 text-sm w-full focus:outline-none placeholder:text-slate-400"
+            />
+          </label>
+
+          <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+            <span>Scan type:</span>
+            <select
+              value={modality}
+              onChange={(event) => setModality(event.target.value)}
+              className="h-12 bg-white border border-slate-200 rounded-xl px-4 text-slate-800 text-xs sm:text-sm focus:outline-none focus:border-blue-500 shadow-xs cursor-pointer"
+            >
+              {modalities.map((item) => (
+                <option key={item}>{item}</option>
+              ))}
+            </select>
+          </label>
         </div>
-        <p className="pathway-count" role="status">{isLoading && homepageServices.length === 0 ? 'Loading clinical pathways…' : `${cards.length} ${cards.length === 1 ? 'pathway' : 'pathways'} available to explore`}</p>
+
+        <p className="text-xs text-slate-500 mb-6 font-medium" role="status">
+          {isLoading && homepageServices.length === 0
+            ? 'Loading clinical pathways…'
+            : `${cards.length} ${cards.length === 1 ? 'pathway' : 'pathways'} available to explore`}
+        </p>
+
+        {/* Pathways Card Grid */}
         {cards.length > 0 ? (
-          <div className="pathway-grid">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {cards.map((card, index) => {
               const isClosed = card.status !== 'active';
               return (
-                <article key={card.id} className="clinical-card">
-                  <div className="clinical-card-image">
-                    <img src={card.image} alt="" loading="lazy" onError={(event) => { event.currentTarget.style.visibility = 'hidden'; }} />
-                    <Layers className="clinical-image-fallback" size={44} aria-hidden="true" />
-                    <span className="clinical-modality">{card.modality}</span>
-                    <span className="clinical-index">{String(index + 1).padStart(2, '0')}</span>
+                <article
+                  key={card.id}
+                  className="group bg-white border border-slate-200/90 rounded-2xl overflow-hidden shadow-[0_4px_20px_rgb(0,0,0,0.03)] hover:shadow-[0_12px_32px_rgba(30,58,138,0.08)] hover:border-blue-200 transition-all flex flex-col hover:-translate-y-0.5 duration-300"
+                >
+                  <div className="h-48 relative overflow-hidden bg-slate-100">
+                    <img
+                      src={card.image}
+                      alt=""
+                      loading="lazy"
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      onError={(event) => { event.currentTarget.style.visibility = 'hidden'; }}
+                    />
+                    <Layers className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-slate-300 pointer-events-none" size={44} aria-hidden="true" />
+                    <span className="absolute top-4 left-4 z-10 px-2.5 py-1 bg-white/90 backdrop-blur-md text-slate-700 font-mono text-[10px] font-bold rounded-lg border border-slate-200/80 shadow-xs">
+                      {card.modality}
+                    </span>
+                    <span className="absolute top-4 right-4 z-10 px-2 py-0.5 bg-slate-900/70 text-white rounded text-[10px] font-bold">
+                      {String(index + 1).padStart(2, '0')}
+                    </span>
                   </div>
-                  <div className="clinical-card-content">
-                    <p className={isClosed ? 'clinical-status maintenance' : 'clinical-status'}><span />{isClosed ? 'Temporarily unavailable' : 'Explore pathway'}</p>
-                    <h3>{card.shortName}</h3>
-                    <p className="clinical-card-description">{card.description}</p>
-                    <div className="flex items-center justify-between gap-3 pt-3 border-t border-white/10 mt-auto">
-                      <Link href={card.href} className="text-[11px] font-medium text-[#B2C4D0] hover:text-white flex items-center gap-1 transition-colors">
+
+                  <div className="p-6 flex flex-col flex-1">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold mb-2.5">
+                      <span className={`w-2 h-2 rounded-full ${isClosed ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                      <span className={isClosed ? 'text-amber-600' : 'text-emerald-700'}>
+                        {isClosed ? 'Temporarily unavailable' : 'Active pathway'}
+                      </span>
+                    </div>
+
+                    <h3 className="text-xl font-bold text-slate-900 mb-2 tracking-tight group-hover:text-blue-600 transition-colors">
+                      {card.shortName}
+                    </h3>
+                    <p className="text-xs sm:text-sm text-slate-500 leading-relaxed mb-6 flex-1">
+                      {card.description}
+                    </p>
+
+                    <div className="flex items-center justify-between gap-3 pt-4 border-t border-slate-100 mt-auto">
+                      <Link
+                        href={card.href}
+                        className="text-xs font-semibold text-slate-600 hover:text-blue-600 flex items-center gap-1 transition-colors"
+                      >
                         <span>{isClosed ? 'Service notice' : `Explore ${card.shortName}`}</span>
                         <ArrowRight size={13} />
                       </Link>
                       <Link
                         href={`/patient?service=${card.id}`}
-                        className="px-3 py-1.5 rounded-lg bg-[#00DCCE] hover:bg-[#00DCCE]/90 text-black font-bold text-xs flex items-center gap-1 transition-all shadow-sm shadow-[#00DCCE]/20"
+                        className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm shadow-blue-500/20"
                         title={`Open AI Diagnostic Studio for ${card.name}`}
                       >
                         <span>Analyze scan</span>
@@ -66,14 +130,31 @@ export default function PathwaysSection() {
             })}
           </div>
         ) : !isLoading && (
-          <div className="pathway-empty">
-            {homepageServices.length === 0 ? <ShieldAlert size={32} /> : <Search size={32} />}
-            <h3>{homepageServices.length === 0 ? 'Pathways are currently unavailable' : 'No matching pathways'}</h3>
-            <p>{homepageServices.length === 0 ? 'Please check back when services are available.' : 'Try another specialty, or clear your filters to see all pathways.'}</p>
-            {homepageServices.length > 0 && <button type="button" className="button-secondary" onClick={() => { setQuery(''); setModality('All pathways'); }}>Clear filters</button>}
+          <div className="p-12 border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center text-center gap-4 bg-white">
+            {homepageServices.length === 0 ? <ShieldAlert size={36} className="text-amber-500" /> : <Search size={36} className="text-slate-400" />}
+            <h3 className="text-xl font-bold text-slate-900">
+              {homepageServices.length === 0 ? 'Pathways are currently unavailable' : 'No matching pathways'}
+            </h3>
+            <p className="text-sm text-slate-500 max-w-sm">
+              {homepageServices.length === 0 ? 'Please check back when services are available.' : 'Try another specialty, or clear your filters to see all pathways.'}
+            </p>
+            {homepageServices.length > 0 && (
+              <button
+                type="button"
+                className="px-5 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold text-xs transition-colors cursor-pointer"
+                onClick={() => { setQuery(''); setModality('All pathways'); }}
+              >
+                Clear filters
+              </button>
+            )}
           </div>
         )}
-        <div className="pathway-review-note"><Activity size={18} /><p>Every finding belongs in context. Qualified healthcare professionals remain responsible for reviewing results and care decisions.</p></div>
+
+        {/* Disclaimer / Note */}
+        <div className="flex items-center gap-3 pt-8 mt-8 border-t border-slate-200 text-slate-500 text-xs">
+          <Activity size={18} className="text-blue-600 shrink-0" />
+          <p>Every finding belongs in context. Qualified healthcare professionals remain responsible for reviewing results and care decisions.</p>
+        </div>
       </div>
     </section>
   );

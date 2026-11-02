@@ -2,6 +2,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
+import { ArrowRight } from 'lucide-react';
 
 const impactCards = [
   {
@@ -24,40 +25,48 @@ const impactCards = [
 
 export default function ImpactSection() {
   return (
-    <section id="impact" aria-labelledby="impact-heading" className="scroll-mt-28 bg-[#0F2332] py-16 text-white md:py-24">
+    <section id="product" aria-labelledby="impact-heading" className="scroll-mt-28 bg-white py-20 text-slate-900 border-b border-slate-200/80">
       <div className="site-container">
-        <header className="mb-10 grid gap-5 border-b border-white/15 pb-8 md:mb-12 md:grid-cols-2 md:gap-12">
+        <header className="mb-12 grid gap-6 border-b border-slate-200 pb-8 md:grid-cols-2 md:gap-12">
           <div>
-            <p className="eyebrow mb-4 !text-slate-300">Impact & implementation</p>
-            <h2 id="impact-heading" className="section-heading !text-white">From pathways to practice</h2>
+            <p className="eyebrow mb-2 !text-blue-600 font-bold text-xs uppercase tracking-wider">Impact & implementation</p>
+            <h2 id="impact-heading" className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
+              From pathways to practice
+            </h2>
           </div>
-          <p className="max-w-lg self-end text-sm leading-relaxed text-slate-300 md:text-base">
+          <p className="max-w-lg self-end text-sm leading-relaxed text-slate-600 md:text-base">
             These demonstration stories illustrate the platform’s intended use. They are not verified case studies or evidence of clinical or business outcomes.
           </p>
         </header>
 
-        <div className="grid gap-10 md:grid-cols-2 md:gap-8 lg:gap-12">
+        <div className="grid gap-8 md:grid-cols-2 lg:gap-10">
           {impactCards.map((card) => (
-            <article key={card.href} className="flex flex-col">
-              <div className="relative mb-6 aspect-[16/10] overflow-hidden rounded-lg border border-white/15 bg-[#19394B]">
+            <article key={card.href} className="flex flex-col bg-slate-50/70 border border-slate-200/90 rounded-3xl p-6 sm:p-8 hover:shadow-lg hover:border-blue-200 transition-all">
+              <div className="relative mb-6 aspect-[16/10] overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 shadow-xs">
                 <Image
                   src={card.image}
                   alt=""
                   fill
                   sizes="(max-width: 767px) 100vw, 50vw"
                   loading="lazy"
-                  className="object-cover"
+                  className="object-cover hover:scale-105 transition-transform duration-500"
                   onError={(event) => { event.currentTarget.style.display = 'none'; }}
                 />
               </div>
-              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-[#FF7869]">Demonstration story</p>
-              <h3 className="max-w-xl text-2xl font-semibold leading-snug tracking-tight sm:text-3xl">
-                <span className="block text-white">{card.title}</span>
-                <span className="mt-1 block text-slate-300">{card.subtitle}</span>
+              <p className="mb-2 text-xs font-bold uppercase tracking-wider text-blue-600">Demonstration story</p>
+              <h3 className="text-2xl font-bold leading-snug tracking-tight text-slate-900 mb-2">
+                <span>{card.title} </span>
+                <span className="text-slate-600 font-semibold">{card.subtitle}</span>
               </h3>
-              <p className="mt-4 text-sm leading-relaxed text-slate-300">{card.description}</p>
-              <div className="mt-auto pt-6">
-                <Link href={card.href} className="button-primary">{card.buttonText} <span aria-hidden="true">→</span></Link>
+              <p className="text-sm leading-relaxed text-slate-500 mb-6">{card.description}</p>
+              <div className="mt-auto pt-2">
+                <Link
+                  href={card.href}
+                  className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-slate-900 hover:bg-black text-white font-bold text-xs sm:text-sm shadow-md transition-all group"
+                >
+                  <span>{card.buttonText}</span>
+                  <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
+                </Link>
               </div>
             </article>
           ))}

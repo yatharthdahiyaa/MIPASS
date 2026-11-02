@@ -542,7 +542,7 @@ export default function WebsiteServiceManager() {
                         onClick={() => openEditModal(service)}
                         className="text-[11px] text-amber-800 hover:underline cursor-pointer font-bold whitespace-nowrap self-end sm:self-auto"
                       >
-                        Edit Downtime Message &rarr;
+                        Edit Downtime Message →
                       </button>
                     </div>
                   )}

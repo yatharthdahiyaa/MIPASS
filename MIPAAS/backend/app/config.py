@@ -44,7 +44,6 @@ class BaseConfig:
     DATABASE_URL = os.getenv("DATABASE_URL")
     DATABASE_POOL_SIZE = int(os.getenv("DATABASE_POOL_SIZE", "10"))
     DATABASE_MAX_OVERFLOW = int(os.getenv("DATABASE_MAX_OVERFLOW", "20"))
-    DATABASE_AUTO_SEED = os.getenv("DATABASE_AUTO_SEED", "true").lower() in ("true", "1")
 
     # Rate Limiting
     RATE_LIMIT_REQUESTS_PER_MINUTE = int(os.getenv("RATE_LIMIT_RPM", "60"))

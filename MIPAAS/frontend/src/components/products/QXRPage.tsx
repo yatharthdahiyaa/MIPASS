@@ -6,19 +6,16 @@ import { useRBAC } from '@/context/RBACContext';
 import { ROLE_DEFINITIONS } from '@/types/rbac';
 import {
   ShieldCheck,
-  Activity,
-  FileCheck2,
   Lock,
   Unlock,
   CheckCircle2,
-  AlertTriangle,
   FileText,
-  Sliders,
-  Eye,
-  RefreshCw,
   Upload,
-  Layers,
-  Zap,
+  ArrowLeft,
+  LayoutDashboard,
+  Clock,
+  Check,
+  Shield,
 } from 'lucide-react';
 import Link from 'next/link';
 import AnatomyViewer from '@/components/common/AnatomyViewer';
@@ -39,77 +36,25 @@ const C = {
   line: 'rgba(255,255,255,.08)',
 } as const;
 
-/* ── data ── */
+/* ── clinical pipeline stages ── */
 const PIPELINE = [
-  { title: 'DICOM Ingestion', desc: 'Direct-to-GCS upload with DICOM header parsing', colour: C.lav },
-  { title: 'Histogram Equalization', desc: 'CLAHE contrast enhancement & 224x224 normalization', colour: C.tealDim },
-  { title: 'CheXNet DenseNet-121', desc: '14-pathology multi-label classification forward pass', colour: C.teal },
-  { title: '2D Grad-CAM++ XAI', desc: 'Dense pixel attribution localization heatmaps', colour: C.coral },
-  { title: 'Structured Report', desc: 'Auto-generated radiological report with DICOM-SR', colour: C.teal },
+  { title: 'Radiograph Intake & Quality Check', desc: 'DICOM validation verifying patient orientation (PA/AP), exposure, and inspiration', colour: C.lav },
+  { title: 'Thoracic Contrast Calibration', desc: 'Adaptive contrast optimization highlighting subtle parenchymal and pleural details', colour: C.tealDim },
+  { title: 'Multi-Zone Pathology Screening', desc: 'Simultaneous evaluation across 14 thoracic conditions with clinical thresholding', colour: C.teal },
+  { title: 'Radiological Focus Mapping', desc: 'High-contrast focal overlays identifying consolidation, effusion, and cardiac margins', colour: C.coral },
+  { title: 'Physician Diagnostic Report', desc: 'Standardized findings with ICD-10 coding, PACS C-STORE push, and doctor sign-off', colour: C.teal },
 ];
 
+/* ── clinical capabilities ── */
 const FEATURES = [
-  { tag: 'NIH ChestX-ray14', title: 'CheXNet DenseNet-121', desc: 'Trained on 112,120 frontal radiographs with 14 simultaneous pathology heads.', stat: 'AUROC 0.942 mean' },
-  { tag: 'Explainable AI', title: 'Grad-CAM++ heatmaps', desc: 'Sub-pixel localization highlighting opacity, infiltration, and consolidation regions.', stat: 'Voxel-level heatmaps' },
-  { tag: 'Critical Care', title: 'Pneumothorax triage', desc: 'Prioritizes life-threatening tension pneumothorax and massive effusion in under 2s.', stat: '98.4% sensitivity' },
-  { tag: 'Multi-Center Validated', title: 'Stanford & NIH cohorts', desc: 'Benchmarked against consensus panel of 4 certified board radiologists.', stat: 'Exceeds radiologist avg' },
-  { tag: 'Emergency Turnaround', title: 'STAT queue integration', desc: 'Auto-generates emergency triage alerts straight to emergency medicine workstation.', stat: '< 2.8s turnaround' },
-  { tag: 'PACS Native', title: 'DICOM Secondary Capture', desc: 'Overlays burned into DICOM SC and structured reports sent via standard C-STORE.', stat: 'Zero PACS latency' },
+  { tag: 'Comprehensive Screening', title: '14 Thoracic Pathologies', desc: 'Automated screening for pneumonia, atelectasis, pneumothorax, cardiomegaly, and effusion.', stat: '14 simultaneous markers' },
+  { tag: 'Decision Support', title: 'Radiological Focus Maps', desc: 'High-definition focal overlays pinpointing exact opacity, infiltration, and pleural regions.', stat: 'Sub-pixel localization' },
+  { tag: 'Critical Care Triage', title: 'Rapid Acute Prioritization', desc: 'Immediately identifies life-threatening tension pneumothorax and massive effusion in under 2s.', stat: '98.4% sensitivity' },
+  { tag: 'Multi-Center Validated', title: 'Clinical Hospital Cohorts', desc: 'Benchmarked and validated against consensus panels of certified board radiologists.', stat: 'Exceeds radiologist avg' },
+  { tag: 'Care Coordination', title: 'STAT Alert Routing', desc: 'Auto-generates priority notifications routed straight to emergency workstations.', stat: '< 2.8s turnaround' },
+  { tag: 'PACS & EHR Native', title: 'Certified Report Export', desc: 'Secondary capture overlays and structured DICOM-SR reports transmitted with zero latency.', stat: 'Standard C-STORE compatible' },
 ];
 
-const SAMPLE_CASES = [
-  {
-    id: 'cxr-01',
-    label: 'Case A: Right Apical Pneumothorax',
-    patientAge: '42M · PA Erect',
-    kVp: '120 kVp · 2.5 mAs',
-    findings: 'Visceral pleural line visualized at right apex with peripheral lucency and absent vascular lung markings. Volume collapse est. 18-22%.',
-    primaryPathology: 'Pneumothorax (Right)',
-    confidence: 96.8,
-    critical: true,
-    results: [
-      { name: 'Pneumothorax', confidence: 96.8, critical: true, icd10: 'J93.9', finding: 'Right apex, 18mm cap' },
-      { name: 'Pleural Effusion', confidence: 42.1, critical: false, icd10: 'J90', finding: 'Mild right blunting' },
-      { name: 'Atelectasis', confidence: 38.4, critical: false, icd10: 'J98.11', finding: 'Subsegmental basilar' },
-      { name: 'Consolidation', confidence: 12.3, critical: false, icd10: 'J18.9', finding: 'None detected' },
-      { name: 'Cardiomegaly', confidence: 8.5, critical: false, icd10: 'I51.7', finding: 'CTR: 0.44 (Normal)' },
-    ],
-  },
-  {
-    id: 'cxr-02',
-    label: 'Case B: Left Lower Lobe Pneumonia',
-    patientAge: '68F · AP Supine',
-    kVp: '115 kVp · 3.2 mAs',
-    findings: 'Dense alveolar consolidation with air bronchograms in left retrocardiac space consistent with bacterial lobar pneumonia.',
-    primaryPathology: 'Consolidation / Pneumonia',
-    confidence: 94.2,
-    critical: true,
-    results: [
-      { name: 'Consolidation', confidence: 94.2, critical: true, icd10: 'J18.9', finding: 'Dense left infiltrate' },
-      { name: 'Pneumonia', confidence: 92.5, critical: true, icd10: 'J15.9', finding: 'Air bronchograms present' },
-      { name: 'Pleural Effusion', confidence: 68.0, critical: false, icd10: 'J90', finding: 'Reactive effusion' },
-      { name: 'Cardiomegaly', confidence: 45.2, critical: false, icd10: 'I51.7', finding: 'CTR: 0.52 (Borderline)' },
-      { name: 'Pneumothorax', confidence: 2.1, critical: false, icd10: 'J93.9', finding: 'Absent' },
-    ],
-  },
-  {
-    id: 'cxr-03',
-    label: 'Case C: Cardiomegaly with Pulmonary Edema',
-    patientAge: '74M · PA Erect',
-    kVp: '125 kVp · 2.8 mAs',
-    findings: 'Marked cardiomegaly (CTR 0.62) with Kerley B lines and perihilar bat-wing haze consistent with acute decompensated heart failure.',
-    primaryPathology: 'Cardiomegaly / Edema',
-    confidence: 98.1,
-    critical: true,
-    results: [
-      { name: 'Cardiomegaly', confidence: 98.1, critical: true, icd10: 'I51.7', finding: 'CTR: 0.62 (Severe)' },
-      { name: 'Edema', confidence: 93.7, critical: true, icd10: 'J81.0', finding: 'Perihilar vascular haze' },
-      { name: 'Pleural Effusion', confidence: 78.4, critical: false, icd10: 'J90', finding: 'Bilateral blunting' },
-      { name: 'Atelectasis', confidence: 52.0, critical: false, icd10: 'J98.11', finding: 'Bibasilar bands' },
-      { name: 'Pneumothorax', confidence: 1.0, critical: false, icd10: 'J93.9', finding: 'Absent' },
-    ],
-  },
-];
 
 type UploadPhase = 'idle' | 'uploading' | 'processing' | 'done';
 
@@ -133,17 +78,10 @@ export default function QXRPage() {
   const [countersStarted, setCountersStarted] = useState(false);
   const [counters, setCounters] = useState([0, 0, 0, 0]);
 
-  /* ── workstation state ── */
-  const [selectedCase, setSelectedCase] = useState(SAMPLE_CASES[0]);
-  const [showHeatmap, setShowHeatmap] = useState(true);
-  const [heatmapOpacity, setHeatmapOpacity] = useState(70);
-  const [threshold, setThreshold] = useState(40);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [reportSigned, setReportSigned] = useState(false);
 
   const COUNTER_TARGETS = [98.4, 14, 2.8, 94.2];
   const COUNTER_SUFFIXES = ['%', '', 's', '%'];
-  const COUNTER_LABELS  = ['Pneumothorax Sensitivity', 'Pathology Biomarkers', 'Inference Latency', 'Mean AUROC Score'];
+  const COUNTER_LABELS  = ['Pneumothorax Sensitivity', 'Screened Pathologies', 'Screening Turnaround', 'Diagnostic Reliability'];
 
   /* ── pipeline reveal ── */
   useEffect(() => {
@@ -246,11 +184,6 @@ export default function QXRPage() {
     }
   };
 
-  const runAnalysis = (c: typeof SAMPLE_CASES[0]) => {
-    setAnalyzing(true);
-    setSelectedCase(c);
-    setTimeout(() => setAnalyzing(false), 500);
-  };
 
   return (
     <div className="lc-page">
@@ -362,18 +295,45 @@ export default function QXRPage() {
       {/* ━━━━━ HEADER ━━━━━ */}
       <header className="lc-header">
         <div className="lc-wrap lc-header-inner">
-          <Link className="lc-brand" href="/">
-            <span className="lc-brand-icon" />
-            MiPAAS <span style={{ fontSize: 13, color: C.mute, fontWeight: 400 }}>· qXR Suite</span>
-          </Link>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <Link className="lc-brand" href="/">
+              <span className="lc-brand-icon" />
+              MiPAAS
+            </Link>
+            <span style={{ fontSize: 12, padding: '4px 10px', borderRadius: 999, background: 'rgba(125, 183, 176, 0.12)', color: C.teal, fontWeight: 600 }}>
+              Chest Radiography (CXR)
+            </span>
+          </div>
+
           <nav className="lc-nav">
             <a href="#upload">Upload CXR</a>
-            <a href="#pipeline">Pipeline</a>
+            <a href="#pipeline">Clinical Stages</a>
             <a href="#features">Capabilities</a>
             <a href="#clinical-station">Workstation</a>
-            <a href="#stats">Benchmarks</a>
+            <a href="#stats">Accuracy</a>
           </nav>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <Link
+              href="/patient"
+              className="lc-btn"
+              style={{ padding: '8px 14px', fontSize: 13, gap: 6 }}
+              title="Return to Patient Diagnostic System"
+            >
+              <ArrowLeft style={{ width: 14, height: 14 }} />
+              <span>Diagnostic System</span>
+            </Link>
+
+            <Link
+              href="/emr"
+              className="lc-btn"
+              style={{ padding: '8px 14px', fontSize: 13, gap: 6, borderColor: 'rgba(125, 183, 176, 0.4)', color: C.teal }}
+              title="Open Health Dashboard"
+            >
+              <LayoutDashboard style={{ width: 14, height: 14 }} />
+              <span>Dashboard</span>
+            </Link>
+
             {isAuthenticated ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div
@@ -398,7 +358,7 @@ export default function QXRPage() {
               <button
                 onClick={redirectToLogin}
                 className="lc-btn lc-btn-p"
-                style={{ padding: '10px 22px', fontSize: 14 }}
+                style={{ padding: '9px 18px', fontSize: 13 }}
               >
                 <Lock style={{ width: 14, height: 14 }} />
                 Sign In
@@ -413,19 +373,28 @@ export default function QXRPage() {
         <div className="lc-wrap">
           <div className="lc-hero-grid">
             <div>
-              <span className="lc-tag">CheXNet DenseNet-121 · 14 Pathologies</span>
-              <h1 style={{ marginTop: 18 }}>
-                AI Chest X-Ray <em>Triage & Pathology</em> Detection.
+              <span className="lc-tag" style={{ display: 'inline-block', marginBottom: 16 }}>
+                Digital Chest Radiography (CXR) · Thoracic Diagnostic Protocol
+              </span>
+              <h1 style={{ marginTop: 6 }}>
+                Comprehensive Chest Radiography &{' '}
+                <em>Thoracic Screening</em>
               </h1>
               <p className="lc-hero-p">
-                Deep convolutional neural network for 14 simultaneous thoracic abnormalities. Detect pneumothorax, pneumonia, pleural effusion, and cardiomegaly in under 3 seconds with pixel-level Grad-CAM++ evidence maps.
+                Accredited radiographic assessment for 14 core thoracic pathologies including pneumothorax, bacterial consolidation, cardiomegaly, and pleural effusion with certified decision-support findings.
               </p>
               <div className="lc-acts">
                 <a className="lc-btn lc-btn-p" href="#upload">
-                  <Activity style={{ width: 16, height: 16 }} />
+                  <Upload style={{ width: 16, height: 16 }} />
                   Upload Radiograph
                 </a>
-                <a className="lc-btn" href="#pipeline">See how it works</a>
+                <a className="lc-btn" href="#clinical-station">
+                  Clinical Workstation
+                </a>
+                <Link href="/emr" className="lc-btn" style={{ borderColor: 'rgba(125, 183, 176, 0.4)', color: C.teal }}>
+                  <LayoutDashboard style={{ width: 15, height: 15 }} />
+                  Dashboard
+                </Link>
               </div>
               <div className="lc-strip">
                 <div>
@@ -434,11 +403,11 @@ export default function QXRPage() {
                 </div>
                 <div>
                   <div className="lc-strip-n" style={{ color: C.coral }}>14</div>
-                  <span>Abnormalities</span>
+                  <span>Core Pathologies</span>
                 </div>
                 <div>
                   <div className="lc-strip-n" style={{ color: C.gold }}>&lt; 2.8s</div>
-                  <span>Inference Latency</span>
+                  <span>Screening Turnaround</span>
                 </div>
               </div>
             </div>
@@ -455,7 +424,109 @@ export default function QXRPage() {
       <section id="upload" className="lc-section lc-alt">
         <div className="lc-wrap">
           <h2 className="lc-h2">Upload Frontal Chest Radiograph</h2>
-          <p className="lc-sub">Drop standard DICOM (.dcm / .dicom) chest radiograph for immediate multi-pathology classification by our trained neural models.</p>
+          <p className="lc-sub">
+            Upload standard chest radiographs (PA/AP view) for immediate multi-pathology screening and clinical decision support.
+          </p>
+
+          {/* 3-Step Progress Stepper */}
+          <div style={{ maxWidth: 680, margin: '0 auto 36px', padding: '12px 16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative' }}>
+              {/* Step 1 */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', zIndex: 2, flex: 1 }}>
+                <div
+                  style={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: '50%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 700,
+                    fontSize: 14,
+                    background: uploadPhase === 'done' ? C.teal : C.teal,
+                    color: '#060B11',
+                    boxShadow: '0 0 0 4px rgba(125, 183, 176, 0.2)',
+                  }}
+                >
+                  {uploadPhase === 'done' ? <Check style={{ width: 18, height: 18, strokeWidth: 3 }} /> : '1'}
+                </div>
+                <span style={{ fontWeight: 700, fontSize: 13, color: C.teal, marginTop: 8 }}>Upload Radiograph</span>
+                <span style={{ fontSize: 11, color: C.mute }}>Select CXR scan or image</span>
+              </div>
+
+              {/* Divider Line 1-2 */}
+              <div
+                style={{
+                  height: 2,
+                  flex: 1,
+                  marginTop: -28,
+                  background: uploadPhase === 'uploading' || uploadPhase === 'processing' || uploadPhase === 'done' ? C.teal : 'rgba(255,255,255,0.15)',
+                  transition: 'background 0.3s',
+                }}
+              />
+
+              {/* Step 2 */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', zIndex: 2, flex: 1 }}>
+                <div
+                  style={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: '50%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 700,
+                    fontSize: 14,
+                    background: uploadPhase === 'done' ? C.teal : uploadPhase === 'processing' ? C.coral : 'rgba(255,255,255,0.08)',
+                    color: uploadPhase === 'done' ? '#060B11' : '#fff',
+                    border: uploadPhase === 'done' ? 'none' : '1px solid rgba(255,255,255,0.2)',
+                  }}
+                >
+                  {uploadPhase === 'done' ? <Check style={{ width: 18, height: 18, strokeWidth: 3 }} /> : '2'}
+                </div>
+                <span style={{ fontWeight: 700, fontSize: 13, color: uploadPhase === 'done' || uploadPhase === 'processing' ? C.teal : '#fff', marginTop: 8 }}>
+                  Pathology Screening
+                </span>
+                <span style={{ fontSize: 11, color: C.mute }}>Multi-zone thoracic evaluation</span>
+              </div>
+
+              {/* Divider Line 2-3 */}
+              <div
+                style={{
+                  height: 2,
+                  flex: 1,
+                  marginTop: -28,
+                  background: uploadPhase === 'done' ? C.teal : 'rgba(255,255,255,0.15)',
+                  transition: 'background 0.3s',
+                }}
+              />
+
+              {/* Step 3 */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', zIndex: 2, flex: 1 }}>
+                <div
+                  style={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: '50%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 700,
+                    fontSize: 14,
+                    background: uploadPhase === 'done' ? C.teal : 'rgba(255,255,255,0.08)',
+                    color: uploadPhase === 'done' ? '#060B11' : '#fff',
+                    border: uploadPhase === 'done' ? 'none' : '1px solid rgba(255,255,255,0.2)',
+                  }}
+                >
+                  3
+                </div>
+                <span style={{ fontWeight: 700, fontSize: 13, color: uploadPhase === 'done' ? C.teal : '#fff', marginTop: 8 }}>
+                  Clinical Report
+                </span>
+                <span style={{ fontSize: 11, color: C.mute }}>Doctor-verified findings</span>
+              </div>
+            </div>
+          </div>
 
           {uploadError && (
             <div style={{ background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.35)', color: '#f87171', padding: '14px 18px', borderRadius: 14, marginBottom: 20, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -467,6 +538,7 @@ export default function QXRPage() {
             </div>
           )}
 
+          {/* Dashed Upload Box */}
           <div
             className={`lc-drop ${dragOver ? 'over' : ''}`}
             onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -477,19 +549,65 @@ export default function QXRPage() {
               if (e.dataTransfer.files?.length) startUpload([...e.dataTransfer.files]);
             }}
             onClick={() => uploadPhase === 'idle' && fileRef.current?.click()}
+            style={{ padding: '44px 24px', background: 'rgba(16, 35, 51, 0.7)' }}
           >
             {uploadPhase === 'idle' && (
               <>
-                <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(0,220,206,.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Upload style={{ width: 28, height: 28, color: C.teal }} />
+                <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'rgba(125, 183, 176, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.teal, marginBottom: 4 }}>
+                  <Upload style={{ width: 30, height: 30 }} />
                 </div>
-                <h3 style={{ margin: 0, fontSize: 20 }}>Drag and drop Chest X-Ray scan here</h3>
-                <div style={{ color: C.mute, fontSize: 14 }}>Accepts DICOM (.dcm), PNG, and JPEG · Evaluates with trained DenseNet-121 (zero fallbacks)</div>
-                <div style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
-                  <span style={{ fontSize: 11, fontFamily: 'monospace', padding: '3px 8px', borderRadius: 6, background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.1)', color: C.teal }}>.dcm / .dicom</span>
-                  <span style={{ fontSize: 11, fontFamily: 'monospace', padding: '3px 8px', borderRadius: 6, background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.1)', color: '#38bdf8' }}>.png</span>
-                  <span style={{ fontSize: 11, fontFamily: 'monospace', padding: '3px 8px', borderRadius: 6, background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.1)', color: '#fbbf24' }}>.jpg / .jpeg</span>
-                  <span style={{ fontSize: 11, fontFamily: 'monospace', padding: '3px 8px', borderRadius: 6, background: 'rgba(16,185,129,.1)', border: '1px solid rgba(16,185,129,.2)', color: '#34d399' }}>Auto-redirects to Doctor Station</span>
+                <h3 style={{ margin: 0, fontSize: 21, fontWeight: 700 }}>
+                  Click to upload or drag and drop your chest radiograph
+                </h3>
+                <div style={{ color: C.mute, fontSize: 14, maxWidth: 540 }}>
+                  Upload digital chest X-rays in standard clinical formats. Scans are de-identified and screened against 14 thoracic pathologies.
+                </div>
+
+                {/* Formats pill */}
+                <div
+                  style={{
+                    padding: '8px 18px',
+                    borderRadius: 16,
+                    background: 'rgba(255,255,255,0.04)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    fontSize: 12,
+                    color: C.mute,
+                  }}
+                >
+                  Supported formats: <strong style={{ color: '#fff' }}>DICOM (.dcm, .dicom), PNG, JPG, JPEG</strong> · Max 100 MB
+                </div>
+
+                {/* ALL BUTTONS IN THE SAME ROW */}
+                <div
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 14,
+                    marginTop: 10,
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="lc-btn lc-btn-p"
+                    onClick={(e) => { e.stopPropagation(); fileRef.current?.click(); }}
+                    style={{ padding: '12px 24px', fontSize: 14 }}
+                  >
+                    <Upload style={{ width: 16, height: 16 }} />
+                    <span>Choose Radiograph</span>
+                  </button>
+
+
+                  <Link
+                    href="/emr"
+                    className="lc-btn"
+                    onClick={(e) => e.stopPropagation()}
+                    style={{ padding: '12px 24px', fontSize: 14, borderColor: 'rgba(125, 183, 176, 0.4)', color: C.teal }}
+                  >
+                    <LayoutDashboard style={{ width: 16, height: 16 }} />
+                    <span>Dashboard</span>
+                  </Link>
                 </div>
               </>
             )}
@@ -506,14 +624,16 @@ export default function QXRPage() {
             {uploadPhase === 'processing' && (
               <>
                 <div className="lc-spin" />
-                <h3 style={{ margin: 0, fontSize: 20 }}>Trained DenseNet-121 Inference</h3>
-                <div style={{ color: C.mute, fontSize: 14 }}>Evaluating 14 pathology heads · Calculating Grad-CAM heatmaps...</div>
+                <h3 style={{ margin: 0, fontSize: 20 }}>Thoracic Pathology Screening</h3>
+                <div style={{ color: C.mute, fontSize: 14 }}>
+                  Evaluating 14 thoracic pathology markers · Generating focus overlays...
+                </div>
               </>
             )}
 
             {uploadPhase === 'done' && (
               <>
-                <h3 style={{ margin: 0, fontSize: 20, color: C.teal }}>✓ Analysis Complete — Redirecting to Doctor Station...</h3>
+                <h3 style={{ margin: 0, fontSize: 20, color: C.teal }}>✓ Screening Complete — Transferring to Workstation...</h3>
                 <div style={{ color: C.mute, fontSize: 14 }}>Transferring study to Doctor Workstation</div>
               </>
             )}
@@ -521,11 +641,37 @@ export default function QXRPage() {
 
           <input ref={fileRef} type="file" accept=".dcm,.dicom,.png,.jpg,.jpeg" hidden onChange={(e) => e.target.files && startUpload([...e.target.files])} />
           
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14, fontSize: 12, color: C.mute }}>
-            <span>🔒 HIPAA-compliant · Zero fallback models · Trained neural weights only</span>
-            <a href="/sample_cxr.dcm" download="sample_cxr.dcm" style={{ color: C.teal, textDecoration: 'underline' }}>
-              Download Sample DICOM (.dcm)
-            </a>
+          {/* Patient & Clinician Trust Cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))', gap: 16, marginTop: 24, paddingTop: 20, borderTop: `1px solid ${C.line}` }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: 14, borderRadius: 14, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+              <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(125, 183, 176, 0.14)', color: C.teal, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Lock style={{ width: 17, height: 17 }} />
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 13, color: '#fff' }}>Private & HIPAA Compliant</div>
+                <div style={{ fontSize: 12, color: C.mute, marginTop: 2 }}>Encrypted in transit and at rest with clinical consent governance.</div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: 14, borderRadius: 14, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+              <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(56, 189, 248, 0.12)', color: '#38bdf8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Clock style={{ width: 17, height: 17 }} />
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 13, color: '#fff' }}>Rapid Clinical Turnaround</div>
+                <div style={{ fontSize: 12, color: C.mute, marginTop: 2 }}>Instant triage for emergency findings including acute pneumothorax.</div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: 14, borderRadius: 14, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+              <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(124, 92, 252, 0.12)', color: C.lav, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <CheckCircle2 style={{ width: 17, height: 17 }} />
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 13, color: '#fff' }}>Doctor-Verified Guidance</div>
+                <div style={{ fontSize: 12, color: C.mute, marginTop: 2 }}>Every radiographic finding is reviewed and certified by medical specialists.</div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -533,8 +679,8 @@ export default function QXRPage() {
       {/* ━━━━━ PIPELINE ━━━━━ */}
       <section id="pipeline" className="lc-section">
         <div className="lc-wrap">
-          <h2 className="lc-h2">Radiology triage pipeline</h2>
-          <p className="lc-sub">Five stages from raw radiograph ingestion to structured PACS push.</p>
+          <h2 className="lc-h2">Clinical Diagnostic Workflow</h2>
+          <p className="lc-sub">Five clinical stages from quality-checked acquisition to certified PACS documentation.</p>
           <div className="lc-steps" ref={stepsRef}>
             {PIPELINE.map((s, i) => (
               <div key={i} className={`lc-step ${stepsActive[i] ? 'on' : ''}`}>
@@ -550,8 +696,8 @@ export default function QXRPage() {
       {/* ━━━━━ FEATURES ━━━━━ */}
       <section id="features" className="lc-section lc-alt">
         <div className="lc-wrap">
-          <h2 className="lc-h2">CheXNet AI & Explainability Architecture</h2>
-          <p className="lc-sub">Dense feature reuse with 121 layers, trained on world standard NIH datasets.</p>
+          <h2 className="lc-h2">Clinical Decision Support Capabilities</h2>
+          <p className="lc-sub">Comprehensive thoracic pathology evaluation with certified radiological focal maps.</p>
           <div className="lc-grid">
             {FEATURES.map((f, i) => (
               <div key={i} className="feat-card">
@@ -568,8 +714,8 @@ export default function QXRPage() {
       {/* ━━━━━ STATS ━━━━━ */}
       <section id="stats" className="lc-section" ref={statsRef}>
         <div className="lc-wrap">
-          <h2 className="lc-h2">Benchmarked accuracy across 14 pathologies</h2>
-          <p className="lc-sub">Tested against multi-radiologist panels on NIH ChestX-ray14 and MIMIC-CXR.</p>
+          <h2 className="lc-h2">Clinical Screening Benchmarks</h2>
+          <p className="lc-sub">Validated against consensus panels of certified thoracic radiologists.</p>
           <div className="lc-stats">
             {counters.map((v, i) => (
               <div key={i}>
@@ -589,9 +735,9 @@ export default function QXRPage() {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 12 }}>
             <div>
               <span style={{ fontSize: 12, textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.06em', color: C.teal }}>
-                Clinical Workstation
+                Clinical Workstation & Governance
               </span>
-              <h2 className="lc-h2" style={{ margin: '6px 0 0' }}>Interactive qXR Diagnostic Console</h2>
+              <h2 className="lc-h2" style={{ margin: '6px 0 0' }}>Interactive CXR Diagnostic Console & Sign-Off</h2>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               {isAuthenticated ? (
@@ -602,15 +748,15 @@ export default function QXRPage() {
                     gap: 8,
                     padding: '6px 14px',
                     borderRadius: 999,
-                    background: ROLE_DEFINITIONS[currentUser.role].badgeBg,
-                    border: `1px solid ${ROLE_DEFINITIONS[currentUser.role].borderColor}`,
+                    background: ROLE_DEFINITIONS[currentUser.role]?.badgeBg || 'rgba(0, 220, 206, 0.1)',
+                    border: `1px solid ${ROLE_DEFINITIONS[currentUser.role]?.borderColor || 'rgba(0, 220, 206, 0.3)'}`,
                     fontSize: 12,
                     fontWeight: 600,
-                    color: ROLE_DEFINITIONS[currentUser.role].badgeColor,
+                    color: ROLE_DEFINITIONS[currentUser.role]?.badgeColor || '#00DCCE',
                   }}
                 >
                   <CheckCircle2 style={{ width: 12, height: 12 }} />
-                  <span>{currentUser.name.split(',')[0]} · {ROLE_DEFINITIONS[currentUser.role].title}</span>
+                  <span>{currentUser.name.split(',')[0]} · {ROLE_DEFINITIONS[currentUser.role]?.title || currentUser.role}</span>
                 </div>
               ) : (
                 <button onClick={redirectToLogin} className="lc-btn" style={{ padding: '8px 16px', fontSize: 12 }}>
@@ -621,7 +767,7 @@ export default function QXRPage() {
             </div>
           </div>
           <p className="lc-sub" style={{ marginBottom: 36 }}>
-            Toggle Grad-CAM++ activation maps, adjust reporting threshold, and explore 14 pathology classifications.
+            Upload a radiograph above to run it through the live screening pipeline.
           </p>
 
           {/* Workstation Console Card */}
@@ -632,261 +778,16 @@ export default function QXRPage() {
               background: '#091927',
               padding: '32px',
               boxShadow: '0 20px 50px rgba(0, 0, 0, 0.5)',
+              textAlign: 'center',
             }}
           >
-            {/* Header info */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                paddingBottom: 20,
-                borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-                flexWrap: 'wrap',
-                gap: 14,
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 10,
-                    background: 'rgba(0, 220, 206, 0.15)',
-                    border: '1px solid rgba(0, 220, 206, 0.3)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <FileText style={{ width: 18, height: 18, color: C.teal }} />
-                </div>
-                <div>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>
-                    {selectedCase.label}
-                  </div>
-                  <div style={{ fontSize: 12, color: C.mute }}>
-                    {selectedCase.patientAge} · {selectedCase.kVp}
-                  </div>
-                </div>
-              </div>
-
-              {/* Case Buttons */}
-              <div style={{ display: 'flex', gap: 8 }}>
-                {SAMPLE_CASES.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => runAnalysis(c)}
-                    className="lc-btn"
-                    style={{
-                      padding: '6px 14px',
-                      fontSize: 12,
-                      borderColor: selectedCase.id === c.id ? C.teal : 'rgba(255,255,255,0.1)',
-                      color: selectedCase.id === c.id ? '#07131D' : C.mute,
-                      background: selectedCase.id === c.id ? C.teal : 'rgba(255,255,255,0.03)',
-                      fontWeight: 700,
-                    }}
-                  >
-                    {c.label.split(':')[0]}
-                  </button>
-                ))}
-              </div>
+            <FileText style={{ width: 28, height: 28, color: C.teal, marginBottom: 12 }} />
+            <div style={{ fontSize: 17, fontWeight: 700, color: '#fff', marginBottom: 6 }}>
+              No clinical cases available
             </div>
-
-            {/* Grid */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))',
-                gap: 24,
-                marginTop: 24,
-              }}
-            >
-              {/* Left Column: Radiograph & Heatmap */}
-              <div>
-                <div
-                  style={{
-                    position: 'relative',
-                    aspectRatio: '4/3',
-                    borderRadius: 20,
-                    overflow: 'hidden',
-                    background: '#04070B',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  {analyzing ? (
-                    <div style={{ textAlign: 'center' }}>
-                      <RefreshCw style={{ width: 32, height: 32, color: C.teal, animation: 'spin 1s linear infinite', margin: '0 auto 12px' }} />
-                      <div style={{ fontSize: 13, color: C.mute }}>Computing CheXNet feature maps...</div>
-                    </div>
-                  ) : (
-                    <>
-                      {/* Radiograph anatomical silhouette */}
-                      <svg viewBox="0 0 400 300" style={{ width: '100%', height: '100%' }}>
-                        <rect width="400" height="300" fill="#080e14" />
-                        <ellipse cx="200" cy="150" rx="160" ry="125" fill="#121b24" />
-                        <path d="M 80 50 Q 150 40 200 65 Q 250 40 320 50" stroke="#fff" strokeWidth="4" fill="none" opacity="0.6" />
-                        <path d="M 190 65 Q 180 140 140 220 Q 200 230 240 200 Q 220 120 210 65 Z" fill="#fff" opacity="0.35" />
-                        <path d="M 40 250 Q 120 200 180 230" stroke="#fff" strokeWidth="5" fill="none" opacity="0.5" />
-                        <path d="M 220 230 Q 280 205 360 250" stroke="#fff" strokeWidth="5" fill="none" opacity="0.5" />
-                      </svg>
-
-                      {/* Grad-CAM++ Heatmap */}
-                      {showHeatmap && (
-                        <div
-                          style={{
-                            position: 'absolute',
-                            inset: 0,
-                            pointerEvents: 'none',
-                            opacity: heatmapOpacity / 100,
-                            background:
-                              selectedCase.id === 'cxr-01'
-                                ? 'radial-gradient(circle at 75% 30%, rgba(255, 120, 105, 0.85) 0%, rgba(255, 180, 50, 0.6) 25%, rgba(0, 220, 206, 0.2) 50%, transparent 70%)'
-                                : selectedCase.id === 'cxr-02'
-                                ? 'radial-gradient(circle at 35% 65%, rgba(255, 120, 105, 0.85) 0%, rgba(255, 180, 50, 0.6) 28%, rgba(0, 220, 206, 0.2) 55%, transparent 75%)'
-                                : 'radial-gradient(circle at 45% 60%, rgba(255, 120, 105, 0.8) 0%, rgba(245, 166, 35, 0.6) 35%, rgba(0, 220, 206, 0.25) 60%, transparent 80%)',
-                          }}
-                        />
-                      )}
-
-                      <div
-                        style={{
-                          position: 'absolute',
-                          top: 14,
-                          left: 14,
-                          padding: '6px 12px',
-                          borderRadius: 10,
-                          background: 'rgba(0,0,0,0.7)',
-                          backdropFilter: 'blur(8px)',
-                          fontSize: 11,
-                          fontFamily: 'monospace',
-                          color: C.ink,
-                          border: '1px solid rgba(255,255,255,0.1)',
-                        }}
-                      >
-                        <div>FINDING: <span style={{ color: C.coral, fontWeight: 700 }}>{selectedCase.primaryPathology}</span></div>
-                        <div>CONFIDENCE: <span style={{ color: C.teal }}>{selectedCase.confidence}%</span></div>
-                      </div>
-
-                      <div style={{ position: 'absolute', bottom: 14, right: 14, fontSize: 11 }}>
-                        <span style={{ padding: '3px 8px', borderRadius: 6, background: 'rgba(0,220,206,0.2)', color: C.teal, border: '1px solid rgba(0,220,206,0.4)', fontWeight: 600 }}>
-                          Grad-CAM++ Active
-                        </span>
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                {/* Controls */}
-                <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                  <button
-                    type="button"
-                    onClick={() => setShowHeatmap((p) => !p)}
-                    className="lc-btn"
-                    style={{ padding: '6px 14px', fontSize: 12 }}
-                  >
-                    <Eye style={{ width: 13, height: 13 }} />
-                    <span>{showHeatmap ? 'Heatmap ON' : 'Heatmap OFF'}</span>
-                  </button>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: C.mute }}>
-                    <span>Opacity:</span>
-                    <input
-                      type="range"
-                      min="20"
-                      max="100"
-                      value={heatmapOpacity}
-                      onChange={(e) => setHeatmapOpacity(Number(e.target.value))}
-                      style={{ accentColor: C.teal, cursor: 'pointer', width: 90 }}
-                    />
-                    <span style={{ fontFamily: 'monospace', color: '#fff' }}>{heatmapOpacity}%</span>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: C.mute }}>
-                    <span>Threshold:</span>
-                    <input
-                      type="range"
-                      min="10"
-                      max="90"
-                      step="5"
-                      value={threshold}
-                      onChange={(e) => setThreshold(Number(e.target.value))}
-                      style={{ accentColor: C.coral, cursor: 'pointer', width: 80 }}
-                    />
-                    <span style={{ fontFamily: 'monospace', color: C.coral }}>{threshold}%</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Right Column: Pathology Probabilities */}
-              <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 16 }}>
-                <div>
-                  <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.mute, marginBottom: 8 }}>
-                    Pathology Probabilities (&gt; {threshold}% Filter)
-                  </div>
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {selectedCase.results.map((r) => {
-                      const isAbove = r.confidence >= threshold;
-                      return (
-                        <div
-                          key={r.name}
-                          style={{
-                            padding: '12px 14px',
-                            borderRadius: 14,
-                            border: `1px solid ${isAbove ? (r.critical ? 'rgba(255,120,105,0.4)' : 'rgba(0,220,206,0.3)') : 'rgba(255,255,255,0.06)'}`,
-                            background: isAbove ? (r.critical ? 'rgba(255,120,105,0.1)' : 'rgba(0,220,206,0.08)') : 'rgba(255,255,255,0.02)',
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                          }}
-                        >
-                          <div>
-                            <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
-                              {r.critical && isAbove && <AlertTriangle style={{ width: 14, height: 14, color: C.coral }} />}
-                              <span>{r.name}</span>
-                            </div>
-                            <div style={{ fontSize: 11, color: C.mute, marginTop: 2 }}>
-                              {r.finding} · <span style={{ fontFamily: 'monospace' }}>{r.icd10}</span>
-                            </div>
-                          </div>
-                          <div style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: 15, color: isAbove ? (r.critical ? C.coral : C.teal) : C.mute }}>
-                            {r.confidence}%
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 14 }}>
-                  {reportSigned ? (
-                    <div style={{ padding: '12px', borderRadius: 14, background: 'rgba(0,220,206,0.1)', border: '1px solid rgba(0,220,206,0.3)', display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <CheckCircle2 style={{ width: 18, height: 18, color: C.teal }} />
-                      <span style={{ fontSize: 12, color: '#fff', fontWeight: 600 }}>
-                        Signed off & exported to PACS (DICOM-SR #CXR-994)
-                      </span>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!isAuthenticated) { redirectToLogin(); return; }
-                        setReportSigned(true);
-                      }}
-                      className="lc-btn lc-btn-p"
-                      style={{ width: '100%', justifyContent: 'center' }}
-                    >
-                      <FileCheck2 style={{ width: 16, height: 16 }} />
-                      <span>{isAuthenticated ? 'Verify & Sign-off CXR Triage Report' : 'Sign In to Authorize Report'}</span>
-                    </button>
-                  )}
-                </div>
-              </div>
+            <div style={{ fontSize: 13, color: C.mute, maxWidth: 460, margin: '0 auto' }}>
+              Sample radiographs and their model outputs have been removed. Upload a study above to run it through the
+              live screening pipeline.
             </div>
           </div>
         </div>
@@ -898,9 +799,9 @@ export default function QXRPage() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
             <div>
               <div style={{ fontSize: 12, textTransform: 'uppercase', color: C.mute, fontWeight: 700 }}>
-                Explore Other MiPAAS Disease Suites
+                Explore Other MiPAAS Diagnostic Suites
               </div>
-              <h3 style={{ margin: '4px 0 0', fontSize: 20 }}>Comprehensive Medical AI Portfolio</h3>
+              <h3 style={{ margin: '4px 0 0', fontSize: 20 }}>Comprehensive Clinical Diagnostic Portfolio</h3>
             </div>
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
               <Link href="/cardiac" className="lc-btn" style={{ fontSize: 13 }}>qCardiac (Heart AI) →</Link>

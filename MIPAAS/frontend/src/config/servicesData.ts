@@ -3,13 +3,13 @@ import { ServiceConfig, ServiceAuditEntry } from '@/types/services';
 export const INITIAL_SERVICES: ServiceConfig[] = [
   {
     id: 'lung-cancer',
-    name: 'qCT Lung – Lung Cancer AI',
-    shortName: 'Lung Cancer AI',
+    name: 'qCT Lung – Lung Cancer Screening',
+    shortName: 'Lung Cancer Screening',
     tagline: '3D Nodule Detection & 6-Year Risk Forecasting',
     description:
-      'The end-to-end Lung Cancer care continuum detects lung nodules early, measures for disease progression and manages cases with 6-year Sybil deep forecasting.',
+      'The end-to-end Lung Cancer care continuum detects lung nodules early, measures for disease progression and manages cases with standardized 6-year clinical risk forecasting.',
     modality: 'LDCT',
-    badge: 'Sybil AI',
+    badge: 'LDCT Screening',
     accent: '#7C5CFC',
     bg: 'bg-gradient-to-br from-[#008280] to-[#0E273A]',
     image: '/images/mipaas_lung_cancer.jpg',
@@ -157,11 +157,11 @@ export const INITIAL_SERVICES: ServiceConfig[] = [
   },
   {
     id: 'qxr',
-    name: 'qXR – Chest X-Ray AI',
+    name: 'qXR – Chest X-Ray Screening',
     shortName: 'Chest Radiography',
     tagline: '14-Pathology Screening & Triage',
     description:
-      'Multi-pathology chest radiograph triage in < 3 seconds with explainable AI heatmaps, pneumothorax localization, and direct PACS push.',
+      'Comprehensive chest radiograph triage in < 3 seconds with certified radiological focus maps, acute pneumothorax localization, and direct PACS integration.',
     modality: 'CXR',
     badge: 'CE · FDA',
     accent: '#00DCCE',

@@ -4,7 +4,6 @@ Database Administration and Health Routes.
 Provides observability endpoints for the central database:
 - GET /api/v1/database/status
 - GET /api/v1/database/stats
-- POST /api/v1/database/seed
 - POST /api/v1/database/init
 """
 
@@ -15,7 +14,6 @@ from app.database import (
     check_db_health,
     get_db_stats,
     init_db,
-    seed_database,
 )
 from app.utils.response import api_error, api_response
 
@@ -40,19 +38,6 @@ def database_stats():
     except Exception as exc:
         logger.error("database_stats_error", error=str(exc))
         return api_error(f"Failed to retrieve database stats: {exc}", 500)
-
-
-@database_bp.route("/database/seed", methods=["POST"])
-def database_seed():
-    """Seed central database with baseline clinical, EMR, and user records."""
-    try:
-        data = request.get_json(silent=True) or {}
-        overwrite = data.get("overwrite", False)
-        result = seed_database(overwrite=overwrite)
-        return api_response(result)
-    except Exception as exc:
-        logger.error("database_seed_error", error=str(exc))
-        return api_error(f"Failed to seed database: {exc}", 500)
 
 
 @database_bp.route("/database/init", methods=["POST"])

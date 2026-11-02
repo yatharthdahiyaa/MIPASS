@@ -22,12 +22,12 @@ export async function listRoles(req: AuthenticatedRequest, res: Response): Promi
     description: r.description,
     isSystem: r.isSystem,
     createdAt: r.createdAt,
-    userCount: r._count.userRoles,
-    groupCount: r._count.groupRoles,
-    policies: r.rolePolicies.map((rp) => ({
-      id: rp.policy.id,
-      name: rp.policy.name,
-      description: rp.policy.description,
+    userCount: r._count?.userRoles || 0,
+    groupCount: r._count?.groupRoles || 0,
+    policies: (r.rolePolicies || []).map((rp: any) => ({
+      id: rp.policy?.id || rp.policyId || 'pol',
+      name: rp.policy?.name || 'Policy',
+      description: rp.policy?.description || '',
     })),
   }));
 

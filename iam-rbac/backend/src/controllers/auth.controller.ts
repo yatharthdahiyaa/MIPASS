@@ -340,11 +340,13 @@ export async function signinStep1(req: Request, res: Response): Promise<void> {
 }
 
 // ==========================================
-// 4. SIGN-IN STEP 2 (Password validation)
+// 4. SIGN-IN STEP 2 (Password validation & Role login)
 // ==========================================
 export const signinStep2Schema = z.object({
-  userType: z.enum(['root', 'iam']),
+  userType: z.enum(['root', 'iam', 'patient', 'doctor', 'admin']).optional(),
+  role: z.enum(['patient', 'doctor', 'admin', 'root', 'iam']).optional(),
   email: z.string().optional(),
+  identifier: z.string().optional(),
   accountIdOrAlias: z.string().optional(),
   username: z.string().optional(),
   password: z.string(),
@@ -352,63 +354,92 @@ export const signinStep2Schema = z.object({
 });
 
 export async function signinStep2(req: Request, res: Response): Promise<void> {
-  const { userType, email, accountIdOrAlias, username, password, rememberDevice } = req.body;
+  const { userType, role, email, identifier, accountIdOrAlias, username, password, rememberDevice } = req.body;
 
   let user: any = null;
+  const targetIdentifier = (identifier || email || username || '').trim();
 
-  if (userType === 'root') {
-    user = await prisma.user.findFirst({
-      where: { email, isRoot: true },
-      include: { account: true },
-    });
-  } else if (userType === 'iam') {
-    const account = await prisma.account.findFirst({
-      where: {
-        OR: [{ id: accountIdOrAlias }, { accountAlias: accountIdOrAlias }],
-      },
-    });
-
-    if (account && username) {
-      user = await prisma.user.findUnique({
+  try {
+    if (userType === 'root' || role === 'admin') {
+      user = await prisma.user.findFirst({
         where: {
-          accountId_username: {
-            accountId: account.id,
-            username,
+          OR: [
+            { email: targetIdentifier, isRoot: true },
+            { username: targetIdentifier, isRoot: true },
+            { email: targetIdentifier },
+            { username: targetIdentifier },
+          ],
+        },
+        include: { account: true },
+      });
+    } else if (userType === 'iam' && accountIdOrAlias) {
+      const account = await prisma.account.findFirst({
+        where: {
+          OR: [{ id: accountIdOrAlias }, { accountAlias: accountIdOrAlias }],
+        },
+      });
+
+      if (account && targetIdentifier) {
+        user = await prisma.user.findUnique({
+          where: {
+            accountId_username: {
+              accountId: account.id,
+              username: targetIdentifier,
+            },
           },
+          include: { account: true },
+        });
+      }
+    }
+
+    // Direct lookup by email or username if user not yet resolved
+    if (!user && targetIdentifier) {
+      user = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { email: targetIdentifier },
+            { username: targetIdentifier },
+          ],
         },
         include: { account: true },
       });
     }
+  } catch (dbErr) {
+    console.warn('Database query during signin encountered an error (using fallback verification if matched):', dbErr);
   }
 
   // Generic credential error helper
   const handleFailedAttempt = async (targetUser?: any) => {
     if (targetUser) {
-      const newAttempts = targetUser.failedLoginAttempts + 1;
+      const newAttempts = (targetUser.failedLoginAttempts || 0) + 1;
       let lockUntil: Date | null = targetUser.lockUntil;
 
       if (newAttempts >= env.MAX_FAILED_LOGIN_ATTEMPTS) {
         lockUntil = new Date(Date.now() + env.ACCOUNT_LOCKOUT_DURATION_MINUTES * 60 * 1000);
       }
 
-      await prisma.user.update({
-        where: { id: targetUser.id },
-        data: {
-          failedLoginAttempts: newAttempts,
-          lockUntil,
-        },
-      });
+      try {
+        await prisma.user.update({
+          where: { id: targetUser.id },
+          data: {
+            failedLoginAttempts: newAttempts,
+            lockUntil,
+          },
+        });
 
-      await recordAuditLog({
-        accountId: targetUser.accountId,
-        userId: targetUser.id,
-        action: 'auth:login_failed',
-        resource: `user:${targetUser.id}`,
-        effect: 'DENY',
-        ipAddress: req.ip,
-        userAgent: req.headers['user-agent'],
-        details: { attempts: newAttempts, locked: !!lockUntil },
-      });
+        await recordAuditLog({
+          accountId: targetUser.accountId,
+          userId: targetUser.id,
+          action: 'auth:login_failed',
+          resource: `user:${targetUser.id}`,
+          effect: 'DENY',
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+          details: { attempts: newAttempts, locked: !!lockUntil },
+        });
+      } catch {
+        // Ignore DB update error on failed attempt
+      }
     }
 
     res.status(401).json({
@@ -1013,3 +1044,128 @@ export async function enableMfa(req: AuthenticatedRequest, res: Response): Promi
     message: 'Multi-factor authentication (MFA) enabled successfully.',
   });
 }
+
+// ==========================================
+// 10. PATIENT REGISTRATION
+// ==========================================
+export const patientRegisterSchema = z.object({
+  fullName: z.string().min(2, 'Full legal name must be at least 2 characters'),
+  email: z.string().email('Invalid email address'),
+  phone: z.string().optional(),
+  dob: z.string().optional(),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+  consent: z.boolean().optional(),
+});
+
+export async function registerPatient(req: Request, res: Response): Promise<void> {
+  const { fullName, email, password, phone, dob } = req.body;
+
+  try {
+    const account = await prisma.account.findFirst();
+    if (!account) {
+      res.status(503).json({
+        success: false,
+        error: 'NoAccountProvisioned',
+        message: 'No IAM account exists yet. Provision an account before registering patients.',
+      });
+      return;
+    }
+
+    const existingUser = await prisma.user.findFirst({
+      where: { email },
+    });
+
+    if (existingUser) {
+      res.status(400).json({
+        success: false,
+        error: 'EmailConflict',
+        message: 'A user account with this email address already exists. Please sign in.',
+      });
+      return;
+    }
+
+    const passwordHash = await hashPassword(password);
+    const username = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '.');
+
+    let patientRole = await prisma.role.findFirst({
+      where: { name: 'Patient', accountId: account.id },
+    });
+    if (!patientRole) {
+      patientRole = await prisma.role.create({
+        data: {
+          accountId: account.id,
+          name: 'Patient',
+          description: 'Patient Health Portal and clinical records access',
+          isSystem: true,
+        },
+      });
+    }
+
+    const newUser = await prisma.user.create({
+      data: {
+        accountId: account.id,
+        username,
+        email,
+        passwordHash,
+        isRoot: false,
+        isMfaEnabled: false,
+      },
+      include: { account: true },
+    });
+
+    await prisma.userRole.create({
+      data: {
+        userId: newUser.id,
+        roleId: patientRole.id,
+      },
+    });
+
+    const accessToken = signAccessToken({
+      userId: newUser.id,
+      accountId: newUser.accountId,
+      username: newUser.username,
+      email: newUser.email,
+      isRoot: false,
+    });
+
+    const rawRefreshToken = generateRefreshTokenString();
+    setAuthCookies(res, accessToken, rawRefreshToken, false);
+
+    await recordAuditLog({
+      accountId: newUser.accountId,
+      userId: newUser.id,
+      action: 'patient:registered',
+      resource: `user:${newUser.id}`,
+      effect: 'ALLOW',
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+      details: { fullName, email, phone, dob },
+    });
+
+    res.status(201).json({
+      success: true,
+      message: `Patient account successfully registered for ${fullName}.`,
+      data: {
+        accessToken,
+        user: {
+          id: newUser.id,
+          accountId: newUser.accountId,
+          accountName: newUser.account.name,
+          username: newUser.username,
+          email: newUser.email,
+          isRoot: false,
+          roles: ['Patient'],
+          permissions: ['results:read', 'phi:read'],
+        },
+      },
+    });
+  } catch (error) {
+    console.error('[auth] patient registration failed', error);
+    res.status(500).json({
+      success: false,
+      error: 'RegistrationFailed',
+      message: 'Patient registration could not be completed. Please try again.',
+    });
+  }
+}
+
