@@ -15,17 +15,12 @@ API_PREFIX = "/api/v1"
 # (module, blueprint attribute) in registration order.
 _BLUEPRINTS = (
     ("app.routes.health", "health_bp"),
-    ("app.routes.upload", "upload_bp"),
-    ("app.routes.jobs", "jobs_bp"),
     ("app.routes.results", "results_bp"),
     ("app.routes.diseases", "diseases_bp"),
-    ("app.routes.auth_rbac", "rbac_bp"),
-    ("app.routes.inference", "inference_bp"),
-    ("app.routes.agents_and_workflows", "workflows_bp"),
-    ("app.routes.openemr", "openemr_bp"),
-    ("app.routes.eka_portal", "eka_bp"),
-    ("app.routes.abdm", "abdm_bp"),
+    ("app.routes.accounts", "accounts_bp"),
     ("app.routes.database_admin", "database_bp"),
+    ("app.routes.patient_portal", "patient_bp"),
+    ("app.routes.doctor_panel", "doctor_bp"),
 )
 
 
