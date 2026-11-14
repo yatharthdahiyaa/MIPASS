@@ -14,8 +14,7 @@ Unifies data persistence across:
 
 ```
 infra/database/
-├── docker-compose.db.yml     # Standalone Docker stack (PostgreSQL 16 + Adminer GUI)
-├── schema.sql                # Raw SQL DDL schema (PostgreSQL 16 / ANSI SQL)
+├── docker-compose.db.yml     # Standalone Docker stack (PostgreSQL 16 + Adminer GUI + Redis 7)
 └── README.md                 # This guide
 
 apps/backend/app/database/    # ORM package (the single source of truth)
@@ -23,27 +22,19 @@ apps/backend/app/database/    # ORM package (the single source of truth)
 └── models/                   # base, iam, clinical, consumer_health, imaging_ai, abdm
 
 apps/backend/scripts/init_db.py   # Initialization / stats / health CLI
-data/db/mipaas_central.db         # Default local SQLite database
 ```
 
 ---
 
 ## 🚀 Quick Start
 
-### 1. Local Development (Zero-Config SQLite)
-By default, the database runs automatically on SQLite with WAL mode enabled:
+### 1. Initialise the schema
+The models are the single source of truth. Tables are created (never dropped) on startup, or explicitly:
 ```bash
-# Initialize all 18 tables
-python apps/backend/scripts/init_db.py
-
-# Initialize and seed with baseline clinical records
-python apps/backend/scripts/init_db.py --seed
-
-# Inspect live table row counts
-python apps/backend/scripts/init_db.py --stats
-
-# Run quick connection health check
-python apps/backend/scripts/init_db.py --health
+python apps/backend/scripts/init_db.py          # create missing tables
+python apps/backend/scripts/init_db.py --stats  # row counts
+python apps/backend/scripts/init_db.py --health # connectivity
+python apps/backend/scripts/init_db.py --drop   # DESTRUCTIVE: drops every table (CLI only, never over HTTP)
 ```
 
 ### 2. Standalone Docker Stack (PostgreSQL 16 + Adminer GUI)
@@ -57,15 +48,11 @@ docker compose -f infra/database/docker-compose.db.yml up -d
 ### 3. Environment Variables
 Add to `.env` or system environment:
 ```env
-# PostgreSQL in Docker / Cloud SQL / Supabase:
-DATABASE_URL=postgresql://mipaas:mipaas_dev_pass@localhost:5432/mipaas_central
-
-# Or SQLite:
-# DATABASE_URL=sqlite:///data/db/mipaas_central.db
+# PostgreSQL only (Docker stack above, Cloud SQL, Supabase, ...)
+DATABASE_URL=postgresql://mipaas:mipaas_dev_pass@127.0.0.1:5432/mipaas_central
 
 DATABASE_POOL_SIZE=10
 DATABASE_MAX_OVERFLOW=20
-DATABASE_AUTO_SEED=true
 ```
 
 ---
@@ -120,3 +107,4 @@ with get_db() as db:
     db.add(order)
     # Automatically committed at the end of the context
 ```
+    

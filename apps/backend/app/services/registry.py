@@ -6,12 +6,10 @@ of all supported diseases, models, and their configurations. Adding a new
 disease or model is as simple as adding a new YAML file.
 """
 
-import os
 from pathlib import Path
-from functools import lru_cache
 
-import yaml
 import structlog
+import yaml
 
 logger = structlog.get_logger()
 
@@ -42,7 +40,7 @@ class ModelRegistry:
 
         for yaml_file in sorted(self._config_dir.glob("*.yaml")):
             try:
-                with open(yaml_file, "r") as f:
+                with open(yaml_file) as f:
                     config = yaml.safe_load(f)
 
                 if not config or "disease_id" not in config:
@@ -68,9 +66,7 @@ class ModelRegistry:
         logger.info(
             "registry_initialized",
             total_diseases=len(self._diseases),
-            total_models=sum(
-                len(d.get("models", [])) for d in self._diseases.values()
-            ),
+            total_models=sum(len(d.get("models", [])) for d in self._diseases.values()),
         )
 
     def list_diseases(self) -> list[dict]:
@@ -81,21 +77,23 @@ class ModelRegistry:
         """
         diseases = []
         for disease_id, config in self._diseases.items():
-            diseases.append({
-                "disease_id": disease_id,
-                "display_name": config.get("display_name", disease_id),
-                "modalities": config.get("modalities", []),
-                "models": [
-                    {
-                        "name": m.get("name"),
-                        "adapter": m.get("adapter"),
-                        "task": m.get("task"),
-                        "version": m.get("version"),
-                        "output_type": m.get("output_type"),
-                    }
-                    for m in config.get("models", [])
-                ],
-            })
+            diseases.append(
+                {
+                    "disease_id": disease_id,
+                    "display_name": config.get("display_name", disease_id),
+                    "modalities": config.get("modalities", []),
+                    "models": [
+                        {
+                            "name": m.get("name"),
+                            "adapter": m.get("adapter"),
+                            "task": m.get("task"),
+                            "version": m.get("version"),
+                            "output_type": m.get("output_type"),
+                        }
+                        for m in config.get("models", [])
+                    ],
+                }
+            )
         return diseases
 
     def get_disease_config(self, disease_id: str) -> dict | None:

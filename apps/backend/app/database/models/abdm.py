@@ -10,8 +10,7 @@ Implements database persistence for:
 - ABDM Scan & Share paperless OPD registration tokens
 """
 
-from sqlalchemy import Boolean, Column, ForeignKey, Index, Integer, String, Text
-from sqlalchemy.orm import relationship
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text
 
 from app.database.models.base import Base, TimestampMixin
 
@@ -21,7 +20,9 @@ class AbhaProfile(Base, TimestampMixin):
 
     __tablename__ = "abha_profiles"
 
-    user_id = Column(String(64), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    user_id = Column(
+        String(64), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     abha_number = Column(String(20), unique=True, nullable=False, index=True)
     abha_address = Column(String(100), unique=True, nullable=False, index=True)
     full_name = Column(String(150), nullable=False)
@@ -65,20 +66,27 @@ class AbdmConsent(Base, TimestampMixin):
 
     __tablename__ = "abdm_consents"
 
-    user_id = Column(String(64), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(
+        String(64), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     consent_request_id = Column(String(64), unique=True, nullable=False, index=True)
     requester_name = Column(String(150), nullable=False)
     requester_type = Column(String(50), default="Hospital", nullable=False)
     purpose_code = Column(String(50), nullable=False)
     purpose_description = Column(String(255), nullable=True)
-    record_types_json = Column(Text, nullable=False)  # JSON array: ["DiagnosticReport", "Prescription"]
+    record_types_json = Column(
+        Text, nullable=False
+    )  # JSON array: ["DiagnosticReport", "Prescription"]
     date_range_from = Column(String(50), nullable=True)
     date_range_to = Column(String(50), nullable=True)
     expiry_date = Column(String(50), nullable=False)
-    status = Column(String(50), default="REQUESTED", nullable=False, index=True)  # REQUESTED, GRANTED, DENIED, REVOKED
+    status = Column(
+        String(50), default="REQUESTED", nullable=False, index=True
+    )  # REQUESTED, GRANTED, DENIED, REVOKED
 
     def to_dict(self) -> dict:
         import json
+
         records = []
         try:
             records = json.loads(self.record_types_json) if self.record_types_json else []
@@ -107,7 +115,9 @@ class AbdmLinkedFacility(Base, TimestampMixin):
 
     __tablename__ = "abdm_linked_facilities"
 
-    user_id = Column(String(64), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(
+        String(64), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     hip_id = Column(String(64), nullable=False, index=True)
     facility_name = Column(String(200), nullable=False)
     facility_type = Column(String(100), default="General Hospital", nullable=False)
@@ -137,7 +147,9 @@ class AarogyaSetuAssessment(Base, TimestampMixin):
 
     __tablename__ = "aarogya_setu_assessments"
 
-    user_id = Column(String(64), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(
+        String(64), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     risk_level = Column(String(50), default="SAFE_LOW", nullable=False)  # SAFE_LOW, MODERATE, HIGH
     score = Column(Integer, default=0, nullable=False)
     symptoms_json = Column(Text, nullable=True)
@@ -148,6 +160,7 @@ class AarogyaSetuAssessment(Base, TimestampMixin):
 
     def to_dict(self) -> dict:
         import json
+
         def _parse(val):
             try:
                 return json.loads(val) if val else []
@@ -173,7 +186,9 @@ class VaccinationRecord(Base, TimestampMixin):
 
     __tablename__ = "vaccination_records"
 
-    user_id = Column(String(64), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(
+        String(64), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     vaccine_name = Column(String(100), nullable=False)
     dose_type = Column(String(50), nullable=False)  # Dose 1, Dose 2, Precaution Dose
     date_administered = Column(String(50), nullable=False)
@@ -203,7 +218,9 @@ class ScanShareToken(Base, TimestampMixin):
 
     __tablename__ = "scan_and_share_tokens"
 
-    user_id = Column(String(64), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(
+        String(64), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     token_number = Column(String(50), nullable=False, index=True)
     facility_name = Column(String(200), nullable=False)
     department = Column(String(100), nullable=False)

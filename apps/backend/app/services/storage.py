@@ -5,9 +5,9 @@ Handles signed URL generation, blob upload/download, and lifecycle management.
 """
 
 import datetime
+
 import structlog
 from google.cloud import storage
-from google.cloud.storage import Blob
 
 logger = structlog.get_logger()
 
@@ -25,6 +25,14 @@ class StorageService:
         self._data_bucket_name = config["GCS_DATA_BUCKET"]
         self._models_bucket_name = config["GCS_MODELS_BUCKET"]
         self._data_bucket = self._client.bucket(self._data_bucket_name)
+
+    def generate_signed_upload_url(
+        self,
+        blob_path: str,
+        content_type: str,
+        expiry_minutes: int,
+        max_size_bytes: int,
+    ) -> str:
         """Generate a V4 signed URL for direct upload from the frontend.
 
         Args:

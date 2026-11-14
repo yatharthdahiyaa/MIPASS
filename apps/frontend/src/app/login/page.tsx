@@ -1,50 +1,20 @@
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
-import LoginPage from '@/components/login/LoginPage';
+import '@/components/home/tokens.css';
+import AuthShell from '@/components/auth/AuthShell';
+import LoginForm from '@/components/auth/LoginForm';
 
 export const metadata: Metadata = {
-  title: 'MiPAAS · Secure Login',
-  description:
-    'Authenticate to access the MiPAAS AI clinical imaging platform. Role-based access control for healthcare professionals.',
+  title: 'Sign in · MIPAAS',
+  description: 'Sign in to your MIPAAS health record or clinical workspace.',
 };
 
-function LoginFallback() {
+export default function LoginPage() {
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: '#050A10',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: '#EAF2F6',
-        fontFamily: 'Inter, system-ui, sans-serif',
-      }}
-    >
-      <div style={{ textAlign: 'center' }}>
-        <div
-          style={{
-            width: 40,
-            height: 40,
-            border: '3px solid rgba(255,255,255,0.1)',
-            borderTopColor: '#00DCCE',
-            borderRadius: '50%',
-            animation: 'spin 1s linear infinite',
-            margin: '0 auto 16px',
-          }}
-        />
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-        <p style={{ color: '#7B8FA0', fontSize: 14 }}>Initializing secure session...</p>
-      </div>
-    </div>
-  );
-}
-
-export default function LoginRoute() {
-  return (
-    <Suspense fallback={<LoginFallback />}>
-      <LoginPage />
-    </Suspense>
+    <AuthShell mode="login">
+      <Suspense>
+        <LoginForm />
+      </Suspense>
+    </AuthShell>
   );
 }

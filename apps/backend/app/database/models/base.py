@@ -2,10 +2,9 @@
 Base SQLAlchemy Declarative Model and Mixins for MiPAAS Central Database.
 """
 
-from datetime import datetime, timezone
-import json
 import uuid
-from typing import Any, Dict
+from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import Column, DateTime, String
 from sqlalchemy.orm import declarative_base
@@ -24,19 +23,19 @@ class TimestampMixin:
     id = Column(String(64), primary_key=True, default=generate_uuid)
     created_at = Column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
     updated_at = Column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert model instance to python dictionary."""
-        result: Dict[str, Any] = {}
+        result: dict[str, Any] = {}
         for column in self.__table__.columns:
             val = getattr(self, column.name)
             if isinstance(val, datetime):

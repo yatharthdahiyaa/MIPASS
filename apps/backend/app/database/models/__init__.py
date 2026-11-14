@@ -1,9 +1,18 @@
 """
-Model exports for MiPAAS Central Database.
+Model exports for the MIPAAS central database.
 """
 
+from app.database.models.agents import AgentRun
+from app.database.models.abdm import (
+    AarogyaSetuAssessment,
+    AbdmConsent,
+    AbdmLinkedFacility,
+    AbhaProfile,
+    ScanShareToken,
+    VaccinationRecord,
+)
 from app.database.models.base import Base, TimestampMixin, generate_uuid
-from app.database.models.iam import AuditLog, Role, User, UserSession
+from app.database.models.care import CareLink, CareMessage, ClinicianReview, ConsultRequest
 from app.database.models.clinical import (
     ClinicalEncounter,
     ClinicalPatient,
@@ -18,19 +27,40 @@ from app.database.models.consumer_health import (
     Medication,
     VitalRecord,
 )
+from app.database.models.doctor_panel import DoctorStudy
+from app.database.models.iam import (
+    AuditLog,
+    AuthToken,
+    EmailOutbox,
+    MfaRecoveryCode,
+    Notification,
+    NotificationPreference,
+    Role,
+    User,
+    UserSession,
+)
 from app.database.models.imaging_ai import (
     AgentWorkflowRun,
     DiagnosticJob,
     DicomSeries,
     DicomStudy,
 )
-from app.database.models.abdm import (
-    AarogyaSetuAssessment,
-    AbdmConsent,
-    AbdmLinkedFacility,
-    AbhaProfile,
-    ScanShareToken,
-    VaccinationRecord,
+from app.database.models.patient_ehr import (
+    ClinicianProfile,
+    DailyLog,
+    MedicationDose,
+    PatientDocument,
+    PatientMedication,
+    PatientProfile,
+    XrayStudy,
+)
+from app.database.models.workflows import (
+    FindingReview,
+    IntegrationSetting,
+    PseudonymConsent,
+    ReportSignature,
+    WebhookSubscription,
+    WorklistCase,
 )
 
 __all__ = [
@@ -41,6 +71,30 @@ __all__ = [
     "Role",
     "UserSession",
     "AuditLog",
+    "AuthToken",
+    "MfaRecoveryCode",
+    "Notification",
+    "NotificationPreference",
+    "EmailOutbox",
+    "CareLink",
+    "CareMessage",
+    "ClinicianReview",
+    "ConsultRequest",
+    "ClinicianProfile",
+    "PatientProfile",
+    "DailyLog",
+    "PatientMedication",
+    "MedicationDose",
+    "PatientDocument",
+    "XrayStudy",
+    "DoctorStudy",
+    "AgentRun",
+    "WorklistCase",
+    "FindingReview",
+    "ReportSignature",
+    "PseudonymConsent",
+    "IntegrationSetting",
+    "WebhookSubscription",
     "ClinicalProvider",
     "ClinicalPatient",
     "ClinicalEncounter",
@@ -62,4 +116,3 @@ __all__ = [
     "VaccinationRecord",
     "ScanShareToken",
 ]
-

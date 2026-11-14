@@ -6,6 +6,7 @@ Each pipeline stage publishes to the next topic:
 """
 
 import json
+
 import structlog
 from google.cloud import pubsub_v1
 

@@ -16,11 +16,24 @@ services:
       - "5432:5432"
     volumes:
       - postgres_central_data:/var/lib/postgresql/data
-      - ./schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U mipaas -d mipaas_central"]
       interval: 5s
       timeout: 5s
+      retries: 5
+
+  # Record events from the API to the patient chat (app/services/events.py), and shared rate limits.
+  # Set REDIS_URL=redis://127.0.0.1:6379/0 for the API and the chat service.
+  redis:
+    image: redis:7-alpine
+    container_name: mipaas_central_redis
+    restart: always
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
       retries: 5
 
   # Web GUI for inspecting and editing tables

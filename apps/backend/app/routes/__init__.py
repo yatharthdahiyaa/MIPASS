@@ -18,9 +18,12 @@ _BLUEPRINTS = (
     ("app.routes.results", "results_bp"),
     ("app.routes.diseases", "diseases_bp"),
     ("app.routes.accounts", "accounts_bp"),
+    ("app.routes.care", "care_bp"),
+    ("app.routes.admin", "admin_bp"),
     ("app.routes.database_admin", "database_bp"),
     ("app.routes.patient_portal", "patient_bp"),
     ("app.routes.doctor_panel", "doctor_bp"),
+    ("app.routes.agents", "agents_bp"),
 )
 
 

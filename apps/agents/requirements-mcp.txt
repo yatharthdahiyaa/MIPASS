@@ -1,0 +1,7 @@
+mcp>=2.3,<3
+requests>=2.31
+python-dotenv>=1.0
+starlette>=0.47
+uvicorn>=0.30
+python-multipart>=0.0.9
+redis>=5.1                  # record events from the API (chat_server.py, record_events.py)

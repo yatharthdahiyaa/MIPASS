@@ -1,0 +1,137 @@
+# MIPAAS production stack on one host: HTTPS edge, web app, API, PostgreSQL, Redis.
+#
+#   cp infra/deploy/.env.example infra/deploy/.env      # then fill in every value
+#   docker compose -f infra/deploy/docker-compose.yml --env-file infra/deploy/.env up -d --build
+#
+# The `migrate` service applies database migrations and exits; the API starts only after it
+# succeeds. The API refuses to start if the configuration is unsafe (apps/backend/app/preflight.py).
+# AI agents (optional): set AGENTS_URL=http://agents:8100 and AGENTS_SERVICE_KEY in .env and start with
+# `--profile agents`. Without AGENTS_URL the product runs with the agents switched off.
+# Not included: the patient chat service (apps/agents/chat_server.py), off-site backups, monitoring.
+# The API already writes patient record events to Redis; if you add the chat service, give it the same
+# REDIS_URL so it hears about X-rays added on the X-rays page (docs/AGENTS.md, "Record updates").
+
+x-api-env: &api-env
+  FLASK_ENV: production
+  SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY}
+  MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:?set MFA_ENCRYPTION_KEY}
+  DATABASE_URL: postgresql://mipaas:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/mipaas
+  REDIS_URL: redis://redis:6379/0
+  APP_BASE_URL: https://${MIPAAS_DOMAIN:?set MIPAAS_DOMAIN}
+  CORS_ORIGINS: https://${MIPAAS_DOMAIN}
+  TRUST_PROXY: "1"
+  MAIL_BACKEND: smtp
+  MAIL_FROM: ${MAIL_FROM:?set MAIL_FROM}
+  SMTP_HOST: ${SMTP_HOST:?set SMTP_HOST}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  AGENTS_URL: ${AGENTS_URL:-}
+  AGENTS_SERVICE_KEY: ${AGENTS_SERVICE_KEY:-}
+  AGENTS_DISABLED: ${AGENTS_DISABLED:-}
+  AGENTS_LLM_NOTICE: ${AGENTS_LLM_NOTICE:-}
+
+services:
+  edge:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    environment:
+      MIPAAS_DOMAIN: ${MIPAAS_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+      - api
+
+  web:
+    build:
+      context: ../../apps/frontend
+      args:
+        NEXT_PUBLIC_API_ORIGIN: http://api:8080
+    restart: unless-stopped
+    depends_on:
+      - api
+
+  api:
+    build:
+      context: ../../apps/backend
+    restart: unless-stopped
+    environment:
+      <<: *api-env
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+    volumes:
+      - uploads:/data
+      # Trained model checkpoints (chexpert_ensemble.pth, see docs/CHEST_XRAY_MODEL.md). Read-only.
+      - ${MIPAAS_ML_HOST_DIR:-../../ml}:/ml:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  migrate:
+    build:
+      context: ../../apps/backend
+    restart: "no"
+    environment:
+      <<: *api-env
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  agents:
+    profiles: ["agents"]
+    build:
+      context: ../../apps/agents
+    restart: unless-stopped
+    environment:
+      # Without it the service refuses every call from outside its container; the API refuses to start
+      # with AGENTS_URL set and no key.
+      AGENTS_SERVICE_KEY: ${AGENTS_SERVICE_KEY:-}
+      MIPAAS_BACKEND_URL: http://api:8080
+      # Which model the agents may use for wording (only with patient consent): groq | xai | off.
+      AGENT_LLM_PROVIDER: ${AGENT_LLM_PROVIDER:-off}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      XAI_API_KEY: ${XAI_API_KEY:-}
+      SARVAM_API_KEY: ${SARVAM_API_KEY:-}
+    volumes:
+      - agents_data:/data
+      - ${MIPAAS_ML_HOST_DIR:-../../ml}:/ml:ro
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mipaas
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: mipaas
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mipaas -d mipaas"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  agents_data:
+  postgres_data:
+  uploads:
+  caddy_data:
+  caddy_config:

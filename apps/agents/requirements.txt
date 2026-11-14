@@ -1,0 +1,10 @@
+flask>=3.0
+requests>=2.31
+python-dotenv>=1.0
+numpy>=1.26
+opencv-python-headless>=4.8
+pydicom>=3.0
+scikit-image>=0.22
+pillow>=10
+torch>=2.2
+timm>=1.0

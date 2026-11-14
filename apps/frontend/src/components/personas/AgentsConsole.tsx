@@ -1,4 +1,3 @@
-// @ts-nocheck
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
@@ -665,8 +664,6 @@ export default function AgentsConsole() {
                   </pre>
                 </div>
 
-// @ts-ignore
-// @ts-ignore
                 <button
                   type="button"
                   onClick={executeAgent}
@@ -683,7 +680,7 @@ export default function AgentsConsole() {
                   )}
                 </button>
 
-                {outputJson && (
+                {outputJson != null && (
                   <div className="mt-4 pt-4 border-t border-slate-200 space-y-2">
                     <span className="text-[10px] uppercase font-bold text-teal-800 flex items-center gap-1.5">
                       <CheckCircle2 className="w-3.5 h-3.5 text-teal-600" />

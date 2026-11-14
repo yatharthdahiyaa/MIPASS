@@ -87,4 +87,3 @@ __all__ = [
     "VaccinationRecord",
     "ScanShareToken",
 ]
-

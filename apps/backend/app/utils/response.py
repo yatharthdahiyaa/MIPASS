@@ -22,10 +22,12 @@ def api_response(data: dict, status_code: int = 200):
     Returns:
         Flask JSON response tuple.
     """
-    return jsonify({
-        "success": True,
-        "data": data,
-    }), status_code
+    return jsonify(
+        {
+            "success": True,
+            "data": data,
+        }
+    ), status_code
 
 
 def api_error(message: str, status_code: int = 400, error_type: str | None = None):
@@ -52,11 +54,13 @@ def api_error(message: str, status_code: int = 400, error_type: str | None = Non
         503: "SERVICE_UNAVAILABLE",
     }
 
-    return jsonify({
-        "success": False,
-        "error": {
-            "code": status_code,
-            "type": error_type or type_map.get(status_code, "ERROR"),
-            "message": message,
-        },
-    }), status_code
+    return jsonify(
+        {
+            "success": False,
+            "error": {
+                "code": status_code,
+                "type": error_type or type_map.get(status_code, "ERROR"),
+                "message": message,
+            },
+        }
+    ), status_code

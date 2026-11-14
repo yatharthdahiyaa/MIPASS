@@ -1,20 +1,20 @@
 """
-Database Administration and Health Routes.
+Central database administration routes.
 
-Provides observability endpoints for the central database:
-- GET /api/v1/database/status
-- GET /api/v1/database/stats
-- POST /api/v1/database/init
+- GET  /api/v1/database/status   reachability only (no credentials or error text)
+- GET  /api/v1/database/stats    table row counts (administrators)
+- POST /api/v1/database/init     create missing tables (administrators)
+
+Dropping tables is deliberately not available over HTTP. Use the CLI
+(`python scripts/init_db.py --drop`) on a machine with shell access.
 """
 
 import structlog
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify
 
-from app.database import (
-    check_db_health,
-    get_db_stats,
-    init_db,
-)
+from app.database import check_db_health, get_db_stats, init_db
+from app.middleware.auth_middleware import require_permission
+from app.services.rbac import Permission
 from app.utils.response import api_error, api_response
 
 logger = structlog.get_logger()
@@ -23,31 +23,37 @@ database_bp = Blueprint("database_admin", __name__)
 
 @database_bp.route("/database/status", methods=["GET"])
 def database_status():
-    """Health check for central database."""
+    """Whether the central database is reachable."""
     health = check_db_health()
-    status_code = 200 if health.get("connected") else 503
-    return jsonify(health), status_code
+    connected = bool(health.get("connected"))
+    return jsonify({"status": "healthy" if connected else "unhealthy", "connected": connected}), (
+        200 if connected else 503
+    )
 
 
 @database_bp.route("/database/stats", methods=["GET"])
+@require_permission(Permission.USERS_MANAGE)
 def database_stats():
-    """Returns row counts and schema information across all central tables."""
+    """Row counts for every table in the central database."""
     try:
-        stats = get_db_stats()
-        return api_response(stats)
+        return api_response(get_db_stats())
     except Exception as exc:
         logger.error("database_stats_error", error=str(exc))
-        return api_error(f"Failed to retrieve database stats: {exc}", 500)
+        return api_error("Could not read database statistics.", 500)
 
 
 @database_bp.route("/database/init", methods=["POST"])
+@require_permission(Permission.USERS_MANAGE)
 def database_init():
-    """Initialize or recreate central database tables."""
+    """Create any missing tables from the models (never drops). Development only."""
+    from flask import current_app
+
+    if not (current_app.debug or current_app.testing):
+        # Staging and production change the schema through migrations only.
+        return api_error("The schema is managed by migrations here: run `alembic upgrade head`.", 409)
     try:
-        data = request.get_json(silent=True) or {}
-        drop_first = data.get("drop_first", False)
-        init_db(drop_first=drop_first)
-        return api_response({"message": "Database tables initialized successfully."})
+        init_db(drop_first=False)
+        return api_response({"message": "Database tables are up to date."})
     except Exception as exc:
         logger.error("database_init_error", error=str(exc))
-        return api_error(f"Failed to initialize database: {exc}", 500)
+        return api_error("Could not initialise the database.", 500)

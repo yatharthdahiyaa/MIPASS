@@ -9,7 +9,7 @@ import structlog
 from flask import Blueprint, current_app
 
 from app.services.registry import ModelRegistry
-from app.utils.response import api_response, api_error
+from app.utils.response import api_error, api_response
 
 logger = structlog.get_logger()
 diseases_bp = Blueprint("diseases", __name__)
@@ -62,12 +62,14 @@ def list_models_for_disease(disease_id: str):
             404,
         )
 
-    return api_response({
-        "disease_id": disease_id,
-        "display_name": disease_config.get("display_name"),
-        "modalities": disease_config.get("modalities", []),
-        "models": disease_config.get("models", []),
-        "preprocessing": disease_config.get("preprocessing", {}),
-        "xai": disease_config.get("xai", {}),
-        "segmentation": disease_config.get("segmentation", {}),
-    })
+    return api_response(
+        {
+            "disease_id": disease_id,
+            "display_name": disease_config.get("display_name"),
+            "modalities": disease_config.get("modalities", []),
+            "models": disease_config.get("models", []),
+            "preprocessing": disease_config.get("preprocessing", {}),
+            "xai": disease_config.get("xai", {}),
+            "segmentation": disease_config.get("segmentation", {}),
+        }
+    )

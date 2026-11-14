@@ -5,10 +5,12 @@ Defines clinical, operational, and administrative roles, granular permissions,
 role hierarchies, audit logging for access checks, and user persona stores.
 """
 
+import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
+
 import structlog
 
 logger = structlog.get_logger()
@@ -16,40 +18,51 @@ logger = structlog.get_logger()
 
 class Role(str, Enum):
     """System roles representing distinct clinical and administrative responsibilities."""
+
     ADMIN = "admin"
     RADIOLOGIST = "radiologist"
     TECHNICIAN = "technician"
     RESEARCHER = "researcher"
     AUDITOR = "auditor"
+    PATIENT = "patient"
+    DOCTOR = "doctor"
+    # Self-registered clinician awaiting licence verification: no clinical access yet.
+    DOCTOR_PENDING = "doctor_pending"
 
 
 class Permission(str, Enum):
     """Granular permissions governing operations across MIPAAS services."""
+
     # Job operations
-    JOBS_CREATE = "jobs:create"            # Upload DICOM, request signed URLs, start processing
-    JOBS_READ = "jobs:read"                # View own jobs and status
-    JOBS_READ_ALL = "jobs:read_all"        # View jobs across all users (system-wide)
-    JOBS_DELETE = "jobs:delete"            # Cancel running jobs or delete artifacts
+    JOBS_CREATE = "jobs:create"  # Upload DICOM, request signed URLs, start processing
+    JOBS_READ = "jobs:read"  # View own jobs and status
+    JOBS_READ_ALL = "jobs:read_all"  # View jobs across all users (system-wide)
+    JOBS_DELETE = "jobs:delete"  # Cancel running jobs or delete artifacts
 
     # Results & Explainable AI
-    RESULTS_READ = "results:read"          # View prediction scores and classification probabilities
-    XAI_READ = "xai:read"                  # Inspect Grad-CAM++, Occlusion, Integrated Gradients, SHAP
-    REPORTS_SIGN = "reports:sign"          # Clinically validate and digitally sign diagnostic reports
-    REPORTS_EXPORT = "reports:export"      # Export PDF, DICOM-SR, or DICOM-SEG reports
+    RESULTS_READ = "results:read"  # View prediction scores and classification probabilities
+    XAI_READ = "xai:read"  # Inspect Grad-CAM++, Occlusion, Integrated Gradients, SHAP
+    REPORTS_SIGN = "reports:sign"  # Clinically validate and digitally sign diagnostic reports
+    REPORTS_EXPORT = "reports:export"  # Export PDF, DICOM-SR, or DICOM-SEG reports
 
     # Models & Registry
-    MODELS_READ = "models:read"            # View registered models, architectures, and performance stats
-    MODELS_MANAGE = "models:manage"        # Configure active models, update checkpoints, toggle registry
-    MODELS_BENCHMARK = "models:benchmark"  # Run research benchmark evaluations and sensitivity sweeps
+    MODELS_READ = "models:read"  # View registered models, architectures, and performance stats
+    MODELS_MANAGE = "models:manage"  # Configure active models, update checkpoints, toggle registry
+    MODELS_BENCHMARK = (
+        "models:benchmark"  # Run research benchmark evaluations and sensitivity sweeps
+    )
 
     # Administration & Compliance
-    USERS_MANAGE = "users:manage"          # Create users, assign roles, manage accounts
-    AUDIT_READ = "audit:read"              # View access logs, security events, HIPAA audit trail
-    PHI_READ = "phi:read"                  # Access unmasked Protected Health Information (Patient ID, MRN)
+    USERS_MANAGE = "users:manage"  # Create users, assign roles, manage accounts
+    AUDIT_READ = "audit:read"  # View access logs, security events, HIPAA audit trail
+    PHI_READ = "phi:read"  # Access unmasked Protected Health Information (Patient ID, MRN)
+
+    # Patient self-service
+    EHR_SELF = "ehr:self"  # Read and write one's own health record, uploads and X-rays
 
 
 # Complete Role-to-Permissions Mapping
-ROLE_PERMISSIONS: Dict[Role, Set[Permission]] = {
+ROLE_PERMISSIONS: dict[Role, set[Permission]] = {
     Role.ADMIN: {
         Permission.JOBS_CREATE,
         Permission.JOBS_READ,
@@ -96,10 +109,24 @@ ROLE_PERMISSIONS: Dict[Role, Set[Permission]] = {
         Permission.AUDIT_READ,
         Permission.MODELS_READ,
     },
+    Role.PATIENT: {
+        Permission.EHR_SELF,
+    },
+    Role.DOCTOR: {
+        Permission.JOBS_CREATE,
+        Permission.JOBS_READ,
+        Permission.RESULTS_READ,
+        Permission.XAI_READ,
+        Permission.REPORTS_SIGN,
+        Permission.REPORTS_EXPORT,
+        Permission.MODELS_READ,
+        Permission.PHI_READ,
+    },
+    Role.DOCTOR_PENDING: set(),
 }
 
 # Role Metadata for UI presentation and documentation
-ROLE_METADATA: Dict[Role, Dict[str, Any]] = {
+ROLE_METADATA: dict[Role, dict[str, Any]] = {
     Role.ADMIN: {
         "title": "System Administrator",
         "description": "Full access to platform configuration, user roles, audit trails, and model governance.",
@@ -135,26 +162,48 @@ ROLE_METADATA: Dict[Role, Dict[str, Any]] = {
         "badge_bg": "rgba(152, 174, 217, 0.15)",
         "icon": "FileCheck2",
     },
+    Role.PATIENT: {
+        "title": "Patient",
+        "description": "Keeps a personal health record, logs daily vitals and medicines, and uploads X-rays for AI screening.",
+        "badge_color": "#5FD3A8",
+        "badge_bg": "rgba(95, 211, 168, 0.15)",
+        "icon": "HeartPulse",
+    },
+    Role.DOCTOR: {
+        "title": "Doctor",
+        "description": "Verified clinician. Uploads studies, reviews AI findings and explanations, and signs reports.",
+        "badge_color": "#7C5CFC",
+        "badge_bg": "rgba(124, 92, 252, 0.15)",
+        "icon": "Stethoscope",
+    },
+    Role.DOCTOR_PENDING: {
+        "title": "Doctor (verification pending)",
+        "description": "Clinician account awaiting licence verification. Clinical tools unlock once verified.",
+        "badge_color": "#98AED9",
+        "badge_bg": "rgba(152, 174, 217, 0.15)",
+        "icon": "Clock",
+    },
 }
 
 
 @dataclass
 class UserProfile:
     """Represents an authenticated user and their active role."""
+
     id: str
     name: str
     email: str
     role: Role
     organization: str = "MiPAAS Health System"
     department: str = "Diagnostic Radiology"
-    avatar: Optional[str] = None
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    avatar: str | None = None
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     @property
-    def permissions(self) -> Set[Permission]:
+    def permissions(self) -> set[Permission]:
         return ROLE_PERMISSIONS.get(self.role, set())
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "name": self.name,
@@ -168,111 +217,63 @@ class UserProfile:
         }
 
 
-# Initial Predefined Clinical Personas
-PREDEFINED_USERS: Dict[str, UserProfile] = {
-    "admin-01": UserProfile(
-        id="admin-01",
-        name="Arthur Davis",
-        email="arthur.davis@mipaas.health",
-        role=Role.ADMIN,
-        department="Hospital IT & Operations",
-    ),
-    "rad-01": UserProfile(
-        id="rad-01",
-        name="Dr. Elena Vance",
-        email="dr.vance@mipaas.health",
-        role=Role.RADIOLOGIST,
-        department="Thoracic Imaging",
-    ),
-    "tech-01": UserProfile(
-        id="tech-01",
-        name="Marcus Chen",
-        email="marcus.chen@mipaas.health",
-        role=Role.TECHNICIAN,
-        department="Diagnostic Imaging Center",
-    ),
-    "res-01": UserProfile(
-        id="res-01",
-        name="Dr. Sarah Lin",
-        email="sarah.lin@mipaas.health",
-        role=Role.RESEARCHER,
-        department="Computational Oncology Lab",
-    ),
-    "aud-01": UserProfile(
-        id="aud-01",
-        name="Arthur Pendelton",
-        email="a.pendelton@mipaas.health",
-        role=Role.AUDITOR,
-        department="Clinical Quality & HIPAA Compliance",
-    ),
-}
-
-
 class RBACService:
-    """Service providing authorization decisions, user management, and security audit logs."""
+    """Authorization decisions, user management and the security audit trail.
 
-    def __init__(self, config: Optional[dict] = None):
-        import copy
+    Users and audit events live in the central PostgreSQL database; nothing is held in memory.
+    """
+
+    def __init__(self, config: dict | None = None):
         self._config = config or {}
-        # In-memory user registry, seeded with deep copies of demo clinical personas
-        self._users: Dict[str, UserProfile] = {
-            k: copy.deepcopy(v) for k, v in PREDEFINED_USERS.items()
-        }
-        # Audit log of security and permission decisions
-        self._audit_logs: List[Dict[str, Any]] = []
 
-    def get_user(self, user_id: str) -> Optional[UserProfile]:
-        """Fetch user profile by user ID."""
-        return self._users.get(user_id)
+    def get_user(self, user_id: str) -> UserProfile | None:
+        """The active user with this ID, or None."""
+        from app.database.models.iam import User
+        from app.database.session import get_db
 
-    def get_or_create_user(
-        self,
-        user_id: str,
-        name: Optional[str] = None,
-        email: Optional[str] = None,
-        role: Optional[Role] = None,
-    ) -> UserProfile:
-        """Fetch an existing user or create a new profile with the given or default role."""
-        if user_id in self._users:
-            return self._users[user_id]
+        with get_db() as db:
+            row = db.get(User, user_id)
+            if row is None or not row.is_active:
+                return None
+            return profile_from_user(row)
 
-        new_user = UserProfile(
-            id=user_id,
-            name=name or f"User {user_id}",
-            email=email or f"{user_id}@mipaas.local",
-            role=role or Role.TECHNICIAN,
-        )
-        self._users[user_id] = new_user
-        self.log_audit_event(
-            user=new_user,
-            action="user:created",
-            resource=f"user:{user_id}",
-            decision="allow",
-            details={"assigned_role": new_user.role.value},
-        )
-        return new_user
+    def list_users(self) -> list[UserProfile]:
+        """All user accounts, oldest first."""
+        from app.database.models.iam import User
+        from app.database.session import get_db
 
-    def list_users(self) -> List[UserProfile]:
-        """List all registered users."""
-        return list(self._users.values())
+        with get_db() as db:
+            rows = db.query(User).order_by(User.created_at).all()
+            return [profile_from_user(r) for r in rows]
 
-    def update_user_role(self, target_user_id: str, new_role: Role, actor: Optional[UserProfile] = None) -> Optional[UserProfile]:
-        """Update a user's assigned role."""
-        user = self._users.get(target_user_id)
-        if not user:
-            return None
+    def update_user_role(
+        self, target_user_id: str, new_role: Role, actor: UserProfile | None = None
+    ) -> UserProfile | None:
+        """Change a user's role and record the change in the audit trail."""
+        from app.database.models.iam import User
+        from app.database.session import get_db
 
-        old_role = user.role
-        user.role = new_role
+        with get_db() as db:
+            row = db.get(User, target_user_id)
+            if row is None:
+                return None
+            old_role = row.role
+            row.role = new_role.value
+            profile = profile_from_user(row)
+            db.flush()
 
         self.log_audit_event(
-            user=actor or user,
+            user=actor or profile,
             action="role:updated",
             resource=f"user:{target_user_id}",
             decision="allow",
-            details={"target_user": target_user_id, "old_role": old_role.value, "new_role": new_role.value},
+            details={
+                "target_user": target_user_id,
+                "old_role": old_role,
+                "new_role": new_role.value,
+            },
         )
-        return user
+        return profile
 
     def has_permission(self, user: UserProfile, permission: Permission | str) -> bool:
         """Check if user profile possesses the required permission."""
@@ -280,9 +281,7 @@ class RBACService:
         if perm_enum in user.permissions:
             return True
         # Super-permission implications
-        if perm_enum == Permission.JOBS_READ and Permission.JOBS_READ_ALL in user.permissions:
-            return True
-        return False
+        return perm_enum == Permission.JOBS_READ and Permission.JOBS_READ_ALL in user.permissions
 
     def has_role(self, user: UserProfile, role: Role | str) -> bool:
         """Check if user has a specific role."""
@@ -300,61 +299,99 @@ class RBACService:
             return True
 
         # Users can access their own jobs
-        if user.id == job_owner_id:
-            return True
-
-        return False
+        return user.id == job_owner_id
 
     def log_audit_event(
         self,
-        user: Optional[UserProfile],
+        user: UserProfile | None,
         action: str,
         resource: str,
         decision: str,  # "allow" | "deny"
-        details: Optional[Dict[str, Any]] = None,
-        ip_address: Optional[str] = None,
+        details: dict[str, Any] | None = None,
+        ip_address: str | None = None,
     ) -> None:
-        """Record an access decision into the audit trail."""
-        event = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "user_id": user.id if user else "unauthenticated",
-            "user_name": user.name if user else "Anonymous",
-            "role": user.role.value if user else "none",
-            "action": action,
-            "resource": resource,
-            "decision": decision,
-            "details": details or {},
-            "ip_address": ip_address,
-        }
-        self._audit_logs.append(event)
-        # Cap audit log length in memory
-        if len(self._audit_logs) > 1000:
-            self._audit_logs.pop(0)
+        """Append an access decision to the audit trail (central database)."""
+        from app.database.models.iam import AuditLog
+        from app.database.session import get_db
+
+        event_details = dict(details or {})
+        if user is not None:
+            event_details.setdefault("role", user.role.value)
+        with get_db() as db:
+            db.add(
+                AuditLog(
+                    user_id=user.id if user else None,
+                    username=(user.email if user else None),
+                    action=action[:100],
+                    resource_type="rbac",
+                    resource_id=resource[:100],
+                    status="success" if decision == "allow" else "denied",
+                    ip_address=ip_address,
+                    details_json=json.dumps(event_details, default=str)[:4000],
+                )
+            )
 
         if decision == "deny":
-            logger.warning("access_denied", **event)
+            logger.warning(
+                "access_denied", action=action, resource=resource, user_id=user.id if user else None
+            )
         else:
-            logger.info("access_allowed", **event)
+            logger.info(
+                "access_allowed",
+                action=action,
+                resource=resource,
+                user_id=user.id if user else None,
+            )
 
-    def get_audit_logs(self, limit: int = 50) -> List[Dict[str, Any]]:
-        """Return the most recent audit trail records."""
-        return list(reversed(self._audit_logs[-limit:]))
+    def get_audit_logs(self, limit: int = 50) -> list[dict[str, Any]]:
+        """The most recent audit trail records, newest first."""
+        from app.database.models.iam import AuditLog
+        from app.database.session import get_db
+
+        with get_db() as db:
+            rows = db.query(AuditLog).order_by(AuditLog.created_at.desc()).limit(limit).all()
+            out = []
+            for r in rows:
+                details = json.loads(r.details_json) if r.details_json else {}
+                out.append(
+                    {
+                        "timestamp": r.created_at.isoformat() if r.created_at else None,
+                        "user_id": r.user_id or "unauthenticated",
+                        "user_name": r.username or "Anonymous",
+                        "role": details.get("role", "none"),
+                        "action": r.action,
+                        "resource": r.resource_id,
+                        "decision": "allow" if r.status == "success" else "deny",
+                        "details": details,
+                        "ip_address": r.ip_address,
+                    }
+                )
+            return out
 
 
-# Global singleton instance for easy service access
-_rbac_instance: Optional[RBACService] = None
+def profile_from_user(row) -> UserProfile:
+    """Map a central ``users`` row to the authorization profile used by the middleware."""
+    try:
+        role = Role(row.role)
+    except ValueError:
+        role = Role.PATIENT
+    name = " ".join(p for p in (row.first_name, row.last_name) if p) or row.username
+    return UserProfile(
+        id=row.id,
+        name=name,
+        email=row.email,
+        role=role,
+        organization=row.organization or "MiPAAS Health System",
+        department=row.department or "",
+    )
 
 
-def get_rbac_service(config: Optional[dict] = None) -> RBACService:
-    """Get or create singleton RBACService instance."""
+_rbac_instance: RBACService | None = None
+
+
+def get_rbac_service(config: dict | None = None) -> RBACService:
+    """Get or create the shared RBACService (stateless: data lives in the database)."""
     global _rbac_instance
     if _rbac_instance is None:
         _rbac_instance = RBACService(config)
     return _rbac_instance
-
-
-def reset_rbac_service() -> None:
-    """Reset the singleton instance (useful for test isolation)."""
-    global _rbac_instance
-    _rbac_instance = None
-

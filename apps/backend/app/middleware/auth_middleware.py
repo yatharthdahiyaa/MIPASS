@@ -1,95 +1,57 @@
 """
-Authentication and RBAC Authorization Middleware.
+Authentication and RBAC middleware.
 
-Provides request decorators for enforcing authentication, role requirements,
-granular permission checks, resource ownership checks, and audit logging.
+The only way to be authenticated is a session issued by ``/api/v1/auth/login`` (or
+``/auth/register``): either the HttpOnly ``mipaas_session`` cookie (web) or the same
+token sent as ``Authorization: Bearer`` (desktop app). Sessions are checked against the
+central PostgreSQL database on every request; there are no header-based identities.
 """
 
+from collections.abc import Callable
 from functools import wraps
-from typing import Callable, Optional, Sequence, Union
+from typing import Union
 
-from flask import current_app, g, request
 import structlog
+from flask import g, request
 
-from app.services.auth import AuthService
-from app.services.rbac import (
-    Permission,
-    Role,
-    UserProfile,
-    get_rbac_service,
-)
+from app.services.rbac import Permission, Role, UserProfile, get_rbac_service
 from app.utils.response import api_error
 
 logger = structlog.get_logger()
 
 
-def get_authenticated_user() -> Optional[UserProfile]:
-    """Resolve the currently authenticated user from request headers.
+def _session_token() -> str | None:
+    from app.services import accounts
 
-    Supports:
-    1. 'Authorization: Bearer <token>' (Google/Firebase OAuth2 token or test token)
-    2. 'X-User-ID' header for local development, CLI, and integration testing
-    3. 'X-User-Role' header to override role for testing/switching personas
-    """
-    if hasattr(g, "current_user") and g.current_user is not None:
-        return g.current_user
-
-    rbac_service = get_rbac_service(getattr(current_app, "config", {}))
-    auth_service = AuthService(getattr(current_app, "config", {}))
-
-    user_id = None
-    override_role = request.headers.get("X-User-Role")
-
-    # 1. Check Bearer Token
+    token = request.cookies.get(accounts.SESSION_COOKIE)
+    if token:
+        return token
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
-        token = auth_header[7:].strip()
-        # Check if it's a test token like "test-token-admin" or "test-token-rad"
-        if token.startswith("test-token-"):
-            role_part = token.replace("test-token-", "")
-            user_id = f"{role_part}-01"
-            override_role = role_part
-        else:
-            try:
-                claims = auth_service.verify_token(token)
-                if claims:
-                    user_id = claims.get("sub") or claims.get("user_id")
-                    if not override_role:
-                        override_role = claims.get("role")
-            except Exception as e:
-                logger.warning("token_verification_error", error=str(e))
+        return auth_header[7:].strip() or None
+    return None
 
-    # 2. Check X-User-ID header if no valid bearer token
-    if not user_id:
-        user_id = request.headers.get("X-User-ID")
 
-    if not user_id:
-        g.current_user = None
-        return None
+def get_authenticated_user() -> UserProfile | None:
+    """The signed-in user for this request, or None. Cached on ``g`` for the request."""
+    if getattr(g, "current_user", None) is not None:
+        return g.current_user
 
-    # Resolve or create UserProfile
-    user = rbac_service.get_user(user_id)
-    if not user:
-        # Determine initial role from override or default to TECHNICIAN
-        role_enum = Role.TECHNICIAN
-        if override_role:
-            try:
-                role_enum = Role(override_role.lower())
-            except ValueError:
-                role_enum = Role.TECHNICIAN
+    from app.database.session import get_db
+    from app.services import accounts
+    from app.services.rbac import profile_from_user
 
-        user = rbac_service.get_or_create_user(
-            user_id=user_id,
-            role=role_enum,
-        )
-    elif override_role:
-        # Allow testing persona role switching via header
+    token = _session_token()
+    user = None
+    if token:
         try:
-            role_enum = Role(override_role.lower())
-            if user.role != role_enum:
-                user = rbac_service.update_user_role(user.id, role_enum)
-        except ValueError:
-            pass
+            with get_db() as db:
+                resolved = accounts.resolve_session(db, token)
+                if resolved is not None:
+                    user = profile_from_user(resolved[0])
+        except Exception as exc:  # database unavailable: treat as signed out, never as signed in
+            logger.warning("session_lookup_failed", error=str(exc))
+            user = None
 
     g.current_user = user
     return user
@@ -97,21 +59,22 @@ def get_authenticated_user() -> Optional[UserProfile]:
 
 def require_auth(f: Callable) -> Callable:
     """Decorator requiring a valid authenticated user."""
+
     @wraps(f)
     def decorated_function(*args, **kwargs):
         user = get_authenticated_user()
         if not user:
-            rbac_service = get_rbac_service()
-            rbac_service.log_audit_event(
+            get_rbac_service().log_audit_event(
                 user=None,
                 action="auth:authenticate",
                 resource=request.path,
                 decision="deny",
-                details={"reason": "Missing or invalid authentication token"},
+                details={"reason": "Missing or invalid session"},
                 ip_address=request.remote_addr,
             )
-            return api_error("Authentication required. Please provide a valid Authorization Bearer token or credentials.", 401)
+            return api_error("Authentication required. Please sign in.", 401)
         return f(*args, **kwargs)
+
     return decorated_function
 
 
@@ -142,10 +105,7 @@ def require_permission(permission: Union[Permission, str]) -> Callable:
                     action=f"perm:{perm_enum.value}",
                     resource=request.path,
                     decision="deny",
-                    details={
-                        "required_permission": perm_enum.value,
-                        "user_role": user.role.value,
-                    },
+                    details={"required_permission": perm_enum.value, "user_role": user.role.value},
                     ip_address=request.remote_addr,
                 )
                 return api_error(
@@ -153,8 +113,13 @@ def require_permission(permission: Union[Permission, str]) -> Callable:
                     403,
                 )
 
-            # Audit log allow for sensitive operations
-            if perm_enum in (Permission.JOBS_DELETE, Permission.USERS_MANAGE, Permission.MODELS_MANAGE, Permission.REPORTS_SIGN):
+            # Audit allowed sensitive operations
+            if perm_enum in (
+                Permission.JOBS_DELETE,
+                Permission.USERS_MANAGE,
+                Permission.MODELS_MANAGE,
+                Permission.REPORTS_SIGN,
+            ):
                 rbac_service.log_audit_event(
                     user=user,
                     action=f"perm:{perm_enum.value}",
@@ -165,7 +130,9 @@ def require_permission(permission: Union[Permission, str]) -> Callable:
                 )
 
             return f(*args, **kwargs)
+
         return decorated_function
+
     return decorator
 
 
@@ -195,10 +162,12 @@ def require_role(*roles: Union[Role, str]) -> Callable:
                     ip_address=request.remote_addr,
                 )
                 return api_error(
-                    f"Forbidden: Action restricted to roles: {', '.join([r.value for r in allowed_roles])}. Your active role is '{user.role.value}'.",
+                    f"Forbidden: Action restricted to roles: {', '.join(r.value for r in allowed_roles)}. Your active role is '{user.role.value}'.",
                     403,
                 )
 
             return f(*args, **kwargs)
+
         return decorated_function
+
     return decorator

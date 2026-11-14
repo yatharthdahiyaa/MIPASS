@@ -70,6 +70,7 @@ venv/
 env/
 **/venv/
 **/.venv/
+**/.venv-mcp/
 
 # PyTorch model weights (too large for git)
 *.pt
@@ -126,3 +127,10 @@ data/**
 !data/**/
 !data/**/.gitkeep
 !data/README.md
+
+# Tauri desktop app (apps/desktop)
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
+
+# Output of apps/agents/evals/run_live.py
+apps/agents/evals/last_run.json

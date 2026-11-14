@@ -8,13 +8,13 @@ with heatmap overlay support.
 import io
 
 import structlog
-from flask import Blueprint, current_app, g, send_file, request
+from flask import Blueprint, current_app, g, request, send_file
 
 from app.middleware.auth_middleware import require_permission
-from app.services.firestore import FirestoreService
+from app.services.job_store import JobStore
 from app.services.rbac import Permission, get_rbac_service
 from app.services.storage import StorageService
-from app.utils.response import api_response, api_error
+from app.utils.response import api_error, api_response
 
 logger = structlog.get_logger()
 results_bp = Blueprint("results", __name__)
@@ -31,8 +31,8 @@ def get_heatmap(job_id: str):
         - format: 'png' (overlay image) or 'npy' (raw numpy array)
         - alpha: Overlay opacity 0.0–1.0 (default: 0.4)
     """
-    firestore = FirestoreService(current_app.config)
-    job = firestore.get_job(job_id)
+    job_store = JobStore()
+    job = job_store.get_job(job_id)
     if not job:
         return api_error(f"Job {job_id} not found", 404)
 
@@ -76,14 +76,16 @@ def get_heatmap(job_id: str):
     else:
         # Return metadata about available overlays
         overlay_uris = job.get("xai", {}).get("gradcam", {}).get("overlay_uris", [])
-        return api_response({
-            "job_id": job_id,
-            "method": "gradcam_plus_plus",
-            "status": "complete",
-            "available_planes": ["axial", "coronal", "sagittal"],
-            "num_overlays": len(overlay_uris),
-            "download_format": ["png", "npy"],
-        })
+        return api_response(
+            {
+                "job_id": job_id,
+                "method": "gradcam_plus_plus",
+                "status": "complete",
+                "available_planes": ["axial", "coronal", "sagittal"],
+                "num_overlays": len(overlay_uris),
+                "download_format": ["png", "npy"],
+            }
+        )
 
 
 @results_bp.route("/jobs/<job_id>/xai/<method>", methods=["GET"])
@@ -102,8 +104,8 @@ def get_xai_result(job_id: str, method: str):
     if method not in valid_methods:
         return api_error(f"Invalid XAI method: {method}. Valid: {valid_methods}", 400)
 
-    firestore = FirestoreService(current_app.config)
-    job = firestore.get_job(job_id)
+    job_store = JobStore()
+    job = job_store.get_job(job_id)
     if not job:
         return api_error(f"Job {job_id} not found", 404)
 
@@ -149,15 +151,17 @@ def get_segmentation(job_id: str):
         - artifact: 'lesion_mask', 'shap', or 'all' (default: 'all')
         - format: 'npy' or 'json' (summary)
     """
-    firestore = FirestoreService(current_app.config)
-    job = firestore.get_job(job_id)
+    job_store = JobStore()
+    job = job_store.get_job(job_id)
     if not job:
         return api_error(f"Job {job_id} not found", 404)
 
     # Ownership check
     rbac_service = get_rbac_service()
     if not rbac_service.can_access_job(g.current_user, job.get("user_id", ""), action="read"):
-        return api_error("Forbidden: You do not have permission to view segmentation for this study", 403)
+        return api_error(
+            "Forbidden: You do not have permission to view segmentation for this study", 403
+        )
 
     seg_data = job.get("segmentation", {})
     if seg_data.get("status") != "complete":
@@ -171,16 +175,18 @@ def get_segmentation(job_id: str):
 
     if fmt == "json":
         # Return segmentation summary
-        return api_response({
-            "job_id": job_id,
-            "status": "complete",
-            "lesion_count": seg_data.get("lesion_count", 0),
-            "lesion_volumes_mm3": seg_data.get("lesion_volumes_mm3", []),
-            "artifacts": {
-                "lesion_mask": f"/api/v1/jobs/{job_id}/segmentation?artifact=lesion_mask&format=npy",
-                "shap_values": f"/api/v1/jobs/{job_id}/segmentation?artifact=shap&format=npy",
-            },
-        })
+        return api_response(
+            {
+                "job_id": job_id,
+                "status": "complete",
+                "lesion_count": seg_data.get("lesion_count", 0),
+                "lesion_volumes_mm3": seg_data.get("lesion_volumes_mm3", []),
+                "artifacts": {
+                    "lesion_mask": f"/api/v1/jobs/{job_id}/segmentation?artifact=lesion_mask&format=npy",
+                    "shap_values": f"/api/v1/jobs/{job_id}/segmentation?artifact=shap&format=npy",
+                },
+            }
+        )
 
     # Serve binary artifact
     storage = StorageService(current_app.config)
@@ -217,8 +223,8 @@ def get_dicom_frames(job_id: str):
         - window_center: DICOM window center (optional)
         - window_width: DICOM window width (optional)
     """
-    firestore = FirestoreService(current_app.config)
-    job = firestore.get_job(job_id)
+    job_store = JobStore()
+    job = job_store.get_job(job_id)
     if not job:
         return api_error(f"Job {job_id} not found", 404)
 

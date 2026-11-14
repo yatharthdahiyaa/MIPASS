@@ -5,8 +5,9 @@ Covers Master Patient Index (MPI), Practitioner Directory, Encounters with SOAP 
 Diagnostic Procedure Orders, and Signed Clinical Reports.
 """
 
-from datetime import datetime, timezone
-from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Index, Integer, String, Text
+from datetime import UTC, datetime
+
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import relationship
 
 from app.database.models.base import Base, TimestampMixin
@@ -17,7 +18,9 @@ class ClinicalProvider(Base, TimestampMixin):
 
     __tablename__ = "clinical_providers"
 
-    user_id = Column(String(64), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    user_id = Column(
+        String(64), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     username = Column(String(100), unique=True, nullable=False, index=True)
     fname = Column(String(100), nullable=False)
     lname = Column(String(100), nullable=False)
@@ -63,9 +66,13 @@ class ClinicalPatient(Base, TimestampMixin):
     abha_id = Column(String(50), nullable=True, index=True)
 
     # Relationships
-    encounters = relationship("ClinicalEncounter", back_populates="patient", cascade="all, delete-orphan")
+    encounters = relationship(
+        "ClinicalEncounter", back_populates="patient", cascade="all, delete-orphan"
+    )
     orders = relationship("ProcedureOrder", back_populates="patient", cascade="all, delete-orphan")
-    reports = relationship("ProcedureReport", back_populates="patient", cascade="all, delete-orphan")
+    reports = relationship(
+        "ProcedureReport", back_populates="patient", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<ClinicalPatient id={self.id} mrn={self.mrn} name='{self.fname} {self.lname}'>"
@@ -76,9 +83,21 @@ class ClinicalEncounter(Base, TimestampMixin):
 
     __tablename__ = "clinical_encounters"
 
-    patient_id = Column(String(64), ForeignKey("clinical_patients.id", ondelete="CASCADE"), nullable=False, index=True)
-    provider_id = Column(String(64), ForeignKey("clinical_providers.id", ondelete="SET NULL"), nullable=True, index=True)
-    encounter_date = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    patient_id = Column(
+        String(64),
+        ForeignKey("clinical_patients.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    provider_id = Column(
+        String(64),
+        ForeignKey("clinical_providers.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    encounter_date = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
     encounter_type = Column(String(100), default="diagnostic_imaging", nullable=False)
     facility_name = Column(String(150), default="Memorial Diagnostic Pavilion")
     reason_for_visit = Column(String(255), nullable=True)
@@ -105,22 +124,42 @@ class ProcedureOrder(Base, TimestampMixin):
     __tablename__ = "procedure_orders"
 
     order_number = Column(String(50), unique=True, nullable=False, index=True)
-    patient_id = Column(String(64), ForeignKey("clinical_patients.id", ondelete="CASCADE"), nullable=False, index=True)
-    encounter_id = Column(String(64), ForeignKey("clinical_encounters.id", ondelete="SET NULL"), nullable=True, index=True)
-    ordering_provider_id = Column(String(64), ForeignKey("clinical_providers.id", ondelete="SET NULL"), nullable=True, index=True)
-    
+    patient_id = Column(
+        String(64),
+        ForeignKey("clinical_patients.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    encounter_id = Column(
+        String(64),
+        ForeignKey("clinical_encounters.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    ordering_provider_id = Column(
+        String(64),
+        ForeignKey("clinical_providers.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     procedure_code = Column(String(50), nullable=False)
     procedure_name = Column(String(200), nullable=False)
     modality = Column(String(20), nullable=False, index=True)  # CT, MRI, CR, DX, US
     body_site = Column(String(100), nullable=True)
     clinical_indication = Column(Text, nullable=True)
-    priority = Column(String(20), default="routine", nullable=False, index=True)  # stat, urgent, routine
-    status = Column(String(50), default="pending", nullable=False, index=True)  # pending, scheduled, in_progress, completed, cancelled
-    order_date = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
-    
+    priority = Column(
+        String(20), default="routine", nullable=False, index=True
+    )  # stat, urgent, routine
+    status = Column(
+        String(50), default="pending", nullable=False, index=True
+    )  # pending, scheduled, in_progress, completed, cancelled
+    order_date = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+
     # Linked MiPAAS Diagnostic Job
     linked_job_id = Column(String(64), nullable=True, index=True)
     accession_number = Column(String(50), nullable=True, index=True)
+    dicom_study_instance_uid = Column(String(100), nullable=True)
 
     # Relationships
     patient = relationship("ClinicalPatient", back_populates="orders")
@@ -138,21 +177,41 @@ class ProcedureReport(Base, TimestampMixin):
     __tablename__ = "procedure_reports"
 
     report_number = Column(String(50), unique=True, nullable=False, index=True)
-    order_id = Column(String(64), ForeignKey("procedure_orders.id", ondelete="CASCADE"), unique=True, nullable=False, index=True)
-    patient_id = Column(String(64), ForeignKey("clinical_patients.id", ondelete="CASCADE"), nullable=False, index=True)
-    radiologist_id = Column(String(64), ForeignKey("clinical_providers.id", ondelete="SET NULL"), nullable=True, index=True)
-    
-    status = Column(String(50), default="preliminary", nullable=False, index=True)  # preliminary, final, amended
+    order_id = Column(
+        String(64),
+        ForeignKey("procedure_orders.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+    patient_id = Column(
+        String(64),
+        ForeignKey("clinical_patients.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    radiologist_id = Column(
+        String(64),
+        ForeignKey("clinical_providers.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    status = Column(
+        String(50), default="preliminary", nullable=False, index=True
+    )  # preliminary, final, amended
     findings = Column(Text, nullable=True)
     impression = Column(Text, nullable=True)
     recommendations = Column(Text, nullable=True)
     bi_rads_score = Column(String(20), nullable=True)
     critical_findings_alert = Column(Boolean, default=False, nullable=False)
-    
+
     # Digital Signature
     signed_by = Column(String(150), nullable=True)
     signed_at = Column(DateTime(timezone=True), nullable=True)
     signature_hash = Column(String(255), nullable=True)
+    ai_prediction_json = Column(Text, nullable=True)  # AI confidence scores and risk metrics
+    gradcam_heatmap_url = Column(String(500), nullable=True)
 
     # Relationships
     order = relationship("ProcedureOrder", back_populates="report")
@@ -160,4 +219,6 @@ class ProcedureReport(Base, TimestampMixin):
     radiologist = relationship("ClinicalProvider", back_populates="reports")
 
     def __repr__(self) -> str:
-        return f"<ProcedureReport id={self.id} report_num={self.report_number} status={self.status}>"
+        return (
+            f"<ProcedureReport id={self.id} report_num={self.report_number} status={self.status}>"
+        )

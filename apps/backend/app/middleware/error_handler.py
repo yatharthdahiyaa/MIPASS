@@ -6,6 +6,7 @@ Logs structured error information for Cloud Logging.
 """
 
 import traceback
+
 import structlog
 from flask import Flask, jsonify
 from werkzeug.exceptions import HTTPException
@@ -22,80 +23,100 @@ def register_error_handlers(app: Flask) -> None:
 
     @app.errorhandler(400)
     def bad_request(error):
-        return jsonify({
-            "success": False,
-            "error": {
-                "code": 400,
-                "type": "BAD_REQUEST",
-                "message": str(error.description) if hasattr(error, "description") else str(error),
-            },
-        }), 400
+        return jsonify(
+            {
+                "success": False,
+                "error": {
+                    "code": 400,
+                    "type": "BAD_REQUEST",
+                    "message": str(error.description)
+                    if hasattr(error, "description")
+                    else str(error),
+                },
+            }
+        ), 400
 
     @app.errorhandler(401)
     def unauthorized(error):
-        return jsonify({
-            "success": False,
-            "error": {
-                "code": 401,
-                "type": "UNAUTHORIZED",
-                "message": "Authentication required",
-            },
-        }), 401
+        return jsonify(
+            {
+                "success": False,
+                "error": {
+                    "code": 401,
+                    "type": "UNAUTHORIZED",
+                    "message": "Authentication required",
+                },
+            }
+        ), 401
 
     @app.errorhandler(403)
     def forbidden(error):
-        return jsonify({
-            "success": False,
-            "error": {
-                "code": 403,
-                "type": "FORBIDDEN",
-                "message": "Insufficient permissions",
-            },
-        }), 403
+        return jsonify(
+            {
+                "success": False,
+                "error": {
+                    "code": 403,
+                    "type": "FORBIDDEN",
+                    "message": "Insufficient permissions",
+                },
+            }
+        ), 403
 
     @app.errorhandler(404)
     def not_found(error):
-        return jsonify({
-            "success": False,
-            "error": {
-                "code": 404,
-                "type": "NOT_FOUND",
-                "message": str(error.description) if hasattr(error, "description") else "Resource not found",
-            },
-        }), 404
+        return jsonify(
+            {
+                "success": False,
+                "error": {
+                    "code": 404,
+                    "type": "NOT_FOUND",
+                    "message": str(error.description)
+                    if hasattr(error, "description")
+                    else "Resource not found",
+                },
+            }
+        ), 404
 
     @app.errorhandler(409)
     def conflict(error):
-        return jsonify({
-            "success": False,
-            "error": {
-                "code": 409,
-                "type": "CONFLICT",
-                "message": str(error.description) if hasattr(error, "description") else str(error),
-            },
-        }), 409
+        return jsonify(
+            {
+                "success": False,
+                "error": {
+                    "code": 409,
+                    "type": "CONFLICT",
+                    "message": str(error.description)
+                    if hasattr(error, "description")
+                    else str(error),
+                },
+            }
+        ), 409
 
     @app.errorhandler(429)
     def rate_limited(error):
-        return jsonify({
-            "success": False,
-            "error": {
-                "code": 429,
-                "type": "RATE_LIMITED",
-                "message": "Too many requests. Please try again later.",
-            },
-        }), 429
+        return jsonify(
+            {
+                "success": False,
+                "error": {
+                    "code": 429,
+                    "type": "RATE_LIMITED",
+                    "message": "Too many requests. Please try again later.",
+                },
+            }
+        ), 429
 
     @app.errorhandler(HTTPException)
     def handle_http_exception(error):
-        return jsonify({
-            "success": False,
-            "error": {
-                "code": error.code,
-                "type": error.name.upper().replace(" ", "_"),
-                "message": error.description,
-            },
-        }), error.code
+        return jsonify(
+            {
+                "success": False,
+                "error": {
+                    "code": error.code,
+                    "type": error.name.upper().replace(" ", "_"),
+                    "message": error.description,
+                },
+            }
+        ), error.code
 
     @app.errorhandler(Exception)
     def handle_unhandled_exception(error):
@@ -114,11 +135,13 @@ def register_error_handlers(app: Flask) -> None:
         else:
             message = "An internal error occurred. Please try again."
 
-        return jsonify({
-            "success": False,
-            "error": {
-                "code": 500,
-                "type": "INTERNAL_ERROR",
-                "message": message,
-            },
-        }), 500
+        return jsonify(
+            {
+                "success": False,
+                "error": {
+                    "code": 500,
+                    "type": "INTERNAL_ERROR",
+                    "message": message,
+                },
+            }
+        ), 500

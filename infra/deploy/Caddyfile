@@ -1,0 +1,20 @@
+# HTTPS edge. Caddy obtains and renews the certificate for MIPAAS_DOMAIN automatically
+# (the domain must resolve to this host and ports 80/443 must be reachable).
+{$MIPAAS_DOMAIN} {
+	encode zstd gzip
+
+	# The API is reached directly, one proxy hop away, so it sees the real client address
+	# (rate limits and the audit log depend on it). The desktop app uses the same address.
+	handle /api/v1/* {
+		reverse_proxy api:8080 {
+			# X-ray analysis runs inside the request; the first one also loads the model.
+			transport http {
+				response_header_timeout 200s
+			}
+		}
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+}
