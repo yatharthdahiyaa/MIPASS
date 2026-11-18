@@ -48,7 +48,7 @@ export default function DoseList({
   }
 
   return (
-    <ItemGroup className="gap-0">
+    <ItemGroup className="gap-0 has-data-[size=sm]:gap-0">
       {rows.map(({ med, slot, status: serverStatus }, i) => {
         const key = `${med.id}|${slot}`;
         const status = key in local ? local[key] : serverStatus;
@@ -58,7 +58,7 @@ export default function DoseList({
             <Item role="listitem" size="sm" className="px-0">
               <ItemMedia className="w-16 text-sm text-muted-foreground tabular-nums">{f.slot(slot)}</ItemMedia>
               <ItemContent className="min-w-0 basis-[calc(100%-5rem)] sm:basis-0">
-                <ItemTitle className={cx('text-[15px]', status && 'text-muted-foreground')}>{med.name}</ItemTitle>
+                <ItemTitle className={cx(status && 'text-muted-foreground')}>{med.name}</ItemTitle>
                 {(med.dosage || med.instructions) && <ItemDescription>{[med.dosage, med.instructions].filter(Boolean).join(' · ')}</ItemDescription>}
               </ItemContent>
               <ItemActions className="ml-auto w-full justify-end sm:w-auto">
@@ -79,6 +79,7 @@ export default function DoseList({
                       {t('patient.meds.markSkipped')}
                     </Button>
                     <Button
+                      variant="outline"
                       size="sm"
                       disabled={busy === key}
                       onClick={() => set(med.id, slot, 'taken')}

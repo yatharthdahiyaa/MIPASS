@@ -2,7 +2,8 @@ import type { NextConfig } from "next";
 
 // Keep in sync with src/config/api.ts. 127.0.0.1 (not localhost) so Node never resolves to ::1,
 // where another local service (e.g. a Docker container) may own port 8080.
-const BACKEND_ORIGIN = process.env.NEXT_PUBLIC_API_ORIGIN ?? 'http://127.0.0.1:8080';
+// For server-side rewrites, use API_ORIGIN (no NEXT_PUBLIC_ prefix). For client-side, use NEXT_PUBLIC_API_ORIGIN.
+const BACKEND_ORIGIN = process.env.API_ORIGIN ?? process.env.NEXT_PUBLIC_API_ORIGIN ?? 'http://127.0.0.1:8080';
 
 // Patient assistant chat service (apps/agents/chat_server.py).
 const CHAT_ORIGIN = process.env.MIPAAS_CHAT_ORIGIN ?? 'http://127.0.0.1:8200';

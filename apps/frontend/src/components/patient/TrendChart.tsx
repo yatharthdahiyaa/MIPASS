@@ -66,7 +66,7 @@ export default function TrendChart({
       </div>
 
       {asTable ? (
-        <div className="max-h-56 overflow-auto rounded-xl border">
+        <div className="max-h-56 overflow-auto rounded-control border">
           <table className="w-full text-left text-sm">
             <caption className="sr-only">{title}</caption>
             <thead className="sticky top-0 bg-muted text-muted-foreground">
@@ -109,7 +109,7 @@ export default function TrendChart({
               minTickGap={28}
             />
             <YAxis
-              width={36}
+              width="auto"
               tickLine={false}
               axisLine={false}
               tickMargin={4}

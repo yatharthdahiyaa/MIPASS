@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { BadgeCheckIcon, CalendarPlusIcon, CircleAlertIcon, MailIcon, MessageSquareIcon, SearchIcon, SendIcon, UserPlusIcon } from 'lucide-react';
+import { BadgeCheckIcon, CalendarArrowDownIcon, CalendarPlusIcon, CircleAlertIcon, MailIcon, MessageSquareIcon, SearchIcon, SendIcon, UserPlusIcon } from 'lucide-react';
 import { authApi } from '@/lib/auth/api';
 import { localISODate } from '@/lib/patient/api';
 import { useI18n } from '@/lib/i18n/I18nProvider';
@@ -49,6 +49,53 @@ type Tab = (typeof TABS)[number];
 const DATE_TIME: Intl.DateTimeFormatOptions = { dateStyle: 'medium', timeStyle: 'short' };
 
 /* ------------------------------------------------------------------ shared */
+
+/** RFC 5545 text: escape separators and fold lines at 75 octets. */
+function icsText(value: string) {
+  return value.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+}
+function icsFold(line: string) {
+  const bytes = new TextEncoder();
+  const out: string[] = [];
+  let current = '';
+  for (const ch of line) {
+    if (bytes.encode(current + ch).length > (out.length ? 74 : 75)) {
+      out.push(current);
+      current = ch;
+    } else current += ch;
+  }
+  out.push(current);
+  return out.join('\r\n ');
+}
+const icsTime = (iso: string) => new Date(iso).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+
+/** A one-event calendar file for a scheduled consultation, in UTC so every calendar shows local time. */
+function downloadConsultIcs(consult: Consult, title: string, description: string) {
+  if (!consult.scheduled_at) return;
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//MIPAAS//Patient portal//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    `UID:consult-${consult.id}@mipaas`,
+    `DTSTAMP:${icsTime(new Date().toISOString())}`,
+    `DTSTART:${icsTime(consult.scheduled_at)}`,
+    `SUMMARY:${icsText(title)}`,
+    `DESCRIPTION:${icsText(description)}`,
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].map(icsFold);
+  const url = URL.createObjectURL(new Blob([lines.join('\r\n') + '\r\n'], { type: 'text/calendar;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `consultation-${consult.scheduled_at.slice(0, 10)}.ics`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
 function ErrorAlert({ message }: { message: string | null }) {
   if (!message) return null;
@@ -124,7 +171,7 @@ function DoctorItem({ doctor, action }: { doctor: DoctorCard | null | undefined;
 
 /* -------------------------------------------------------------------- team */
 
-function InviteForm({ onDone, canInvite }: { onDone: () => void; canInvite: boolean }) {
+function InviteForm({ onDone, canInvite, locked }: { onDone: () => void; canInvite: boolean; locked?: React.ReactNode }) {
   const { t } = useI18n();
   const errText = useErrorText();
   const [who, setWho] = useState('');
@@ -187,6 +234,7 @@ function InviteForm({ onDone, canInvite }: { onDone: () => void; canInvite: bool
         <CardDescription className="max-w-2xl">{t('care.inviteBody')}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
+        {locked}
         <ErrorAlert message={error} />
         <form onSubmit={submit}>
           <FieldGroup className="gap-5">
@@ -221,7 +269,7 @@ function InviteForm({ onDone, canInvite }: { onDone: () => void; canInvite: bool
             </Button>
           </div>
           {results && (
-            <ItemGroup className="gap-0">
+            <ItemGroup className="gap-0 has-data-[size=sm]:gap-0">
               {results.length === 0 && <p className="text-sm text-muted-foreground">{t('care.directoryEmpty')}</p>}
               {results.map((d, i) => (
                 <React.Fragment key={d.id}>
@@ -347,7 +395,7 @@ function TeamTab({ go, toast }: { go: (tab: Tab, linkId: string) => void; toast:
   const [resend, setResend] = useState<'idle' | 'pending' | 'sent'>('idle');
 
   if (error && !data) return <ErrorBox error={error} onRetry={reload} />;
-  if (!data) return <Skeleton className="h-56 rounded-xl" />;
+  if (!data) return <Skeleton className="h-56 rounded-surface" />;
 
   const open = data.links.filter((l) => l.status === 'pending' || l.status === 'active');
   const past = data.links.filter((l) => l.status === 'declined' || l.status === 'revoked');
@@ -370,29 +418,17 @@ function TeamTab({ go, toast }: { go: (tab: Tab, linkId: string) => void; toast:
 
   return (
     <div className="flex flex-col gap-5" aria-busy={loading}>
-      {!data.email_verified && (
-        <Alert className="border-warning/30 bg-warning/5 sm:has-[>svg]:grid-cols-[auto_1fr_auto]">
-          <MailIcon className="text-warning" />
-          <AlertTitle>{resend === 'sent' ? t('care.verifySent') : t('care.verifyFirst')}</AlertTitle>
-          {resend !== 'sent' && (
-            <div className="col-start-2 mt-2 sm:col-start-3 sm:row-start-1 sm:mt-0 sm:self-center">
-              <Button tone="ghost" size="sm" pending={resend === 'pending'} onClick={resendVerification}>
-                {t('care.verifyResend')}
-              </Button>
-            </div>
-          )}
-        </Alert>
-      )}
-
       {open.length === 0 ? (
-        <Empty className="border p-6">
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <UserPlusIcon />
-            </EmptyMedia>
-            <EmptyDescription>{t('care.teamEmpty')}</EmptyDescription>
-          </EmptyHeader>
-        </Empty>
+        <Card>
+          <Empty className="py-8">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <UserPlusIcon />
+              </EmptyMedia>
+              <EmptyDescription>{t('care.teamEmpty')}</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        </Card>
       ) : (
         <div className="grid items-start gap-5 xl:grid-cols-2">
           {open.map((l) => (
@@ -401,7 +437,23 @@ function TeamTab({ go, toast }: { go: (tab: Tab, linkId: string) => void; toast:
         </div>
       )}
 
-      <InviteForm canInvite={data.email_verified} onDone={() => changed(t('care.toastInvited'))} />
+      <InviteForm
+        canInvite={data.email_verified}
+        onDone={() => changed(t('care.toastInvited'))}
+        locked={
+          !data.email_verified && (
+            <Alert className="flex flex-wrap items-center gap-x-3 gap-y-2 border-warning/30 bg-warning/5 *:[svg]:translate-y-0">
+              <MailIcon className="text-warning" />
+              <AlertTitle className="min-w-0 flex-1 font-normal">{resend === 'sent' ? t('care.verifySent') : t('care.verifyFirst')}</AlertTitle>
+              {resend !== 'sent' && (
+                <Button tone="ghost" size="sm" pending={resend === 'pending'} onClick={resendVerification}>
+                  {t('care.verifyResend')}
+                </Button>
+              )}
+            </Alert>
+          )
+        }
+      />
 
       {past.length > 0 && (
         <Card>
@@ -411,7 +463,7 @@ function TeamTab({ go, toast }: { go: (tab: Tab, linkId: string) => void; toast:
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ItemGroup className="gap-0">
+            <ItemGroup className="gap-0 has-data-[size=sm]:gap-0">
               {past.map((l, i) => (
                 <React.Fragment key={l.id}>
                   {i > 0 && <ItemSeparator />}
@@ -531,7 +583,7 @@ function Conversation({ thread, onActivity }: { thread: CareThread; onActivity: 
                     <Message align={m.mine ? 'end' : 'start'}>
                       <MessageContent>
                         <Bubble variant={m.mine ? 'default' : 'secondary'} align={m.mine ? 'end' : 'start'}>
-                          <BubbleContent className="text-[15px] whitespace-pre-wrap">{m.body}</BubbleContent>
+                          <BubbleContent className="text-body whitespace-pre-wrap">{m.body}</BubbleContent>
                         </Bubble>
                         <MessageFooter>
                           {f.time(m.created_at)}
@@ -563,7 +615,7 @@ function Conversation({ thread, onActivity }: { thread: CareThread; onActivity: 
               }
             }}
             placeholder={t('care.messagePlaceholder')}
-            className="text-base"
+            className="text-base md:text-body"
           />
           <InputGroupAddon align="block-end" className="justify-end">
             <InputGroupButton type="submit" variant="default" size="sm" disabled={!draft.trim() || sending}>
@@ -583,10 +635,10 @@ function MessagesTab({ linkId, go }: { linkId: string | null; go: (tab: Tab, lin
   const { data, error, reload } = useLoader(() => careApi.threads(), []);
 
   if (error && !data) return <ErrorBox error={error} onRetry={reload} />;
-  if (!data) return <Skeleton className="h-72 rounded-xl" />;
+  if (!data) return <Skeleton className="h-72 rounded-surface" />;
   if (data.threads.length === 0) {
     return (
-      <Empty className="border p-6">
+      <Empty className="rounded-surface py-10 ring-1 ring-foreground/[0.08]">
         <EmptyHeader>
           <EmptyMedia variant="icon">
             <MessageSquareIcon />
@@ -603,7 +655,7 @@ function MessagesTab({ linkId, go }: { linkId: string | null; go: (tab: Tab, lin
   const current = data.threads.find((th) => th.link.id === linkId) ?? data.threads[0];
 
   return (
-    <div data-hide-assistant="" className="grid items-start gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
+    <div className="grid items-start gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
       <Card size="sm">
         <CardContent>
           <ItemGroup className="gap-1">
@@ -775,14 +827,34 @@ function ConsultItem({ consult, onChanged }: { consult: Consult; onChanged: (msg
         </div>
       </dl>
       {consult.doctor_note && (
-        <div className="rounded-xl bg-muted/60 px-4 py-3">
+        <div className="rounded-control bg-muted/60 px-4 py-3">
           <p className="text-xs text-muted-foreground">{t('care.consultDoctorNote')}</p>
           <p className="text-foreground/90">{consult.doctor_note}</p>
         </div>
       )}
       <ErrorAlert message={error} />
-      {isOpen && (
-        <ConfirmAction variant="ghost" className="w-fit text-destructive" label={t('care.consultCancel')} title={t('care.consultCancelConfirm')} onConfirm={cancel} />
+      {(isOpen || (consult.status === 'scheduled' && consult.scheduled_at)) && (
+        <div className="flex flex-wrap gap-2">
+          {consult.status === 'scheduled' && consult.scheduled_at && new Date(consult.scheduled_at) > new Date() && (
+            <UIButton
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                downloadConsultIcs(
+                  consult,
+                  t('ux.consultWith', { name: doctorName(t, consult.doctor) }),
+                  [t(`care.mode.${consult.mode}`), consult.reason, consult.doctor_note].filter(Boolean).join('\n'),
+                )
+              }
+            >
+              <CalendarArrowDownIcon data-icon="inline-start" aria-hidden="true" />
+              {t('ux.calendar')}
+            </UIButton>
+          )}
+          {isOpen && (
+            <ConfirmAction variant="ghost" className="w-fit text-destructive" label={t('care.consultCancel')} title={t('care.consultCancelConfirm')} onConfirm={cancel} />
+          )}
+        </div>
       )}
     </div>
   );
@@ -806,7 +878,7 @@ function ConsultsTab({ linkId, go, toast }: { linkId: string | null; go: (tab: T
   }, []);
 
   if (error && !data) return <ErrorBox error={error} onRetry={reload} />;
-  if (!data) return <Skeleton className="h-72 rounded-xl" />;
+  if (!data) return <Skeleton className="h-72 rounded-surface" />;
 
   const changed = (msg: string) => {
     toast(msg);
@@ -818,7 +890,7 @@ function ConsultsTab({ linkId, go, toast }: { linkId: string | null; go: (tab: T
       {data.links.length > 0 ? (
         <ConsultForm links={data.links} initialLink={linkId} onDone={() => changed(t('care.toastConsultSent'))} />
       ) : (
-        <Empty className="border p-6">
+        <Empty className="rounded-surface py-10 ring-1 ring-foreground/[0.08]">
           <EmptyHeader>
             <EmptyMedia variant="icon">
               <CalendarPlusIcon />

@@ -162,14 +162,14 @@ export default function NotificationBell({
           role="dialog"
           aria-label={t('notify.title')}
           className={cx(
-            'h-rise z-50 flex max-h-[min(70svh,560px)] flex-col overflow-hidden rounded-2xl border border-[var(--h-border)] bg-[var(--h-surface-1)] shadow-[0_24px_60px_-20px_rgb(0_0_0/0.8)]',
+            'h-rise h-glass z-50 flex max-h-[min(70svh,560px)] flex-col overflow-hidden rounded-surface',
             placement === 'sidebar' ? 'fixed bottom-5 left-[276px] w-[380px]' : 'fixed inset-x-3 top-[70px]',
           )}
         >
           <div className="flex items-center justify-between gap-3 border-b border-[var(--h-hairline)] px-4 py-3">
             <p className="text-[16px] font-medium text-[var(--h-text)]">{t('notify.title')}</p>
             {items?.some((n) => !n.read_at) && (
-              <button type="button" onClick={markAll} className="rounded-lg px-2 py-1 text-[13px] text-[var(--h-muted)] hover:bg-white/[0.06] hover:text-white">
+              <button type="button" onClick={markAll} className="rounded-[8px] px-2 py-1 text-meta text-[var(--h-muted)] hover:bg-white/[0.06] hover:text-white">
                 {t('notify.markAll')}
               </button>
             )}
@@ -177,7 +177,7 @@ export default function NotificationBell({
           <div className="overflow-y-auto">
             {failed && <p role="alert" className="px-4 py-4 text-[14px] text-rose-300">{t('common.error')}</p>}
             {!failed && items === null && <p className="px-4 py-4 text-[14px] text-[var(--h-muted)]">{t('common.loading')}</p>}
-            {!failed && items?.length === 0 && <p className="px-4 py-6 text-[15px] text-[var(--h-muted)]">{t('notify.empty')}</p>}
+            {!failed && items?.length === 0 && <p className="px-4 py-6 text-body text-[var(--h-muted)]">{t('notify.empty')}</p>}
             <ul>
               {items?.map((n) => (
                 <li key={n.id} className="border-b border-[var(--h-hairline)] last:border-b-0">
@@ -190,7 +190,7 @@ export default function NotificationBell({
                       )}
                     />
                     <span className="min-w-0 flex-1">
-                      <span className={cx('block text-[15px] leading-[21px]', n.read_at ? 'text-[var(--h-text-2)]' : 'font-medium text-[var(--h-text)]')}>
+                      <span className={cx('block text-body', n.read_at ? 'text-[var(--h-text-2)]' : 'font-medium text-[var(--h-text)]')}>
                         {!n.read_at && <span className="sr-only">{t('notify.unread')} </span>}
                         {n.title}
                       </span>

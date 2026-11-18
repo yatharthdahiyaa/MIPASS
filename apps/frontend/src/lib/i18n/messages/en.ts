@@ -424,6 +424,53 @@ const en = {
       completeness: 'Profile {n}% complete',
     },
   },
+  // Patient portal refinements (setup checklist, undo, search, visit summary).
+  ux: {
+    undo: 'Undo',
+    entryDeleted: 'Check-in deleted',
+    seeTrend: 'See the {metric} trend',
+    adherence: 'Adherence',
+    calendar: 'Add to calendar',
+    consultWith: 'Consultation with {name}',
+    setup: {
+      title: 'Get set up',
+      progress: '{done} of {total} done',
+      done: 'Done',
+      checkin: 'Log your first check-in',
+      medicine: 'Add your medicines',
+      doctor: 'Connect with your doctor',
+    },
+    records: {
+      search: 'Search records',
+      searchPlaceholder: 'Search title, provider or notes',
+      newest: 'Newest first',
+      oldest: 'Oldest first',
+      noMatch: 'No records match “{q}”.',
+      clear: 'Clear search',
+    },
+    xray: {
+      chooseFirst: 'Choose an X-ray file to continue.',
+    },
+    profileTabs: {
+      details: 'Health details',
+      alerts: 'Alerts',
+      security: 'Security',
+      data: 'Data & privacy',
+    },
+    summary: {
+      open: 'Visit summary',
+      body: 'A one-page summary of your details, medicines and latest readings to bring to an appointment.',
+      print: 'Print',
+      back: 'Back to profile',
+      generated: 'Prepared {date}',
+      details: 'Details',
+      medicines: 'Current medicines',
+      readings: 'Latest readings',
+      xray: 'Latest chest X-ray screening',
+      none: 'None recorded',
+      footer: 'Readings and details are entered by the patient in MIPAAS. The X-ray result is an AI screening, not a diagnosis.',
+    },
+  },
 };
 
 export default en;

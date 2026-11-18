@@ -43,7 +43,7 @@ function Explanation({ run }: { run: AgentRun<ReportExplanation> }) {
       <section className="flex flex-col gap-2">
         <h4 className="font-medium">{t('reports.summary')}</h4>
         {out.summary ? (
-          <p className="text-base whitespace-pre-line text-foreground/90">{out.summary}</p>
+          <p className="text-body whitespace-pre-line text-foreground/90">{out.summary}</p>
         ) : (
           <p className="text-sm text-muted-foreground">{run.guard ? t('reports.summaryWithheld') : t('reports.summaryOff')}</p>
         )}
@@ -53,7 +53,7 @@ function Explanation({ run }: { run: AgentRun<ReportExplanation> }) {
           <h4 className="font-medium">{t('reports.terms')}</h4>
           <dl className="flex flex-col gap-2">
             {out.terms.map((term) => (
-              <div key={term.term} className="rounded-xl bg-muted/60 px-4 py-3">
+              <div key={term.term} className="rounded-control bg-muted/60 px-4 py-3">
                 <dt className="font-medium first-letter:uppercase">{term.term}</dt>
                 <dd className="text-sm text-muted-foreground">{term.meaning}</dd>
               </div>
@@ -126,11 +126,11 @@ function ReportDetail({ id, onClose }: { id: string; onClose: () => void }) {
       <div className="flex flex-col gap-5 sm:flex-row">
         {r.has_preview && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={patientApi.reportImageUrl(r.id, 'preview')} alt="" className="size-40 shrink-0 rounded-xl bg-black object-cover" />
+          <img src={patientApi.reportImageUrl(r.id, 'preview')} alt="" className="size-40 shrink-0 rounded-control bg-black object-cover" />
         )}
         <div className="flex min-w-0 flex-1 flex-col gap-3">
           <h3 className="font-medium">{t('reports.impression')}</h3>
-          <p className="text-base whitespace-pre-line text-foreground/90">{r.impression || t('reports.noImpression')}</p>
+          <p className="text-body whitespace-pre-line text-foreground/90">{r.impression || t('reports.noImpression')}</p>
           {r.impression && !run && (
             <Button className="w-fit" disabled={busy} onClick={explain}>
               {busy ? <Spinner data-icon="inline-start" /> : <SparklesIcon data-icon="inline-start" aria-hidden="true" />}
@@ -178,7 +178,7 @@ export default function ReportsSection() {
         ) : !data ? (
           <Skeleton className="h-24" />
         ) : data.reports.length === 0 ? (
-          <Empty className="border p-6">
+          <Empty className="py-8">
             <EmptyHeader>
               <EmptyMedia variant="icon">
                 <FileTextIcon />
@@ -187,7 +187,7 @@ export default function ReportsSection() {
             </EmptyHeader>
           </Empty>
         ) : (
-          <ItemGroup className="gap-0">
+          <ItemGroup className="gap-0 has-data-[size=sm]:gap-0">
             {data.reports.map((r: SharedReport, i) => (
               <React.Fragment key={r.id}>
                 {i > 0 && <ItemSeparator />}

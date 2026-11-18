@@ -67,33 +67,37 @@ const bubble = 'whitespace-pre-wrap break-words rounded-[16px] px-3.5 py-2.5 tex
 const suggestion =
   'inline-flex min-h-9 items-center rounded-full border border-[var(--h-border)] px-3.5 py-1.5 text-left text-[14px] text-[var(--h-text-2)] transition-colors hover:border-white/30 hover:bg-white/[0.04]';
 
-export default function AssistantDock() {
+/** Shared with the triggers in the shell so their aria-controls points at the panel. */
+export const ASSISTANT_PANEL_ID = 'patient-assistant';
+
+/** The assistant panel. The shell owns `open`; triggers live in the sidebar (desktop) and top bar (phone). */
+export default function AssistantDock({ open, onOpenChange: setOpen }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { t, locale } = useI18n();
-  const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [attachment, setAttachment] = useState<(AssistantUpload & { name: string }) | null>(null);
   const [uploading, setUploading] = useState(false);
   const [sending, setSending] = useState(false);
-  const fab = useRef<HTMLButtonElement>(null);
+  /** Whatever opened the panel gets focus back when it closes. */
+  const opener = useRef<HTMLElement | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const log = useRef<HTMLDivElement>(null);
   const wasOpen = useRef(false);
-  const panelId = useId();
   const inputId = useId();
 
   useEffect(() => {
     if (open) {
       wasOpen.current = true;
+      opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       input.current?.focus();
       const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
       window.addEventListener('keydown', onKey);
       return () => window.removeEventListener('keydown', onKey);
     }
-    if (wasOpen.current) fab.current?.focus();
-  }, [open]);
+    if (wasOpen.current) opener.current?.focus();
+  }, [open, setOpen]);
 
   useEffect(() => {
     log.current?.scrollTo({ top: log.current.scrollHeight, behavior: 'smooth' });
@@ -199,29 +203,13 @@ export default function AssistantDock() {
 
   return (
     <>
-      <button
-        ref={fab}
-        type="button"
-        onClick={() => setOpen(true)}
-        aria-expanded={open}
-        aria-controls={panelId}
-        aria-label={t('patient.assistant.open')}
-        title={t('patient.assistant.open')}
-        data-assistant-fab=""
-        className={cx(
-          'fixed bottom-[calc(76px+env(safe-area-inset-bottom))] right-4 z-40 grid h-14 w-14 place-items-center rounded-full bg-[var(--h-text)] text-[var(--h-ink)] shadow-[0_12px_32px_-8px_rgb(0_0_0/0.7)] transition-transform hover:scale-105 lg:bottom-6 lg:right-6',
-          open && 'hidden',
-        )}
-      >
-        {icons.chat}
-      </button>
 
       {open && (
         <section
-          id={panelId}
+          id={ASSISTANT_PANEL_ID}
           role="dialog"
           aria-label={t('patient.assistant.title')}
-          className="fixed inset-0 z-50 flex flex-col bg-[#121213] lg:inset-auto lg:bottom-6 lg:right-6 lg:h-[min(720px,calc(100svh-48px))] lg:w-[420px] lg:overflow-hidden lg:rounded-[18px] lg:border lg:border-[var(--h-hairline)] lg:shadow-[0_24px_80px_-12px_rgb(0_0_0/0.8)]"
+          className="h-rise fixed inset-0 z-50 flex flex-col bg-[#121213] lg:inset-auto lg:right-6 lg:bottom-6 lg:h-[min(720px,calc(100svh-48px))] lg:w-[420px] lg:overflow-hidden lg:rounded-[18px] lg:border lg:border-white/10 lg:bg-[rgb(20_20_21/0.86)] lg:shadow-[inset_0_1px_0_rgb(255_255_255/0.07),0_2px_6px_rgb(0_0_0/0.35),0_32px_80px_-20px_rgb(0_0_0/0.9)] lg:backdrop-blur-[18px]"
         >
           <header className="flex items-start gap-1 border-b border-[var(--h-hairline)] px-4 pb-3 pt-[max(env(safe-area-inset-top),12px)] lg:pt-3">
             <div className="min-w-0 flex-1 pr-2">

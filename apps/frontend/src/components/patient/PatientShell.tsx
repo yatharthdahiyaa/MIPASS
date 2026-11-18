@@ -3,12 +3,12 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { ActivityIcon, FileTextIcon, LayoutGridIcon, LogOutIcon, PillIcon, ScanLineIcon, UserIcon, UsersIcon } from 'lucide-react';
+import { ActivityIcon, FileTextIcon, LayoutGridIcon, LogOutIcon, MessageCircleIcon, PillIcon, ScanLineIcon, UserIcon, UsersIcon } from 'lucide-react';
 import { useSession } from '@/lib/auth/SessionProvider';
 import { useI18n } from '@/lib/i18n/I18nProvider';
 import LanguageSwitcher from '@/lib/i18n/LanguageSwitcher';
 import { HomeLogoMark } from '@/components/home/HomeNav';
-import AssistantDock from '@/components/patient/assistant/AssistantDock';
+import AssistantDock, { ASSISTANT_PANEL_ID } from '@/components/patient/assistant/AssistantDock';
 import NotificationBell, { useBadge } from '@/components/care/NotificationBell';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -71,23 +71,24 @@ function PortalSidebar({
 
   return (
     <Sidebar>
-      <SidebarHeader className="px-4 pt-5">
-        <Link href="/" className="flex h-10 items-center gap-2 text-sidebar-foreground" aria-label="MIPAAS home">
+      <SidebarHeader className="px-5 pt-6 pb-3">
+        <Link href="/" className="flex h-10 w-fit items-center gap-2 rounded-control text-sidebar-foreground" aria-label="MIPAAS home">
           <HomeLogoMark className="size-[18px]" />
-          <span className="text-lg font-medium tracking-tight">MIPAAS</span>
+          <span className="text-[17px] font-semibold tracking-[-0.02em]">MIPAAS</span>
         </Link>
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>{t('patient.portalName')}</SidebarGroupLabel>
+          <SidebarGroupLabel className="px-3 text-[11px] font-medium tracking-[0.08em] text-muted-foreground/80 uppercase">{t('patient.portalName')}</SidebarGroupLabel>
           <SidebarGroupContent>
             <nav aria-label={t('patient.portalName')}>
-              <SidebarMenu>
+              <SidebarMenu className="gap-1">
                 {NAV.map((item) => (
                   <SidebarMenuItem key={item.href}>
                     <SidebarMenuButton
                       isActive={isActive(item.href)}
                       aria-current={isActive(item.href) ? 'page' : undefined}
+                      className="h-navitem h-10 gap-3 px-3"
                       render={<Link href={item.href} onClick={() => setOpenMobile(false)} />}
                     >
                       <item.icon aria-hidden="true" />
@@ -101,19 +102,19 @@ function PortalSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter className="gap-3 p-3">
+      <SidebarFooter className="gap-2 p-3">
         <div className="flex items-center gap-2">
           <LanguageSwitcher className="min-w-0 flex-1 [&_select]:w-full" />
           {bell}
         </div>
         {user && (
-          <div className="flex items-center gap-3 rounded-xl bg-sidebar-accent/60 p-2.5">
+          <div className="mt-1 flex items-center gap-3 rounded-control border border-[var(--glass-border)] bg-white/[0.03] px-2.5 py-2 shadow-[inset_0_1px_0_rgb(255_255_255/0.04)]">
             <Avatar>
-              <AvatarFallback>{initials(user.name)}</AvatarFallback>
+              <AvatarFallback className="text-meta font-medium">{initials(user.name)}</AvatarFallback>
             </Avatar>
             <div className="flex min-w-0 flex-1 flex-col">
               <span className="truncate text-sm font-medium">{user.name}</span>
-              <span className="truncate text-xs text-muted-foreground">{user.email}</span>
+              <span className="truncate text-meta text-muted-foreground">{user.email}</span>
             </div>
             <Tooltip>
               <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={t('common.signOut')} onClick={onSignOut} />}>
@@ -134,6 +135,7 @@ export default function PatientShell({ children }: { children: React.ReactNode }
   const router = useRouter();
   const pathname = usePathname() || '/patient';
   const [leaving, setLeaving] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
 
   useEffect(() => {
     if (leaving) return;
@@ -152,10 +154,10 @@ export default function PatientShell({ children }: { children: React.ReactNode }
   }
 
   return (
-    <SidebarProvider className="home-root h-ambient">
+    <SidebarProvider className="home-root h-ambient print:bg-white">
       <a
         href="#patient-main"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[60] focus:rounded-lg focus:bg-primary focus:px-3 focus:py-2 focus:text-primary-foreground"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[60] focus:rounded-control focus:bg-primary focus:px-3 focus:py-2 focus:text-primary-foreground"
       >
         {t('patient.skip')}
       </a>
@@ -168,46 +170,74 @@ export default function PatientShell({ children }: { children: React.ReactNode }
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Phone top bar: menu (all sections), brand, language, alerts, profile. */}
-        <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-2 border-b bg-background/90 px-3 backdrop-blur-xl md:hidden">
-          <div className="flex items-center gap-1">
-            <SidebarTrigger size="icon" aria-label={t('patient.nav.menu')} />
-            <Link href="/" className="flex items-center gap-2" aria-label="MIPAAS home">
+        {/* Phone top bar: menu (every section, language), brand, assistant, alerts, profile. */}
+        <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-2 border-b border-[var(--glass-border)] bg-[rgb(16_16_16/0.72)] px-2 backdrop-blur-xl md:hidden print:hidden">
+          <div className="flex items-center gap-0.5">
+            <SidebarTrigger className="size-10" aria-label={t('patient.nav.menu')} />
+            <Link href="/" className="flex h-10 items-center gap-2 rounded-control px-1.5" aria-label="MIPAAS home">
               <HomeLogoMark className="size-[18px]" />
-              <span className="text-[17px] font-medium tracking-tight">MIPAAS</span>
+              <span className="text-[17px] font-semibold tracking-[-0.02em]">MIPAAS</span>
             </Link>
           </div>
-          <div className="flex items-center gap-2">
-            <LanguageSwitcher compact />
+          <div className="flex items-center gap-1">
+            {ready && (
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={t('patient.assistant.open')}
+                aria-controls={ASSISTANT_PANEL_ID}
+                aria-expanded={assistantOpen}
+                onClick={() => setAssistantOpen(true)}
+              >
+                <MessageCircleIcon aria-hidden="true" />
+              </Button>
+            )}
             {ready && <NotificationBell count={badge.notifications} onChanged={refreshBadge} placement="topbar" />}
-            <Link href="/patient/profile" aria-label={t('patient.nav.profile')} className="rounded-full">
+            <Link href="/patient/profile" aria-label={t('patient.nav.profile')} className="grid size-10 place-items-center rounded-full">
               <Avatar>
-                <AvatarFallback>{user ? initials(user.name) : ''}</AvatarFallback>
+                <AvatarFallback className="text-meta font-medium">{user ? initials(user.name) : ''}</AvatarFallback>
               </Avatar>
             </Link>
           </div>
         </header>
 
-        <main id="patient-main" className="pb-32 md:pb-28">
-          <div className="mx-auto w-full max-w-[1180px] px-4 pt-6 sm:px-8 md:pt-10">
+        <main id="patient-main" className="pb-28 print:pb-0">
+          <div className="mx-auto w-full max-w-[1180px] px-4 pt-6 sm:px-8 md:pt-10 print:max-w-none print:px-0 print:pt-0">
             {ready ? (
               children
             ) : (
               <div aria-busy="true" className="flex flex-col gap-4">
-                <Skeleton className="h-12 w-2/3" />
-                <Skeleton className="h-48" />
+                <Skeleton className="h-10 w-1/2" />
+                <Skeleton className="h-24" />
+                <Skeleton className="h-64" />
               </div>
             )}
           </div>
         </main>
       </div>
 
-      {ready && <AssistantDock />}
+      {ready && <AssistantDock open={assistantOpen} onOpenChange={setAssistantOpen} />}
+
+      {/* Floating assistant launcher (tablet and desktop; phones use the top bar button). */}
+      {ready && !assistantOpen && (
+        <button
+          type="button"
+          onClick={() => setAssistantOpen(true)}
+          aria-controls={ASSISTANT_PANEL_ID}
+          aria-expanded={false}
+          className="group h-key h-fab fixed right-6 bottom-6 z-40 hidden h-12 min-w-12 items-center justify-center rounded-full px-[15px] text-body font-medium md:inline-flex print:hidden"
+        >
+          <MessageCircleIcon aria-hidden="true" className="size-[18px] shrink-0" />
+          <span className="max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-[max-width,opacity,margin] duration-300 ease-out group-hover:ml-2 group-hover:max-w-[14rem] group-hover:opacity-100 group-focus-visible:ml-2 group-focus-visible:max-w-[14rem] group-focus-visible:opacity-100">
+            {t('patient.assistant.open')}
+          </span>
+        </button>
+      )}
 
       {/* Phone tab bar: five destinations; Records and Profile are in the menu. */}
       <nav
         aria-label={t('patient.portalName')}
-        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t bg-background/95 px-1 pt-1.5 pb-[max(env(safe-area-inset-bottom),6px)] backdrop-blur-xl md:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-[var(--glass-border)] bg-[rgb(16_16_16/0.8)] px-1 pt-1.5 pb-[max(env(safe-area-inset-bottom),6px)] backdrop-blur-xl md:hidden print:hidden"
       >
         {NAV.filter((n) => n.tab).map((item) => {
           const active = isActive(item.href);
@@ -217,7 +247,7 @@ export default function PatientShell({ children }: { children: React.ReactNode }
               href={item.href}
               aria-current={active ? 'page' : undefined}
               className={cx(
-                'relative flex min-h-12 min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[11px] font-medium transition-colors',
+                'relative flex min-h-12 min-w-0 flex-col items-center justify-center gap-1 rounded-control px-1 text-[11px] font-medium transition-colors',
                 active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
               )}
             >

@@ -13,6 +13,8 @@ interface SessionContextValue {
   /** Resolves to the user, or to an MFA challenge that `completeMfa` must finish. */
   signIn: (identifier: string, password: string, remember: boolean) => Promise<SessionUser | MfaChallenge>;
   completeMfa: (mfaToken: string, code: string) => Promise<SessionUser>;
+  /** Second step of "sign in with a one-time code"; like `signIn`, may hand back an MFA challenge. */
+  signInWithPhone: (phone: string, code: string, remember: boolean) => Promise<SessionUser | MfaChallenge>;
   signUp: (input: RegisterInput) => Promise<SessionUser>;
   /** Adopt a user object returned by an account endpoint (verification, reset, profile). */
   setUser: (user: SessionUser) => void;
@@ -61,6 +63,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       setUser: apply,
       signIn: async (identifier, password, remember) => {
         const res = await authApi.login(identifier, password, remember);
+        if ('mfa_required' in res) return res;
+        apply(res.user);
+        return res.user;
+      },
+      signInWithPhone: async (phone, code, remember) => {
+        const res = await authApi.phoneLoginConfirm(phone, code, remember);
         if ('mfa_required' in res) return res;
         apply(res.user);
         return res.user;

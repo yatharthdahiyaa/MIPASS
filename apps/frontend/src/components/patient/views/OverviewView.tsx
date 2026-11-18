@@ -5,34 +5,53 @@ import Link from 'next/link';
 import {
   ActivityIcon,
   ArrowRightIcon,
+  CalendarDaysIcon,
+  CheckIcon,
   ChevronRightIcon,
+  FolderOpenIcon,
+  GaugeIcon,
+  HeartPulseIcon,
   MailIcon,
   MessageSquareIcon,
   PillIcon,
   PlusIcon,
   ScanLineIcon,
+  StethoscopeIcon,
   UserPlusIcon,
-  UserRoundPenIcon,
 } from 'lucide-react';
 import { authApi } from '@/lib/auth/api';
 import { useSession } from '@/lib/auth/SessionProvider';
 import { useI18n } from '@/lib/i18n/I18nProvider';
 import { localISODate, patientApi, type LatestReading, type LogMetric, type Overview } from '@/lib/patient/api';
 import { cn } from '@/lib/utils';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Alert, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia } from '@/components/ui/empty';
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from '@/components/ui/item';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import DoseList from '../DoseList';
-import { ErrorBox, useFormat, useLoader, useToast } from '../ui';
+import { ErrorBox, PageHeader, useFormat, useLoader, useToast } from '../ui';
 import { SeverityDot, StatusPill, bpStatus, glucoseStatus, heartRateStatus, spo2Status, temperatureStatus, type VitalStatus } from '../vitals';
 
-const TILE_ORDER: LogMetric[] = ['systolic', 'heart_rate', 'glucose', 'spo2', 'temperature_c', 'weight_kg', 'sleep_hours', 'steps'];
+/** Any lucide icon component. */
+type IconType = React.ComponentType<{ className?: string; strokeWidth?: number }>;
+
+const READING_ORDER: LogMetric[] = ['systolic', 'heart_rate', 'glucose', 'spo2', 'temperature_c', 'weight_kg', 'sleep_hours', 'steps'];
+
+/** Which trend on the Daily log a reading opens (see LogView's chart ids). */
+const TREND_ID: Partial<Record<LogMetric, string>> = {
+  systolic: 'bp',
+  heart_rate: 'hr',
+  glucose: 'glu',
+  spo2: 'spo2',
+  temperature_c: 'temp',
+  weight_kg: 'wt',
+  sleep_hours: 'sleep',
+  steps: 'steps',
+};
 
 function useReading() {
   const { t } = useI18n();
@@ -68,13 +87,51 @@ function useReading() {
 }
 
 /** A link styled as a shadcn Button (Base UI: render + nativeButton={false}). */
-function LinkButton({ href, children, variant = 'outline', size }: { href: string; children: React.ReactNode; variant?: 'default' | 'outline' | 'ghost'; size?: 'sm' | 'default' }) {
+function LinkButton({
+  href,
+  children,
+  variant = 'outline',
+  size,
+  className,
+}: {
+  href: string;
+  children: React.ReactNode;
+  variant?: 'default' | 'outline' | 'ghost';
+  size?: 'sm' | 'default';
+  className?: string;
+}) {
   return (
-    <Button variant={variant} size={size} nativeButton={false} render={<Link href={href} />}>
+    <Button variant={variant} size={size} className={className} nativeButton={false} render={<Link href={href} />}>
       {children}
     </Button>
   );
 }
+
+function ViewAll({ href, label }: { href: string; label: string }) {
+  return (
+    <Button variant="ghost" size="sm" className="-mr-2 text-muted-foreground hover:text-foreground" nativeButton={false} render={<Link href={href} />}>
+      {label}
+      <ArrowRightIcon data-icon="inline-end" aria-hidden="true" />
+    </Button>
+  );
+}
+
+/** Empty state inside a card: an icon, a sentence and one action, centred in the space the card has. */
+function CardEmpty({ text, action, icon: Icon }: { text: string; action?: React.ReactNode; icon?: IconType }) {
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-4 py-8 text-center">
+      {Icon && (
+        <span aria-hidden="true" className="h-icon-tile size-11 rounded-[12px]">
+          <Icon className="size-5" strokeWidth={1.75} />
+        </span>
+      )}
+      <p className="max-w-[34ch] text-body text-pretty text-muted-foreground">{text}</p>
+      {action}
+    </div>
+  );
+}
+
+/* --------------------------------------------------------------------- header */
 
 function Greeting({ data }: { data: Overview }) {
   const { user } = useSession();
@@ -85,72 +142,90 @@ function Greeting({ data }: { data: Overview }) {
   const key = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
 
   return (
-    <header className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-      <div className="flex min-w-0 flex-col gap-2">
-        <p className="text-sm text-muted-foreground">{f.date(data.date, { weekday: 'long', day: 'numeric', month: 'long' })}</p>
-        <h1 className="font-heading text-3xl font-semibold tracking-tight text-balance sm:text-4xl">{t(`patient.greeting.${key}`, { name: first })}</h1>
-        <p className="text-base text-muted-foreground">
-          {data.streak_days > 0 ? t('patient.overview.streak', { n: f.num(data.streak_days) }) : t('patient.overview.streakNone')}
-        </p>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        <LinkButton href="/patient/log" variant="default">
-          <PlusIcon data-icon="inline-start" aria-hidden="true" />
-          {t('patient.overview.logCta')}
-        </LinkButton>
-        <LinkButton href="/patient/xrays">
-          <ScanLineIcon data-icon="inline-start" aria-hidden="true" />
-          {t('patient.overview.uploadXray')}
-        </LinkButton>
-      </div>
-    </header>
+    <PageHeader
+      eyebrow={
+        <span className="inline-flex items-center gap-1.5">
+          <CalendarDaysIcon aria-hidden="true" className="size-3.5" />
+          {f.date(data.date, { weekday: 'long', day: 'numeric', month: 'long' })}
+        </span>
+      }
+      title={t(`patient.greeting.${key}`, { name: first })}
+      subtitle={data.streak_days > 0 ? t('patient.overview.streak', { n: f.num(data.streak_days) }) : t('patient.overview.streakNone')}
+      action={
+        <>
+          <LinkButton href="/patient/xrays">
+            <ScanLineIcon data-icon="inline-start" aria-hidden="true" />
+            {t('patient.overview.uploadXray')}
+          </LinkButton>
+          <LinkButton href="/patient/log" variant="default" className="h-key">
+            <PlusIcon data-icon="inline-start" aria-hidden="true" />
+            {t('patient.overview.logCta')}
+          </LinkButton>
+        </>
+      }
+    />
   );
 }
 
 /** One cell of the "today" strip: a figure, its label and, where it means something, progress toward a target. */
-function Stat({ label, value, sub, progress }: { label: string; value: string; sub?: string; progress?: number }) {
+function Stat({ label, value, sub, progress, icon: Icon }: { label: string; value: string; sub?: string; progress?: number; icon: IconType }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1.5 px-5 py-4">
-      <p className="line-clamp-2 text-sm text-muted-foreground">{label}</p>
-      <p className="font-heading text-3xl font-semibold tracking-tight tabular-nums">{value}</p>
-      {progress != null && <Progress value={Math.round(Math.max(0, Math.min(1, progress)) * 100)} aria-label={label} className="mt-1 [&_[data-slot=progress-track]]:h-1.5" />}
-      {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
-    </div>
+    <Card size="sm" className="h-stat gap-0">
+      <div className="flex min-w-0 flex-1 flex-col px-(--card-spacing)">
+        <div className="flex items-start justify-between gap-2">
+          <p className="line-clamp-2 min-w-0 text-sm leading-snug font-medium text-muted-foreground">{label}</p>
+          <span aria-hidden="true" className="h-icon-tile size-7 rounded-[8px] sm:size-8 sm:rounded-[9px]">
+            <Icon className="size-4" strokeWidth={1.75} />
+          </span>
+        </div>
+        <p className="mt-3 font-heading text-[1.875rem] leading-9 font-semibold tracking-[-0.03em] tabular-nums">{value}</p>
+        <div className="mt-auto flex flex-col gap-1.5 pt-2">
+          {progress != null && <Progress value={Math.round(Math.max(0, Math.min(1, progress)) * 100)} aria-label={label} />}
+          {sub && <p className="text-meta text-muted-foreground">{sub}</p>}
+        </div>
+      </div>
+    </Card>
   );
 }
 
-/** A callout with its action in the alert's own grid: under the text on phones, beside it from sm up. */
-function Notice({
-  icon: NoticeIcon,
-  title,
-  body,
-  action,
-  warning,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  title: string;
-  body?: string;
-  action?: React.ReactNode;
-  warning?: boolean;
-}) {
+function TodayStrip({ data }: { data: Overview }) {
+  const { t } = useI18n();
+  const f = useFormat();
+  const adherence = data.adherence_7d;
   return (
-    <Alert className={cn('sm:has-[>svg]:grid-cols-[auto_1fr_auto]', warning && 'border-warning/30 bg-warning/5')}>
-      <NoticeIcon className={cn(warning && 'text-warning')} />
-      <AlertTitle>{title}</AlertTitle>
-      {body && <AlertDescription>{body}</AlertDescription>}
-      {action && <div className="col-start-2 mt-2 sm:col-start-3 sm:row-span-2 sm:row-start-1 sm:mt-0 sm:self-center">{action}</div>}
-    </Alert>
+    <section aria-labelledby="overview-today">
+      <h2 id="overview-today" className="sr-only">{t('common.today')}</h2>
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <Stat icon={ActivityIcon} label={t('patient.overview.checkIns')} value={f.num(data.today.check_ins)} />
+        <Stat
+          icon={PillIcon}
+          label={t('patient.overview.doses')}
+          progress={data.today.doses_scheduled ? data.today.doses_taken / data.today.doses_scheduled : undefined}
+          value={data.today.doses_scheduled ? `${f.num(data.today.doses_taken)}/${f.num(data.today.doses_scheduled)}` : '—'}
+        />
+        <Stat
+          icon={GaugeIcon}
+          label={t('patient.overview.adherence')}
+          progress={adherence ? adherence.rate : undefined}
+          value={adherence ? f.pct(adherence.rate) : '—'}
+          sub={adherence ? t('patient.meds.dosesSummary', { taken: f.num(adherence.taken), scheduled: f.num(adherence.scheduled) }) : undefined}
+        />
+        <Stat icon={FolderOpenIcon} label={t('patient.nav.records')} value={f.num(data.counts.documents + data.counts.xrays)} />
+      </div>
+    </section>
   );
 }
 
-/** Things waiting for the patient: an unconfirmed e-mail, doctors asking to connect, unread messages, an incomplete profile. */
-function Attention({ data, email }: { data: Overview; email: string }) {
+/* ------------------------------------------------------------- getting set up */
+
+/**
+ * Replaces the stacked "verify e-mail" and "complete profile" banners with one checklist.
+ * Every step reads a real field from the overview; the card disappears once all are done.
+ */
+function SetupChecklist({ data, email }: { data: Overview; email: string }) {
   const { t } = useI18n();
   const f = useFormat();
   const [resend, setResend] = useState<'idle' | 'pending' | 'sent'>('idle');
-  const { care } = data;
-  const profileIncomplete = data.profile.completeness < 1;
-  if (data.email_verified && care.pending_invites.length === 0 && care.unread_messages === 0 && !profileIncomplete) return null;
 
   async function onResend() {
     setResend('pending');
@@ -162,88 +237,273 @@ function Attention({ data, email }: { data: Overview; email: string }) {
     }
   }
 
+  const steps: { key: string; label: string; done: boolean; hint?: string; progress?: number; action?: React.ReactNode }[] = [
+    {
+      key: 'email',
+      label: t('care.overview.verifyTitle'),
+      done: data.email_verified,
+      hint: resend === 'sent' ? t('care.overview.verifySent') : email,
+      action:
+        resend === 'sent' ? null : (
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-warning/35 text-warning hover:border-warning/50 hover:bg-warning/10 hover:text-warning"
+            disabled={resend === 'pending'}
+            onClick={onResend}
+          >
+            {resend === 'pending' && <Spinner data-icon="inline-start" />}
+            {t('care.overview.verifyResend')}
+          </Button>
+        ),
+    },
+    {
+      key: 'profile',
+      label: t('patient.overview.completeProfile'),
+      done: data.profile.completeness >= 1,
+      hint: data.profile.completeness < 1 ? t('patient.profile.completeness', { n: f.num(Math.round(data.profile.completeness * 100)) }) : undefined,
+      progress: data.profile.completeness,
+      action: <LinkButton href="/patient/profile" size="sm">{t('patient.overview.completeProfileCta')}</LinkButton>,
+    },
+    {
+      key: 'checkin',
+      label: t('ux.setup.checkin'),
+      done: data.counts.logs > 0,
+      action: <LinkButton href="/patient/log" size="sm">{t('patient.overview.logCta')}</LinkButton>,
+    },
+    {
+      key: 'medicine',
+      label: t('ux.setup.medicine'),
+      done: data.counts.medications > 0,
+      action: <LinkButton href="/patient/medications" size="sm">{t('patient.overview.addMed')}</LinkButton>,
+    },
+    {
+      key: 'doctor',
+      label: t('ux.setup.doctor'),
+      done: data.care.doctors.some((d) => d != null),
+      action: <LinkButton href="/patient/care" size="sm">{t('care.overview.connect')}</LinkButton>,
+    },
+  ];
+
+  const done = steps.filter((s) => s.done).length;
+  if (done === steps.length) return null;
+
   return (
-    <section aria-label={t('care.overview.title')} className="flex flex-col gap-3">
-      {!data.email_verified && (
-        <Notice
-          warning
-          icon={MailIcon}
-          title={t('care.overview.verifyTitle')}
-          body={resend === 'sent' ? t('care.overview.verifySent') : t('care.overview.verifyBody', { email })}
-          action={
-            resend !== 'sent' && (
-              <Button variant="outline" size="sm" disabled={resend === 'pending'} onClick={onResend}>
-                {resend === 'pending' && <Spinner data-icon="inline-start" />}
-                {t('care.overview.verifyResend')}
-              </Button>
-            )
-          }
-        />
-      )}
+    <Card size="sm">
+      <CardHeader>
+        <CardTitle>
+          <h2>{t('ux.setup.title')}</h2>
+        </CardTitle>
+        <CardDescription className="tabular-nums">{t('ux.setup.progress', { done: f.num(done), total: f.num(steps.length) })}</CardDescription>
+        <CardAction className="w-28 self-center sm:w-40">
+          <Progress value={(done / steps.length) * 100} aria-label={t('ux.setup.progress', { done: f.num(done), total: f.num(steps.length) })} />
+        </CardAction>
+      </CardHeader>
+      <CardContent>
+        <ol className="grid gap-x-8 xl:grid-cols-2">
+          {steps.map((s, i) => {
+            // An unverified e-mail blocks account recovery, so that step keeps its amber highlight.
+            const attention = s.key === 'email' && !s.done;
+            return (
+              <li
+                key={s.key}
+                className={cn(
+                  'grid min-h-14 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 border-t py-2.5 first:border-t-0 sm:grid-cols-[auto_minmax(0,1fr)_auto] xl:[&:nth-child(2)]:border-t-0',
+                  attention && '-mx-3 my-1 rounded-control border-t-0 bg-warning/[0.07] px-3 ring-1 ring-warning/25 ring-inset',
+                )}
+              >
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    'grid size-7 shrink-0 place-items-center rounded-full border text-meta font-medium tabular-nums',
+                    s.done
+                      ? 'border-success/40 bg-success/15 text-success'
+                      : attention
+                        ? 'border-warning/40 bg-warning/15 text-warning'
+                        : 'border-white/10 bg-white/[0.03] text-muted-foreground',
+                  )}
+                >
+                  {s.done ? <CheckIcon className="size-3.5" strokeWidth={2.5} /> : attention ? <MailIcon className="size-3.5" /> : f.num(i + 1)}
+                </span>
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <span className={cn('text-body', s.done ? 'text-muted-foreground' : 'font-medium')}>
+                    {s.label}
+                    {s.done && <span className="sr-only"> · {t('ux.setup.done')}</span>}
+                  </span>
+                  {!s.done && s.hint && <span className={cn('truncate text-meta', attention ? 'text-warning/85' : 'text-muted-foreground')}>{s.hint}</span>}
+                  {!s.done && s.progress != null && (
+                    <Progress value={Math.round(Math.max(0, Math.min(1, s.progress)) * 100)} aria-label={s.label} className="mt-1.5 max-w-44" />
+                  )}
+                </div>
+                {!s.done && s.action && <div className="col-start-2 sm:col-start-auto">{s.action}</div>}
+              </li>
+            );
+          })}
+        </ol>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Things another person is waiting on: doctors asking to connect and unread messages. */
+function Waiting({ data }: { data: Overview }) {
+  const { t } = useI18n();
+  const f = useFormat();
+  const { care } = data;
+  if (care.pending_invites.length === 0 && care.unread_messages === 0) return null;
+
+  return (
+    <section aria-label={t('care.overview.title')} className="flex flex-col gap-2">
       {care.pending_invites.map((link) => (
-        <Notice
-          key={link.id}
-          icon={UserPlusIcon}
-          title={t('care.overview.wantsToConnect', { name: link.doctor ? t('care.drName', { name: link.doctor.name }) : t('care.formerDoctor') })}
-          body={link.doctor?.specialty ?? undefined}
-          action={
-            <LinkButton href="/patient/care" size="sm">
-              {t('care.overview.review')}
-            </LinkButton>
-          }
-        />
+        <Alert key={link.id} className="flex items-center gap-3 border-[var(--glass-border)] py-2.5 backdrop-blur-md *:[svg]:translate-y-0">
+          <UserPlusIcon className="text-ring" />
+          <AlertTitle className="min-w-0 flex-1 truncate">
+            {t('care.overview.wantsToConnect', { name: link.doctor ? t('care.drName', { name: link.doctor.name }) : t('care.formerDoctor') })}
+            {link.doctor?.specialty && <span className="font-normal text-muted-foreground"> · {link.doctor.specialty}</span>}
+          </AlertTitle>
+          <LinkButton href="/patient/care" size="sm">
+            {t('care.overview.review')}
+          </LinkButton>
+        </Alert>
       ))}
       {care.unread_messages > 0 && (
-        <Notice
-          icon={MessageSquareIcon}
-          title={care.unread_messages === 1 ? t('care.overview.unreadOne') : t('care.overview.unreadMany', { n: f.num(care.unread_messages) })}
-          action={
-            <LinkButton href="/patient/care?tab=messages" size="sm">
-              {t('care.overview.read')}
-            </LinkButton>
-          }
-        />
-      )}
-      {profileIncomplete && (
-        <Notice
-          icon={UserRoundPenIcon}
-          title={t('patient.overview.completeProfile')}
-          body={t('patient.overview.completeProfileBody')}
-          action={
-            <LinkButton href="/patient/profile" size="sm">
-              {t('patient.overview.completeProfileCta')}
-            </LinkButton>
-          }
-        />
+        <Alert className="flex items-center gap-3 border-[var(--glass-border)] py-2.5 backdrop-blur-md *:[svg]:translate-y-0">
+          <MessageSquareIcon className="text-ring" />
+          <AlertTitle className="min-w-0 flex-1 truncate">
+            {care.unread_messages === 1 ? t('care.overview.unreadOne') : t('care.overview.unreadMany', { n: f.num(care.unread_messages) })}
+          </AlertTitle>
+          <LinkButton href="/patient/care?tab=messages" size="sm">
+            {t('care.overview.read')}
+          </LinkButton>
+        </Alert>
       )}
     </section>
   );
 }
 
-function ViewAll({ href, label }: { href: string; label: string }) {
+/* ------------------------------------------------------------------- readings */
+
+/** Tiny trend line drawn from the patient's own recent check-ins. */
+function Sparkline({ values }: { values: number[] }) {
+  if (values.length < 3) return <span aria-hidden="true" className="hidden w-[72px] sm:block" />;
+  const w = 72;
+  const h = 24;
+  const pad = 3;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const pts = values.map((v, i) => [pad + (i * (w - pad * 2)) / (values.length - 1), max === min ? h / 2 : h - pad - ((v - min) / (max - min)) * (h - pad * 2)]);
+  const d = pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`).join('');
+  const [lx, ly] = pts[pts.length - 1];
   return (
-    <Button variant="ghost" size="sm" nativeButton={false} render={<Link href={href} />}>
-      {label}
-      <ArrowRightIcon data-icon="inline-end" aria-hidden="true" />
-    </Button>
+    <svg viewBox={`0 0 ${w} ${h}`} width={w} height={h} aria-hidden="true" className="hidden shrink-0 text-chart-1 sm:block">
+      <path d={d} fill="none" stroke="currentColor" strokeOpacity={0.5} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={lx} cy={ly} r="2.25" fill="currentColor" />
+    </svg>
   );
 }
 
-function EmptyBlock({ icon: EmptyIcon, text, action }: { icon: React.ComponentType; text: string; action: React.ReactNode }) {
+function ReadingsCard({ data, trend }: { data: Overview; trend: (m: LogMetric) => number[] }) {
+  const { t } = useI18n();
+  const f = useFormat();
+  const reading = useReading();
+  const rows = READING_ORDER.filter((m) => data.latest[m]);
+
   return (
-    <Empty className="border p-5">
-      <EmptyHeader>
-        <EmptyMedia variant="icon">
-          <EmptyIcon />
-        </EmptyMedia>
-        <EmptyDescription>{text}</EmptyDescription>
-      </EmptyHeader>
-      <EmptyContent>{action}</EmptyContent>
-    </Empty>
+    <Card className="h-full lg:col-span-7">
+      <CardHeader>
+        <CardTitle>
+          <h2>{t('patient.overview.latestReadings')}</h2>
+        </CardTitle>
+        <CardAction>
+          <ViewAll href="/patient/log" label={t('common.viewAll')} />
+        </CardAction>
+      </CardHeader>
+      <CardContent className="flex flex-1 flex-col">
+        {rows.length === 0 ? (
+          <CardEmpty
+            icon={HeartPulseIcon}
+            text={t('patient.overview.noReadings')}
+            action={
+              <LinkButton href="/patient/log" size="sm" variant="default" className="h-key">
+                <PlusIcon data-icon="inline-start" aria-hidden="true" />
+                {t('patient.overview.logCta')}
+              </LinkButton>
+            }
+          />
+        ) : (
+          <ul className="-mx-2 flex flex-col">
+            {rows.map((m, i) => {
+              const r = data.latest[m]!;
+              const view = reading(m, r);
+              const id = TREND_ID[m];
+              return (
+                <li key={m} className={cn(i > 0 && 'border-t')}>
+                  <Link
+                    href={id ? `/patient/log?metric=${id}` : '/patient/log'}
+                    aria-label={`${view.label}: ${view.value} ${view.unit}. ${t('ux.seeTrend', { metric: view.label })}`}
+                    className="group flex items-center gap-4 rounded-control px-2 py-3 transition-colors hover:bg-white/[0.04] focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                  >
+                    <div className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate text-body">{view.label}</span>
+                      <span className="text-meta text-muted-foreground">{f.relDay(r.log_date)}</span>
+                    </div>
+                    <Sparkline values={trend(m)} />
+                    <div className="flex w-[7.5rem] shrink-0 flex-col items-end gap-1 sm:w-36">
+                      <p className="flex items-baseline gap-1">
+                        <span className="font-heading text-title font-semibold tabular-nums">{view.value}</span>
+                        <span className="text-meta text-muted-foreground">{view.unit}</span>
+                      </p>
+                      {view.status && <StatusPill status={view.status} />}
+                    </div>
+                    <ChevronRightIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground/60 transition-transform group-hover:translate-x-0.5" />
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
-/** Connected doctors and the next consultation. */
+/* ---------------------------------------------------------------- side cards */
+
+function MedicinesCard({ data, today, onChanged, onError }: { data: Overview; today: string; onChanged: () => void; onError: (m: string) => void }) {
+  const { t } = useI18n();
+  return (
+    <Card className="h-full lg:col-span-5">
+      <CardHeader>
+        <CardTitle>
+          <h2>{t('patient.overview.medsToday')}</h2>
+        </CardTitle>
+        <CardAction>
+          <ViewAll href="/patient/medications" label={t('common.viewAll')} />
+        </CardAction>
+      </CardHeader>
+      <CardContent className="flex flex-1 flex-col">
+        {data.medications_today.length === 0 ? (
+          <CardEmpty
+            icon={PillIcon}
+            text={t('patient.overview.noMeds')}
+            // With no medicines at all, the setup checklist already offers this.
+            action={
+              data.counts.medications > 0 && (
+                <LinkButton href="/patient/medications" size="sm">
+                  <PlusIcon data-icon="inline-start" aria-hidden="true" />
+                  {t('patient.overview.addMed')}
+                </LinkButton>
+              )
+            }
+          />
+        ) : (
+          <DoseList items={data.medications_today} date={today} onChanged={onChanged} onError={onError} />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function CareCard({ care }: { care: Overview['care'] }) {
   const { t } = useI18n();
   const f = useFormat();
@@ -251,7 +511,7 @@ function CareCard({ care }: { care: Overview['care'] }) {
   const next = care.next_consult;
 
   return (
-    <Card>
+    <Card className="h-full lg:col-span-7">
       <CardHeader>
         <CardTitle>
           <h2>{t('care.overview.title')}</h2>
@@ -260,24 +520,15 @@ function CareCard({ care }: { care: Overview['care'] }) {
           <ViewAll href="/patient/care" label={t('care.overview.open')} />
         </CardAction>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex flex-1 flex-col">
         {doctors.length === 0 ? (
-          <EmptyBlock
-            icon={UserPlusIcon}
-            text={t('care.overview.empty')}
-            action={
-              <LinkButton href="/patient/care" size="sm">
-                <PlusIcon data-icon="inline-start" aria-hidden="true" />
-                {t('care.overview.connect')}
-              </LinkButton>
-            }
-          />
+          <CardEmpty icon={StethoscopeIcon} text={t('care.overview.empty')} />
         ) : (
-          <ItemGroup className="gap-1">
+          <ItemGroup className="-mx-2 gap-0.5">
             {next?.scheduled_at && (
-              <Item size="sm" render={<Link href="/patient/care?tab=consults" />}>
+              <Item size="sm" className="px-2" render={<Link href="/patient/care?tab=consults" />}>
                 <ItemContent>
-                  <ItemDescription>{t('care.overview.nextConsult')}</ItemDescription>
+                  <ItemDescription className="text-meta">{t('care.overview.nextConsult')}</ItemDescription>
                   <ItemTitle>{f.date(next.scheduled_at, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</ItemTitle>
                   <ItemDescription>
                     {[next.doctor?.name ? t('care.drName', { name: next.doctor.name }) : null, t(`care.mode.${next.mode}`)].filter(Boolean).join(' · ')}
@@ -289,7 +540,7 @@ function CareCard({ care }: { care: Overview['care'] }) {
               </Item>
             )}
             {doctors.map((d) => (
-              <Item key={d.id} size="sm" render={<Link href="/patient/care" />}>
+              <Item key={d.id} size="sm" className="px-2" render={<Link href="/patient/care" />}>
                 <ItemContent className="min-w-0">
                   <ItemTitle className="truncate">{t('care.drName', { name: d.name })}</ItemTitle>
                   <ItemDescription className="truncate">{[d.specialty, d.organization].filter(Boolean).join(' · ')}</ItemDescription>
@@ -306,38 +557,62 @@ function CareCard({ care }: { care: Overview['care'] }) {
   );
 }
 
-/** Tiny trend line for a reading tile, drawn from the patient's own recent check-ins. */
-function Sparkline({ values }: { values: number[] }) {
-  if (values.length < 3) return null;
-  const w = 78;
-  const h = 28;
-  const pad = 3;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const pts = values.map((v, i) => [
-    pad + (i * (w - pad * 2)) / (values.length - 1),
-    max === min ? h / 2 : h - pad - ((v - min) / (max - min)) * (h - pad * 2),
-  ]);
-  const d = pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`).join('');
-  const [lx, ly] = pts[pts.length - 1];
+function XrayCard({ xray }: { xray: Overview['latest_xray'] }) {
+  const { t } = useI18n();
+  const f = useFormat();
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} width={w} height={h} aria-hidden="true" className="shrink-0 text-chart-1">
-      <path d={d} fill="none" stroke="currentColor" strokeOpacity={0.55} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx={lx} cy={ly} r="2.3" fill="currentColor" />
-    </svg>
+    <Card className="h-full lg:col-span-5">
+      <CardHeader>
+        <CardTitle>
+          <h2>{t('patient.overview.latestXray')}</h2>
+        </CardTitle>
+        {xray && (
+          <CardAction>
+            <ViewAll href="/patient/xrays" label={t('common.viewAll')} />
+          </CardAction>
+        )}
+      </CardHeader>
+      <CardContent className="flex flex-1 flex-col">
+        {xray ? (
+          <Item variant="outline" className="px-3" render={<Link href={`/patient/xrays?id=${xray.id}`} />}>
+            <ItemMedia className="size-16 overflow-hidden rounded-[8px] bg-black">
+              {xray.has_preview && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={patientApi.xrayImageUrl(xray.id, 'preview')} alt="" className="size-full object-cover" />
+              )}
+            </ItemMedia>
+            <ItemContent className="min-w-0">
+              <ItemTitle className="flex items-center gap-2">
+                <SeverityDot severity={xray.severity} />
+                <span className="truncate">
+                  {xray.status === 'completed' && xray.severity ? t(`patient.xray.severity.${xray.severity}.title`) : t('patient.xray.failed')}
+                </span>
+              </ItemTitle>
+              <ItemDescription className="truncate">
+                {xray.title || xray.original_filename} · {f.relDay(xray.taken_on || xray.created_at)}
+              </ItemDescription>
+            </ItemContent>
+            <ItemActions>
+              <ChevronRightIcon aria-hidden="true" className="size-4 text-muted-foreground" />
+            </ItemActions>
+          </Item>
+        ) : (
+          <CardEmpty icon={ScanLineIcon} text={t('patient.overview.noXray')} />
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
+/* ---------------------------------------------------------------------- view */
+
 export default function OverviewView() {
-  const { t } = useI18n();
   const { user } = useSession();
-  const f = useFormat();
   const toast = useToast();
   const today = useMemo(() => localISODate(), []);
   const { data, error, loading, reload } = useLoader(() => patientApi.overview(today), [today]);
-  // Two weeks of check-ins for the small trend lines; the tiles work without them.
+  // Two weeks of check-ins for the small trend lines; the rows work without them.
   const recent = useLoader(() => patientApi.logs(14, today), [today]);
-  const reading = useReading();
   const trend = useMemo(() => {
     const logs = [...(recent.data?.logs ?? [])].sort((a, b) => a.log_date.localeCompare(b.log_date) || a.recorded_at.localeCompare(b.recorded_at));
     return (m: LogMetric) => logs.map((l) => l[m]).filter((v): v is number => v != null);
@@ -347,166 +622,39 @@ export default function OverviewView() {
     return error ? (
       <ErrorBox error={error} onRetry={reload} />
     ) : (
-      <div aria-busy="true" className="flex flex-col gap-5">
-        <Skeleton className="h-28" />
-        <Skeleton className="h-28 rounded-xl" />
+      <div aria-busy="true" className="flex flex-col gap-6">
+        <div className="flex flex-col gap-2">
+          <Skeleton className="h-4 w-40" />
+          <Skeleton className="h-8 w-72" />
+        </div>
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-[124px] rounded-surface" />
+          ))}
+        </div>
+        <div className="grid gap-5 lg:grid-cols-12">
+          <Skeleton className="h-72 rounded-surface lg:col-span-7" />
+          <Skeleton className="h-72 rounded-surface lg:col-span-5" />
+        </div>
       </div>
     );
   }
 
-  const tiles = TILE_ORDER.filter((m) => data.latest[m]);
-  const adherence = data.adherence_7d;
-  const xray = data.latest_xray;
-
   return (
-    <div className={cn('flex flex-col gap-6 transition-opacity', loading && 'opacity-90')}>
+    <div className={cn('h-stagger flex flex-col gap-6 transition-opacity', loading && 'opacity-90')}>
       <Greeting data={data} />
+      <TodayStrip data={data} />
+      <Waiting data={data} />
+      <SetupChecklist data={data} email={user?.email ?? ''} />
 
-      <Card size="sm" className="py-0">
-        <h2 className="sr-only">{t('common.today')}</h2>
-        <div className="grid grid-cols-2 divide-border md:grid-cols-4 [&>*]:border-border max-md:[&>*:nth-child(-n+2)]:border-b max-md:[&>*:nth-child(odd)]:border-r md:divide-x">
-        <Stat label={t('patient.overview.checkIns')} value={f.num(data.today.check_ins)} />
-        <Stat
-          progress={data.today.doses_scheduled ? data.today.doses_taken / data.today.doses_scheduled : undefined}
-          label={t('patient.overview.doses')}
-          value={data.today.doses_scheduled ? `${f.num(data.today.doses_taken)}/${f.num(data.today.doses_scheduled)}` : '—'}
-        />
-        <Stat
-          progress={adherence ? adherence.rate : undefined}
-          label={t('patient.overview.adherence')}
-          value={adherence ? f.pct(adherence.rate) : '—'}
-          sub={adherence ? t('patient.meds.dosesSummary', { taken: f.num(adherence.taken), scheduled: f.num(adherence.scheduled) }) : undefined}
-        />
-        <Stat label={t('patient.nav.records')} value={f.num(data.counts.documents + data.counts.xrays)} />
-        </div>
-      </Card>
-
-      <Attention data={data} email={user?.email ?? ''} />
-
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              <h2>{t('patient.overview.latestReadings')}</h2>
-            </CardTitle>
-            <CardAction>
-              <ViewAll href="/patient/log" label={t('common.viewAll')} />
-            </CardAction>
-          </CardHeader>
-          <CardContent>
-            {tiles.length === 0 ? (
-              <EmptyBlock
-                icon={ActivityIcon}
-                text={t('patient.overview.noReadings')}
-                action={
-                  <LinkButton href="/patient/log" variant="default" size="sm">
-                    {t('patient.overview.logCta')}
-                  </LinkButton>
-                }
-              />
-            ) : (
-              <ul className="grid gap-3 sm:grid-cols-2">
-                {tiles.map((m) => {
-                  const r = data.latest[m]!;
-                  const view = reading(m, r);
-                  return (
-                    <li key={m} className="flex flex-col gap-2 rounded-xl bg-muted/50 p-4">
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="text-sm text-muted-foreground">{view.label}</p>
-                        {view.status && <StatusPill status={view.status} />}
-                      </div>
-                      <div className="flex items-end justify-between gap-3">
-                        <div className="flex min-w-0 flex-col gap-1">
-                          <p className="flex items-baseline gap-1.5">
-                            <span className="font-heading text-2xl font-semibold tracking-tight tabular-nums">{view.value}</span>
-                            <span className="text-sm text-muted-foreground">{view.unit}</span>
-                          </p>
-                          <p className="text-xs text-muted-foreground">{f.relDay(r.log_date)}</p>
-                        </div>
-                        <Sparkline values={trend(m)} />
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-
-        <div className="flex flex-col gap-5">
-          <Card>
-            <CardHeader>
-              <CardTitle>
-                <h2>{t('patient.overview.medsToday')}</h2>
-              </CardTitle>
-              <CardAction>
-                <ViewAll href="/patient/medications" label={t('common.viewAll')} />
-              </CardAction>
-            </CardHeader>
-            <CardContent>
-              {data.medications_today.length === 0 ? (
-                <EmptyBlock
-                  icon={PillIcon}
-                  text={t('patient.overview.noMeds')}
-                  action={
-                    <LinkButton href="/patient/medications" size="sm">
-                      <PlusIcon data-icon="inline-start" aria-hidden="true" />
-                      {t('patient.overview.addMed')}
-                    </LinkButton>
-                  }
-                />
-              ) : (
-                <DoseList items={data.medications_today} date={today} onChanged={reload} onError={toast.show} />
-              )}
-            </CardContent>
-          </Card>
-
-          <CareCard care={data.care} />
-
-          <Card>
-            <CardHeader>
-              <CardTitle>
-                <h2>{t('patient.overview.latestXray')}</h2>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {xray ? (
-                <Item variant="outline" render={<Link href={`/patient/xrays?id=${xray.id}`} />}>
-                  <ItemMedia className="size-16 overflow-hidden rounded-xl bg-black">
-                    {xray.has_preview && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={patientApi.xrayImageUrl(xray.id, 'preview')} alt="" className="size-full object-cover" />
-                    )}
-                  </ItemMedia>
-                  <ItemContent className="min-w-0">
-                    <ItemTitle className="flex items-center gap-2">
-                      <SeverityDot severity={xray.severity} />
-                      <span className="truncate">
-                        {xray.status === 'completed' && xray.severity ? t(`patient.xray.severity.${xray.severity}.title`) : t('patient.xray.failed')}
-                      </span>
-                    </ItemTitle>
-                    <ItemDescription className="truncate">
-                      {xray.title || xray.original_filename} · {f.relDay(xray.taken_on || xray.created_at)}
-                    </ItemDescription>
-                  </ItemContent>
-                  <ItemActions>
-                    <ChevronRightIcon aria-hidden="true" className="size-4 text-muted-foreground" />
-                  </ItemActions>
-                </Item>
-              ) : (
-                <EmptyBlock
-                  icon={ScanLineIcon}
-                  text={t('patient.overview.noXray')}
-                  action={
-                    <LinkButton href="/patient/xrays" size="sm">
-                      {t('patient.overview.uploadXray')}
-                    </LinkButton>
-                  }
-                />
-              )}
-            </CardContent>
-          </Card>
-        </div>
+      {/* Cards that share a row share a height, so neither column leaves a hole. */}
+      <div className="grid items-stretch gap-5 lg:grid-cols-12">
+        <ReadingsCard data={data} trend={trend} />
+        <MedicinesCard data={data} today={today} onChanged={reload} onError={toast.show} />
+      </div>
+      <div className="grid items-stretch gap-5 md:grid-cols-2 lg:grid-cols-12">
+        <CareCard care={data.care} />
+        <XrayCard xray={data.latest_xray} />
       </div>
     </div>
   );

@@ -95,7 +95,7 @@ export interface AppNotification {
   created_at: string;
 }
 
-export type NotificationPrefs = Record<string, { email: boolean }>;
+export type NotificationPrefs = Record<string, { email: boolean; phone?: boolean }>;
 
 const json = (method: string, body?: unknown): RequestInit => ({ method, body: body === undefined ? undefined : JSON.stringify(body) });
 

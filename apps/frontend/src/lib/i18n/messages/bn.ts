@@ -425,6 +425,53 @@ const bn: Messages = {
       completeness: 'প্রোফাইল {n}% সম্পূর্ণ',
     },
   },
+  // Patient portal refinements (setup checklist, undo, search, visit summary).
+  ux: {
+    undo: 'ফিরিয়ে আনুন',
+    entryDeleted: 'এন্ট্রি মুছে ফেলা হয়েছে',
+    seeTrend: '{metric}-এর প্রবণতা দেখুন',
+    adherence: 'ওষুধ মেনে চলা',
+    calendar: 'ক্যালেন্ডারে যোগ করুন',
+    consultWith: '{name}-এর সঙ্গে পরামর্শ',
+    setup: {
+      title: 'শুরু করুন',
+      progress: '{total}টির মধ্যে {done}টি সম্পন্ন',
+      done: 'সম্পন্ন',
+      checkin: 'আপনার প্রথম চেক-ইন লিখুন',
+      medicine: 'আপনার ওষুধ যোগ করুন',
+      doctor: 'আপনার ডাক্তারের সঙ্গে যুক্ত হোন',
+    },
+    records: {
+      search: 'রেকর্ড খুঁজুন',
+      searchPlaceholder: 'শিরোনাম, প্রদানকারী বা নোট দিয়ে খুঁজুন',
+      newest: 'নতুনগুলো আগে',
+      oldest: 'পুরোনোগুলো আগে',
+      noMatch: '“{q}”-এর সঙ্গে কোনো রেকর্ড মেলেনি।',
+      clear: 'খোঁজ মুছুন',
+    },
+    xray: {
+      chooseFirst: 'এগোতে একটি এক্স-রে ফাইল বেছে নিন।',
+    },
+    profileTabs: {
+      details: 'স্বাস্থ্যের বিবরণ',
+      alerts: 'সতর্কবার্তা',
+      security: 'নিরাপত্তা',
+      data: 'ডেটা ও গোপনীয়তা',
+    },
+    summary: {
+      open: 'সাক্ষাতের সারাংশ',
+      body: 'অ্যাপয়েন্টমেন্টে নিয়ে যাওয়ার জন্য আপনার বিবরণ, ওষুধ ও সাম্প্রতিক রিডিংয়ের এক পাতার সারাংশ।',
+      print: 'প্রিন্ট করুন',
+      back: 'প্রোফাইলে ফিরুন',
+      generated: '{date} তারিখে তৈরি',
+      details: 'বিবরণ',
+      medicines: 'চলতি ওষুধ',
+      readings: 'সাম্প্রতিক রিডিং',
+      xray: 'সাম্প্রতিক বুকের এক্স-রে স্ক্রিনিং',
+      none: 'কিছু লেখা নেই',
+      footer: 'রিডিং ও বিবরণ রোগী নিজে MIPAAS-এ লিখেছেন। এক্স-রের ফল একটি AI স্ক্রিনিং, রোগনির্ণয় নয়।',
+    },
+  },
 };
 
 export default bn;

@@ -425,6 +425,53 @@ const te: Messages = {
       completeness: 'ప్రొఫైల్ {n}% పూర్తయింది',
     },
   },
+  // Patient portal refinements (setup checklist, undo, search, visit summary).
+  ux: {
+    undo: 'రద్దు చేయి',
+    entryDeleted: 'నమోదు తొలగించబడింది',
+    seeTrend: '{metric} ధోరణిని చూడండి',
+    adherence: 'మందుల క్రమం',
+    calendar: 'క్యాలెండర్\u200cకు జోడించండి',
+    consultWith: '{name}తో సంప్రదింపు',
+    setup: {
+      title: 'ప్రారంభించండి',
+      progress: '{total}లో {done} పూర్తయ్యాయి',
+      done: 'పూర్తయింది',
+      checkin: 'మీ మొదటి నమోదు చేయండి',
+      medicine: 'మీ మందులను జోడించండి',
+      doctor: 'మీ డాక్టర్\u200cతో కనెక్ట్ అవ్వండి',
+    },
+    records: {
+      search: 'రికార్డులను వెతకండి',
+      searchPlaceholder: 'శీర్షిక, ప్రొవైడర్ లేదా నోట్స్\u200cతో వెతకండి',
+      newest: 'కొత్తవి ముందు',
+      oldest: 'పాతవి ముందు',
+      noMatch: '“{q}”కి సరిపోయే రికార్డులు లేవు.',
+      clear: 'వెతుకులాటను తొలగించండి',
+    },
+    xray: {
+      chooseFirst: 'కొనసాగడానికి ఎక్స్-రే ఫైల్\u200cను ఎంచుకోండి.',
+    },
+    profileTabs: {
+      details: 'ఆరోగ్య వివరాలు',
+      alerts: 'హెచ్చరికలు',
+      security: 'భద్రత',
+      data: 'డేటా & గోప్యత',
+    },
+    summary: {
+      open: 'సందర్శన సారాంశం',
+      body: 'అపాయింట్\u200cమెంట్\u200cకు తీసుకెళ్లడానికి మీ వివరాలు, మందులు, తాజా రీడింగ్\u200cల ఒక పేజీ సారాంశం.',
+      print: 'ప్రింట్ చేయండి',
+      back: 'ప్రొఫైల్\u200cకు తిరిగి వెళ్లండి',
+      generated: '{date}న తయారు చేయబడింది',
+      details: 'వివరాలు',
+      medicines: 'ప్రస్తుత మందులు',
+      readings: 'తాజా రీడింగ్\u200cలు',
+      xray: 'తాజా ఛాతీ ఎక్స్-రే స్క్రీనింగ్',
+      none: 'ఏదీ నమోదు కాలేదు',
+      footer: 'రీడింగ్\u200cలు, వివరాలు రోగి MIPAAS\u200cలో నమోదు చేసినవి. ఎక్స్-రే ఫలితం AI స్క్రీనింగ్ మాత్రమే, రోగనిర్ధారణ కాదు.',
+    },
+  },
 };
 
 export default te;

@@ -130,15 +130,29 @@ export function useFormat() {
    Product-screen building blocks, composed from components/ui (shadcn).
    ---------------------------------------------------------------- */
 
-export function PageHeader({ title, subtitle, action }: { title: string; subtitle?: string; action?: React.ReactNode }) {
+/** One per screen: 24px on phones, 28px from sm up, with the screen's primary action on the right. */
+export function PageHeader({ title, subtitle, action, eyebrow }: { title: string; subtitle?: string; action?: React.ReactNode; eyebrow?: React.ReactNode }) {
   return (
-    <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <header className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
       <div className="flex min-w-0 flex-col gap-2">
-        <h1 className="font-heading text-3xl font-semibold tracking-tight text-balance sm:text-4xl">{title}</h1>
-        {subtitle && <p className="max-w-2xl text-base text-pretty text-muted-foreground">{subtitle}</p>}
+        {eyebrow && <p className="text-meta font-medium tracking-[0.01em] text-muted-foreground">{eyebrow}</p>}
+        <h1 className="font-heading text-[1.625rem] leading-tight font-semibold tracking-[-0.03em] text-balance sm:text-[2rem]">{title}</h1>
+        {subtitle && <p className="max-w-[62ch] text-body text-pretty text-muted-foreground">{subtitle}</p>}
       </div>
-      {action && <div className="flex shrink-0 flex-wrap gap-2">{action}</div>}
+      {action && <div className="flex shrink-0 flex-col-reverse gap-2.5 *:w-full sm:flex-row sm:flex-wrap sm:*:w-auto">{action}</div>}
     </header>
+  );
+}
+
+/** Heading for a section that sits outside a card (trends, history). */
+export function SectionTitle({ id, children, action }: { id?: string; children: React.ReactNode; action?: React.ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <h2 id={id} className="font-heading text-title font-semibold">
+        {children}
+      </h2>
+      {action}
+    </div>
   );
 }
 
@@ -172,9 +186,10 @@ export function Card({
   );
 }
 
+/** A quiet empty state: one sentence and at most one secondary action, no box inside the box. */
 export function Empty({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
   return (
-    <UIEmpty className="border">
+    <UIEmpty className="py-8">
       <EmptyHeader>
         <EmptyDescription>{children}</EmptyDescription>
       </EmptyHeader>
@@ -449,6 +464,61 @@ export function Tabs<T extends string>({
         ))}
       </TabsList>
     </UITabs>
+  );
+}
+
+/* ---------------------------------------------------------------- undo */
+
+const UNDO_MS = 6000;
+
+/**
+ * Hide a row now, delete it after the toast's Undo window closes. Undo restores the row and
+ * nothing is sent. Leaving the page commits whatever is still waiting, so a delete is never lost.
+ */
+export function useUndoableDelete() {
+  const { t } = useI18n();
+  const waiting = useRef(new Map<string, { commit: () => Promise<void>; timer: number }>());
+
+  useEffect(() => {
+    const queue = waiting.current;
+    return () => {
+      queue.forEach(({ commit, timer }) => {
+        window.clearTimeout(timer);
+        void commit();
+      });
+      queue.clear();
+    };
+  }, []);
+
+  return useCallback(
+    (opts: { key: string; message: string; hide: () => void; restore: () => void; commit: () => Promise<unknown>; onError?: (err: unknown) => void }) => {
+      opts.hide();
+      const commit = async () => {
+        waiting.current.delete(opts.key);
+        try {
+          await opts.commit();
+        } catch (err) {
+          opts.restore();
+          opts.onError?.(err);
+        }
+      };
+      const timer = window.setTimeout(() => void commit(), UNDO_MS);
+      waiting.current.set(opts.key, { commit, timer });
+      const id = toast.add({
+        title: opts.message,
+        timeout: UNDO_MS,
+        actionProps: {
+          children: t('ux.undo'),
+          onClick: () => {
+            window.clearTimeout(timer);
+            waiting.current.delete(opts.key);
+            opts.restore();
+            toast.close(id);
+          },
+        },
+      });
+    },
+    [t],
   );
 }
 

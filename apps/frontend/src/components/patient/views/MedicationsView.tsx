@@ -7,35 +7,50 @@ import { localISODate, patientApi, type Adherence, type Medication } from '@/lib
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia } from '@/components/ui/empty';
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia } from '@/components/ui/empty';
 import { FieldGroup, FieldLegend, FieldSet } from '@/components/ui/field';
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@/components/ui/input-group';
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemSeparator, ItemTitle } from '@/components/ui/item';
 import { Progress } from '@/components/ui/progress';
+import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
 import DoseList from '../DoseList';
 import { ConfirmDelete, ErrorBox, PageHeader, Skeleton, TextInput, cx, useErrorText, useFormat, useLoader, useToast } from '../ui';
 
-function AdherenceMeter({ label, value }: { label: string; value: Adherence | null }) {
+function Meter({ label, value }: { label: string; value: Adherence | null }) {
   const { t } = useI18n();
   const f = useFormat();
   return (
-    <Card size="sm">
+    <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+      <p className="text-sm text-muted-foreground">{label}</p>
+      {value ? (
+        <>
+          <p className="font-heading text-[1.625rem] leading-8 font-semibold tracking-[-0.02em] tabular-nums">{f.pct(value.rate)}</p>
+          <Progress value={Math.round(value.rate * 100)} aria-label={label} className="mt-1" />
+          <p className="text-meta text-muted-foreground">{t('patient.meds.dosesSummary', { taken: f.num(value.taken), scheduled: f.num(value.scheduled) })}</p>
+        </>
+      ) : (
+        <p className="text-body text-muted-foreground">{t('patient.meds.noData')}</p>
+      )}
+    </div>
+  );
+}
+
+function AdherenceCard({ week, month }: { week: Adherence | null; month: Adherence | null }) {
+  const { t } = useI18n();
+  return (
+    <Card className="h-full lg:col-span-5">
       <CardHeader>
-        <CardDescription>{label}</CardDescription>
+        <CardTitle>
+          <h2>{t('ux.adherence')}</h2>
+        </CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-2">
-        {value ? (
-          <>
-            <p className="font-heading text-3xl font-semibold tracking-tight tabular-nums">{f.pct(value.rate)}</p>
-            <Progress value={Math.round(value.rate * 100)} aria-label={label} className="[&_[data-slot=progress-track]]:h-1.5" />
-            <p className="text-xs text-muted-foreground">{t('patient.meds.dosesSummary', { taken: f.num(value.taken), scheduled: f.num(value.scheduled) })}</p>
-          </>
-        ) : (
-          <p className="text-sm text-muted-foreground">{t('patient.meds.noData')}</p>
-        )}
+      <CardContent className="flex flex-1 flex-col gap-5 sm:flex-row lg:flex-col">
+        <Meter label={t('patient.meds.adherence7')} value={week} />
+        <Separator className="sm:hidden lg:block" />
+        <Meter label={t('patient.meds.adherence30')} value={month} />
       </CardContent>
     </Card>
   );
@@ -185,7 +200,7 @@ function MedicationRow({ med, onChange, onError }: { med: Medication; onChange: 
   return (
     <Item role="listitem" className={cx('px-0', !med.is_active && 'opacity-70')}>
       <ItemContent className="min-w-0 basis-full sm:basis-0">
-        <ItemTitle className="flex-wrap text-base">
+        <ItemTitle className="flex-wrap">
           {med.name}
           {med.dosage && <span className="text-sm font-normal text-muted-foreground">{med.dosage}</span>}
           {!med.is_active && <Badge variant="secondary">{t('patient.meds.paused')}</Badge>}
@@ -216,8 +231,8 @@ export default function MedicationsView() {
     void list.reload();
   };
 
-  const addButton = (variant: 'default' | 'outline') => (
-    <Button variant={variant} onClick={() => setAdding(true)}>
+  const addButton = (
+    <Button onClick={() => setAdding(true)}>
       <PlusIcon data-icon="inline-start" aria-hidden="true" />
       {t('patient.meds.add')}
     </Button>
@@ -225,7 +240,7 @@ export default function MedicationsView() {
 
   return (
     <div className="flex flex-col gap-8">
-      <PageHeader title={t('patient.meds.title')} subtitle={t('patient.meds.subtitle')} action={addButton('default')} />
+      <PageHeader title={t('patient.meds.title')} subtitle={t('patient.meds.subtitle')} action={addButton} />
 
       <AddMedication
         open={adding}
@@ -236,33 +251,26 @@ export default function MedicationsView() {
         }}
       />
 
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-        <Card>
+      <div className="grid items-stretch gap-5 lg:grid-cols-12">
+        <Card className="h-full lg:col-span-7">
           <CardHeader>
             <CardTitle>
               <h2>{t('patient.meds.today')}</h2>
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex flex-1 flex-col">
             {day.error && !day.data ? (
               <ErrorBox error={day.error} onRetry={day.reload} />
             ) : !day.data ? (
               <Skeleton className="h-36" />
             ) : day.data.items.length === 0 ? (
-              <Empty className="border p-5">
-                <EmptyHeader>
-                  <EmptyDescription>{t('patient.meds.noneToday')}</EmptyDescription>
-                </EmptyHeader>
-              </Empty>
+              <p className="flex flex-1 items-center justify-center py-8 text-center text-body text-muted-foreground">{t('patient.meds.noneToday')}</p>
             ) : (
               <DoseList items={day.data.items} date={today} onChanged={day.reload} onError={toast.show} />
             )}
           </CardContent>
         </Card>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
-          <AdherenceMeter label={t('patient.meds.adherence7')} value={day.data?.adherence_7d ?? null} />
-          <AdherenceMeter label={t('patient.meds.adherence30')} value={day.data?.adherence_30d ?? null} />
-        </div>
+        <AdherenceCard week={day.data?.adherence_7d ?? null} month={day.data?.adherence_30d ?? null} />
       </div>
 
       <Card>
@@ -277,17 +285,16 @@ export default function MedicationsView() {
           ) : !list.data ? (
             <Skeleton className="h-32" />
           ) : list.data.medications.length === 0 ? (
-            <Empty className="border p-5">
+            <Empty className="py-8">
               <EmptyHeader>
                 <EmptyMedia variant="icon">
                   <PillIcon />
                 </EmptyMedia>
                 <EmptyDescription>{t('patient.meds.empty')}</EmptyDescription>
               </EmptyHeader>
-              <EmptyContent>{addButton('outline')}</EmptyContent>
             </Empty>
           ) : (
-            <ItemGroup className="gap-0">
+            <ItemGroup className="gap-0 has-data-[size=sm]:gap-0">
               {list.data.medications.map((m, i) => (
                 <React.Fragment key={m.id}>
                   {i > 0 && <ItemSeparator />}

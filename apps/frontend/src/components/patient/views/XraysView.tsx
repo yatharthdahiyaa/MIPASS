@@ -20,7 +20,8 @@ import { SEVERITY_TONE, SeverityDot, StatusPill, severityColor } from '../vitals
 const ACCEPT = '.dcm,.dicom,image/png,image/jpeg,image/webp,application/dicom';
 const MAX_BYTES = 25 * 1024 * 1024;
 
-function Uploader({ onDone }: { onDone: (s: XrayStudy) => void }) {
+/** `wide` is the first-visit layout: drop zone beside the fields. `narrow` sits above the history list. */
+function Uploader({ onDone, wide = false }: { onDone: (s: XrayStudy) => void; wide?: boolean }) {
   const { t } = useI18n();
   const f = useFormat();
   const errText = useErrorText();
@@ -65,7 +66,7 @@ function Uploader({ onDone }: { onDone: (s: XrayStudy) => void }) {
 
   return (
     <Card>
-      <CardContent className="flex flex-col gap-5">
+      <CardContent className={cx('grid gap-5', wide && 'md:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] md:gap-8')}>
         <Empty
           onDragOver={(e) => {
             e.preventDefault();
@@ -77,7 +78,7 @@ function Uploader({ onDone }: { onDone: (s: XrayStudy) => void }) {
             setDrag(false);
             pick(e.dataTransfer.files?.[0]);
           }}
-          className={cx('border p-6 transition-colors', drag && 'border-ring bg-ring/10')}
+          className={cx('rounded-control border border-dashed border-foreground/15 p-6 transition-colors', wide && 'md:min-h-72', drag && 'border-ring bg-ring/10')}
         >
           <EmptyHeader>
             <EmptyMedia variant="icon">
@@ -102,26 +103,35 @@ function Uploader({ onDone }: { onDone: (s: XrayStudy) => void }) {
           </EmptyContent>
         </Empty>
 
-        <FieldGroup className="gap-4">
-          <TextInput label={t('patient.xray.takenOn')} type="date" max={localISODate()} value={takenOn} onChange={(e) => setTakenOn(e.target.value)} />
-          <TextInput label={t('patient.xray.label')} hint={t('common.optional')} placeholder={t('patient.xray.labelPlaceholder')} value={title} maxLength={200} onChange={(e) => setTitle(e.target.value)} />
-        </FieldGroup>
+        <div className="flex flex-col justify-center gap-5">
+          <FieldGroup className="gap-4">
+            <TextInput label={t('patient.xray.takenOn')} type="date" max={localISODate()} value={takenOn} onChange={(e) => setTakenOn(e.target.value)} />
+            <TextInput label={t('patient.xray.label')} hint={t('common.optional')} placeholder={t('patient.xray.labelPlaceholder')} value={title} maxLength={200} onChange={(e) => setTitle(e.target.value)} />
+          </FieldGroup>
 
-        {error && (
-          <Alert variant="destructive">
-            <CircleAlertIcon />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-        {pending && (
-          <p role="status" className="text-sm text-muted-foreground">
-            {t('patient.xray.analyzing')}
-          </p>
-        )}
-        <Button className="w-full" disabled={!file || pending} onClick={submit}>
-          {pending ? <Spinner data-icon="inline-start" /> : <ScanLineIcon data-icon="inline-start" aria-hidden="true" />}
-          {t('patient.xray.analyze')}
-        </Button>
+          {error && (
+            <Alert variant="destructive">
+              <CircleAlertIcon />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+          {pending && (
+            <p role="status" className="text-sm text-muted-foreground">
+              {t('patient.xray.analyzing')}
+            </p>
+          )}
+          <div className="flex flex-col gap-2">
+            <Button className="w-full" disabled={!file || pending} onClick={submit} aria-describedby={!file ? 'xray-need-file' : undefined}>
+              {pending ? <Spinner data-icon="inline-start" /> : <ScanLineIcon data-icon="inline-start" aria-hidden="true" />}
+              {t('patient.xray.analyze')}
+            </Button>
+            {!file && !pending && (
+              <p id="xray-need-file" className="text-center text-meta text-muted-foreground">
+                {t('ux.xray.chooseFirst')}
+              </p>
+            )}
+          </div>
+        </div>
       </CardContent>
     </Card>
   );
@@ -168,7 +178,7 @@ function StudyDetail({ id, onDeleted }: { id: string; onDeleted: () => void }) {
   const [delError, setDelError] = useState<string | null>(null);
 
   if (error && !data) return <ErrorBox error={error} onRetry={reload} />;
-  if (!data) return <Skeleton className="h-[520px] rounded-xl" />;
+  if (!data) return <Skeleton className="h-[520px] rounded-surface" />;
   const s = data.xray;
   const tone = severityColor(s.severity);
 
@@ -185,7 +195,7 @@ function StudyDetail({ id, onDeleted }: { id: string; onDeleted: () => void }) {
     <div className="flex flex-col gap-5">
       {s.status === 'completed' && s.severity ? (
         <Alert style={{ borderColor: `color-mix(in oklch, ${tone.color} 35%, transparent)`, background: tone.bg }}>
-          <AlertTitle className="flex flex-wrap items-center gap-2 text-base">
+          <AlertTitle className="flex flex-wrap items-center gap-2 text-title">
             <StatusPill status={SEVERITY_TONE[s.severity]} />
             <h2>{t(`patient.xray.severity.${s.severity}.title`)}</h2>
           </AlertTitle>
@@ -206,7 +216,7 @@ function StudyDetail({ id, onDeleted }: { id: string; onDeleted: () => void }) {
           <CardContent className="flex flex-col gap-3">
             {s.has_preview ? (
               <>
-                <div className="relative aspect-square overflow-hidden rounded-xl bg-black">
+                <div className="relative aspect-square overflow-hidden rounded-control bg-black">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={patientApi.xrayImageUrl(s.id, view === 'heatmap' && s.has_heatmap ? 'heatmap' : 'preview')}
@@ -215,7 +225,7 @@ function StudyDetail({ id, onDeleted }: { id: string; onDeleted: () => void }) {
                   />
                 </div>
                 {s.has_heatmap && (
-                  <ToggleGroup variant="outline" size="sm" value={[view]} onValueChange={(v) => v[0] && setView(v[0] as 'preview' | 'heatmap')}>
+                  <ToggleGroup variant="outline" size="sm" spacing={0} value={[view]} onValueChange={(v) => v[0] && setView(v[0] as 'preview' | 'heatmap')}>
                     <ToggleGroupItem value="preview">{t('patient.xray.viewOriginal')}</ToggleGroupItem>
                     <ToggleGroupItem value="heatmap">{t('patient.xray.viewHeatmap')}</ToggleGroupItem>
                   </ToggleGroup>
@@ -223,7 +233,7 @@ function StudyDetail({ id, onDeleted }: { id: string; onDeleted: () => void }) {
                 {view === 'heatmap' && <p className="text-xs text-muted-foreground">{t('patient.xray.heatmapHint')}</p>}
               </>
             ) : (
-              <div className="grid aspect-square place-items-center rounded-xl bg-muted text-sm text-muted-foreground">{s.original_filename}</div>
+              <div className="grid aspect-square place-items-center rounded-control bg-muted text-sm text-muted-foreground">{s.original_filename}</div>
             )}
           </CardContent>
         </Card>
@@ -297,88 +307,83 @@ export default function XraysView() {
 
   const select = (id: string | null) => router.replace(id ? `${pathname}?id=${id}` : pathname, { scroll: false });
 
+  const firstVisit = data != null && studies.length === 0;
+  const onUploaded = (s: XrayStudy) => {
+    void reload();
+    select(s.id);
+  };
+
   return (
     <div className="flex flex-col gap-8">
       <PageHeader title={t('patient.xray.title')} subtitle={t('patient.xray.subtitle')} />
-      <div className="grid items-start gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
-        <div className="flex flex-col gap-5">
-          <Uploader
-            onDone={(s) => {
-              void reload();
-              select(s.id);
-            }}
-          />
-          {error && !data ? (
-            <ErrorBox error={error} onRetry={reload} />
-          ) : !data ? (
-            <Skeleton className="h-32 rounded-xl" />
-          ) : (
-            studies.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>
-                    <h2>{t('patient.xray.history')}</h2>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ItemGroup className="gap-1">
-                    {studies.map((s) => (
-                      <Item
-                        key={s.id}
-                        size="sm"
-                        className={cx('cursor-pointer text-left hover:bg-muted', selected === s.id && 'bg-muted')}
-                        render={<button type="button" aria-current={selected === s.id ? 'true' : undefined} onClick={() => select(s.id)} />}
-                      >
-                        <ItemMedia className="size-12 overflow-hidden rounded-lg bg-black">
-                          {s.has_preview && (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={patientApi.xrayImageUrl(s.id, 'preview')} alt="" className="size-full object-cover" loading="lazy" />
-                          )}
-                        </ItemMedia>
-                        <ItemContent className="min-w-0">
-                          <ItemTitle className="w-full">
-                            <SeverityDot severity={s.severity} />
-                            <span className="truncate">{s.title || s.original_filename}</span>
-                          </ItemTitle>
-                          <ItemDescription className="truncate">
-                            {f.date(s.taken_on || s.created_at)} ·{' '}
-                            {s.status === 'completed' && s.severity ? t(`patient.xray.severity.${s.severity}.title`) : t('patient.xray.failed')}
-                          </ItemDescription>
-                        </ItemContent>
-                      </Item>
-                    ))}
-                  </ItemGroup>
-                </CardContent>
-              </Card>
-            )
-          )}
-        </div>
+      {firstVisit ? (
+        <Uploader wide onDone={onUploaded} />
+      ) : (
+        <div className="grid items-start gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
+          <div className="flex flex-col gap-5">
+            <Uploader onDone={onUploaded} />
+            {error && !data ? (
+              <ErrorBox error={error} onRetry={reload} />
+            ) : !data ? (
+              <Skeleton className="h-32 rounded-surface" />
+            ) : (
+              studies.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>
+                      <h2>{t('patient.xray.history')}</h2>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ItemGroup className="gap-1">
+                      {studies.map((s) => (
+                        <Item
+                          key={s.id}
+                          size="sm"
+                          className={cx('cursor-pointer text-left hover:bg-muted', selected === s.id && 'bg-muted')}
+                          render={<button type="button" aria-current={selected === s.id ? 'true' : undefined} onClick={() => select(s.id)} />}
+                        >
+                          <ItemMedia className="size-12 overflow-hidden rounded-[8px] bg-black">
+                            {s.has_preview && (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={patientApi.xrayImageUrl(s.id, 'preview')} alt="" className="size-full object-cover" loading="lazy" />
+                            )}
+                          </ItemMedia>
+                          <ItemContent className="min-w-0">
+                            <ItemTitle className="w-full">
+                              <SeverityDot severity={s.severity} />
+                              <span className="truncate">{s.title || s.original_filename}</span>
+                            </ItemTitle>
+                            <ItemDescription className="truncate">
+                              {f.date(s.taken_on || s.created_at)} ·{' '}
+                              {s.status === 'completed' && s.severity ? t(`patient.xray.severity.${s.severity}.title`) : t('patient.xray.failed')}
+                            </ItemDescription>
+                          </ItemContent>
+                        </Item>
+                      ))}
+                    </ItemGroup>
+                  </CardContent>
+                </Card>
+              )
+            )}
+          </div>
 
-        <div>
-          {selected ? (
-            <StudyDetail
-              key={selected}
-              id={selected}
-              onDeleted={async () => {
-                await reload();
-                select(null);
-              }}
-            />
-          ) : data ? (
-            <Empty className="border py-16">
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <ScanLineIcon />
-                </EmptyMedia>
-                <EmptyTitle>{t('patient.xray.empty')}</EmptyTitle>
-                <EmptyDescription>{t('patient.xray.subtitle')}</EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          ) : (
-            <Skeleton className="h-[420px] rounded-xl" />
-          )}
+          <div>
+            {selected ? (
+              <StudyDetail
+                key={selected}
+                id={selected}
+                onDeleted={async () => {
+                  await reload();
+                  select(null);
+                }}
+              />
+            ) : (
+              <Skeleton className="h-[420px] rounded-surface" />
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

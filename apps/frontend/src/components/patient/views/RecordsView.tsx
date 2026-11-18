@@ -1,7 +1,8 @@
 'use client';
 
-import React, { Suspense, useRef, useState } from 'react';
-import { CircleAlertIcon, DownloadIcon, FileTextIcon, PlusIcon } from 'lucide-react';
+import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { CircleAlertIcon, DownloadIcon, FileTextIcon, PlusIcon, SearchIcon, XIcon } from 'lucide-react';
 import ReportsSection from '../ReportsSection';
 import { useI18n } from '@/lib/i18n/I18nProvider';
 import { DOCUMENT_CATEGORIES, localISODate, patientApi, type DocumentCategory, type PatientDocument } from '@/lib/patient/api';
@@ -11,6 +12,8 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia } from '@/components/ui/empty';
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field';
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@/components/ui/input-group';
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemSeparator, ItemTitle } from '@/components/ui/item';
 import { Spinner } from '@/components/ui/spinner';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
@@ -125,7 +128,7 @@ function UploadDialog({ open, onOpenChange, onDone }: { open: boolean; onOpenCha
 function FileBadge({ doc }: { doc: PatientDocument }) {
   const ext = doc.content_type === 'application/pdf' ? 'PDF' : doc.content_type === 'application/dicom' ? 'DCM' : doc.content_type.split('/')[1]?.toUpperCase().slice(0, 4);
   return (
-    <ItemMedia aria-hidden="true" className="size-11 rounded-xl bg-muted font-mono text-[11px] font-medium text-muted-foreground">
+    <ItemMedia aria-hidden="true" className="size-10 rounded-[8px] bg-muted text-[11px] font-semibold tracking-wide text-muted-foreground">
       {ext}
     </ItemMedia>
   );
@@ -138,11 +141,45 @@ export default function RecordsView() {
   const toast = useToast();
   const { data, error, reload } = useLoader(() => patientApi.documents(), []);
   const [adding, setAdding] = useState(false);
-  const [filter, setFilter] = useState<DocumentCategory | 'all'>('all');
+  const router = useRouter();
+  const pathname = usePathname();
+  const params = useSearchParams();
+  const rawCat = params.get('cat');
+  const filter: DocumentCategory | 'all' = DOCUMENT_CATEGORIES.includes(rawCat as DocumentCategory) ? (rawCat as DocumentCategory) : 'all';
+  const order = params.get('sort') === 'oldest' ? 'oldest' : 'newest';
+  const [query, setQuery] = useState(params.get('q') ?? '');
 
-  const docs = data?.documents ?? [];
+  /** Write filters back to the URL without a history entry or a scroll jump. */
+  const setParams = (patch: Record<string, string | null>) => {
+    const next = new URLSearchParams(params.toString());
+    Object.entries(patch).forEach(([k, v]) => (v ? next.set(k, v) : next.delete(k)));
+    const qs = next.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  };
+
+  // Typing filters the list immediately; the URL follows once typing pauses.
+  const urlQuery = params.get('q') ?? '';
+  useEffect(() => {
+    if (query.trim() === urlQuery) return;
+    const timer = window.setTimeout(() => setParams({ q: query.trim() || null }), 300);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, urlQuery]);
+
+  const docs = useMemo(() => data?.documents ?? [], [data]);
   const present = DOCUMENT_CATEGORIES.filter((c) => docs.some((d) => d.category === c));
-  const shown = filter === 'all' ? docs : docs.filter((d) => d.category === filter);
+  const needle = query.trim().toLocaleLowerCase();
+  const shown = useMemo(() => {
+    const when = (d: PatientDocument) => d.record_date ?? d.created_at.slice(0, 10);
+    return docs
+      .filter((d) => filter === 'all' || d.category === filter)
+      .filter(
+        (d) =>
+          !needle ||
+          [d.title, d.provider, d.notes, d.original_filename, t(`patient.records.categories.${d.category}`)].some((v) => v?.toLocaleLowerCase().includes(needle)),
+      )
+      .sort((a, b) => (order === 'oldest' ? when(a).localeCompare(when(b)) : when(b).localeCompare(when(a))));
+  }, [docs, filter, needle, order, t]);
 
   async function remove(doc: PatientDocument) {
     try {
@@ -180,23 +217,55 @@ export default function RecordsView() {
       </Suspense>
 
       <Card>
-        {present.length > 1 && (
-          <CardHeader>
-            <ToggleGroup
-              variant="outline"
-              size="sm"
-              className="flex-wrap"
-              aria-label={t('patient.records.category')}
-              value={[filter]}
-              onValueChange={(v) => v[0] && setFilter(v[0] as DocumentCategory | 'all')}
-            >
-              <ToggleGroupItem value="all">{t('patient.records.all')}</ToggleGroupItem>
-              {present.map((c) => (
-                <ToggleGroupItem key={c} value={c}>
-                  {t(`patient.records.categories.${c}`)}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
+        {docs.length > 0 && (
+          <CardHeader className="flex flex-col gap-3">
+            <div className="flex w-full flex-wrap items-center gap-2">
+              <InputGroup className="min-w-0 flex-1 sm:max-w-sm">
+                <InputGroupAddon>
+                  <SearchIcon aria-hidden="true" />
+                </InputGroupAddon>
+                <InputGroupInput
+                  type="search"
+                  aria-label={t('ux.records.search')}
+                  placeholder={t('ux.records.searchPlaceholder')}
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+                {query && (
+                  <InputGroupAddon align="inline-end">
+                    <InputGroupButton size="icon-xs" aria-label={t('ux.records.clear')} onClick={() => setQuery('')}>
+                      <XIcon aria-hidden="true" />
+                    </InputGroupButton>
+                  </InputGroupAddon>
+                )}
+              </InputGroup>
+              <NativeSelect
+                aria-label={`${t('ux.records.newest')} / ${t('ux.records.oldest')}`}
+                className="ml-auto"
+                value={order}
+                onChange={(e) => setParams({ sort: e.target.value === 'oldest' ? 'oldest' : null })}
+              >
+                <NativeSelectOption value="newest">{t('ux.records.newest')}</NativeSelectOption>
+                <NativeSelectOption value="oldest">{t('ux.records.oldest')}</NativeSelectOption>
+              </NativeSelect>
+            </div>
+            {present.length > 1 && (
+              <ToggleGroup
+                variant="outline"
+                size="sm"
+                className="flex-wrap"
+                aria-label={t('patient.records.category')}
+                value={[filter]}
+                onValueChange={(v) => v[0] && setParams({ cat: v[0] === 'all' ? null : v[0] })}
+              >
+                <ToggleGroupItem value="all">{t('patient.records.all')}</ToggleGroupItem>
+                {present.map((c) => (
+                  <ToggleGroupItem key={c} value={c}>
+                    {t(`patient.records.categories.${c}`)}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            )}
           </CardHeader>
         )}
         <CardContent>
@@ -205,24 +274,32 @@ export default function RecordsView() {
           ) : !data ? (
             <Skeleton className="h-40" />
           ) : shown.length === 0 ? (
-            <Empty className="border p-6">
+            <Empty className="py-8">
               <EmptyHeader>
                 <EmptyMedia variant="icon">
                   <FileTextIcon />
                 </EmptyMedia>
-                <EmptyDescription>{docs.length === 0 ? t('patient.records.empty') : t('patient.records.emptyFilter')}</EmptyDescription>
+                <EmptyDescription>
+                  {docs.length === 0 ? t('patient.records.empty') : needle ? t('ux.records.noMatch', { q: query.trim() }) : t('patient.records.emptyFilter')}
+                </EmptyDescription>
               </EmptyHeader>
-              {docs.length === 0 && (
+              {docs.length > 0 && (needle || filter !== 'all') && (
                 <EmptyContent>
-                  <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
-                    <PlusIcon data-icon="inline-start" aria-hidden="true" />
-                    {t('patient.records.upload')}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setQuery('');
+                      setParams({ q: null, cat: null });
+                    }}
+                  >
+                    {t('ux.records.clear')}
                   </Button>
                 </EmptyContent>
               )}
             </Empty>
           ) : (
-            <ItemGroup className="gap-0">
+            <ItemGroup className="gap-0 has-data-[size=sm]:gap-0">
               {shown.map((d, i) => (
                 <React.Fragment key={d.id}>
                   {i > 0 && <ItemSeparator />}
@@ -230,7 +307,7 @@ export default function RecordsView() {
                     <FileBadge doc={d} />
                     <ItemContent className="min-w-0">
                       <ItemTitle className="w-full">
-                        <a href={patientApi.documentUrl(d.id)} target="_blank" rel="noopener noreferrer" className="truncate text-base underline-offset-4 hover:underline">
+                        <a href={patientApi.documentUrl(d.id)} target="_blank" rel="noopener noreferrer" className="truncate underline-offset-4 hover:underline">
                           {d.title}
                         </a>
                       </ItemTitle>

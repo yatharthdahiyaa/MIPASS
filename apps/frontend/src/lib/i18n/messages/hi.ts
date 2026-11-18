@@ -425,6 +425,53 @@ const hi: Messages = {
       completeness: 'प्रोफ़ाइल {n}% पूरी',
     },
   },
+  // Patient portal refinements (setup checklist, undo, search, visit summary).
+  ux: {
+    undo: 'पूर्ववत करें',
+    entryDeleted: 'प्रविष्टि हटाई गई',
+    seeTrend: '{metric} का रुझान देखें',
+    adherence: 'दवा नियमितता',
+    calendar: 'कैलेंडर में जोड़ें',
+    consultWith: '{name} के साथ परामर्श',
+    setup: {
+      title: 'शुरुआत करें',
+      progress: '{total} में से {done} पूरे',
+      done: 'पूरा',
+      checkin: 'अपनी पहली जानकारी दर्ज करें',
+      medicine: 'अपनी दवाएँ जोड़ें',
+      doctor: 'अपने डॉक्टर से जुड़ें',
+    },
+    records: {
+      search: 'रिकॉर्ड खोजें',
+      searchPlaceholder: 'शीर्षक, डॉक्टर/संस्था या नोट से खोजें',
+      newest: 'नए पहले',
+      oldest: 'पुराने पहले',
+      noMatch: '“{q}” से कोई रिकॉर्ड मेल नहीं खाता।',
+      clear: 'खोज साफ़ करें',
+    },
+    xray: {
+      chooseFirst: 'आगे बढ़ने के लिए एक्स-रे फ़ाइल चुनें।',
+    },
+    profileTabs: {
+      details: 'स्वास्थ्य विवरण',
+      alerts: 'सूचनाएँ',
+      security: 'सुरक्षा',
+      data: 'डेटा और गोपनीयता',
+    },
+    summary: {
+      open: 'मुलाक़ात सारांश',
+      body: 'अपॉइंटमेंट पर ले जाने के लिए आपके विवरण, दवाओं और हाल की रीडिंग का एक पेज का सारांश।',
+      print: 'प्रिंट करें',
+      back: 'प्रोफ़ाइल पर वापस',
+      generated: '{date} को तैयार',
+      details: 'विवरण',
+      medicines: 'चल रही दवाएँ',
+      readings: 'हाल की रीडिंग',
+      xray: 'हाल की छाती के एक्स-रे की जाँच',
+      none: 'कुछ दर्ज नहीं',
+      footer: 'रीडिंग और विवरण मरीज़ ने MIPAAS में दर्ज किए हैं। एक्स-रे का परिणाम AI स्क्रीनिंग है, निदान नहीं।',
+    },
+  },
 };
 
 export default hi;

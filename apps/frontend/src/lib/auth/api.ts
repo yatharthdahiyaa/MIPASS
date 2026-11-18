@@ -15,6 +15,8 @@ export interface SessionUser {
   organization: string | null;
   department: string | null;
   phone: string | null;
+  /** The phone number was confirmed with a one-time code. */
+  phone_verified: boolean;
   locale: string | null;
   email_verified: boolean;
   mfa_enabled: boolean;
@@ -94,6 +96,24 @@ export interface SessionState {
   authenticated: boolean;
   user: SessionUser | null;
   expires_at?: string;
+  /** Signed-out only: the server can send one-time codes to a phone, so "sign in with a code" is offered. */
+  phone_login?: boolean;
+  /** How those codes travel. */
+  phone_channel?: PhoneChannel;
+}
+
+export type PhoneChannel = 'sms' | 'whatsapp';
+
+/** What people see for a channel (a product name, not translated). */
+export const phoneChannelName = (channel: PhoneChannel | undefined) => (channel === 'whatsapp' ? 'WhatsApp' : 'SMS');
+
+export interface PhoneStatus {
+  available: boolean;
+  channel: PhoneChannel;
+  /** Account updates (not only codes) can be delivered by this channel. */
+  updates: boolean;
+  phone: string | null;
+  verified: boolean;
 }
 
 export class AuthApiError extends Error {
@@ -146,6 +166,14 @@ export const authApi = {
   /** Second step of sign-in: a 6-digit authenticator code or a recovery code. */
   mfaVerify: (mfa_token: string, code: string) => apiCall<SignedIn>('/auth/mfa/verify', post({ mfa_token, code })),
   register: (input: RegisterInput) => apiCall<SignedIn>('/auth/register', post(input)),
+
+  /** One-time codes (SMS or WhatsApp): confirm the number on the account, or sign in with it (patients). */
+  phoneStatus: () => apiCall<PhoneStatus>('/auth/phone'),
+  phoneVerifyRequest: () => apiCall<{ sent: boolean; phone: string }>('/auth/phone/verify/request', post()),
+  phoneVerifyConfirm: (code: string) => apiCall<{ verified: boolean; user: SessionUser }>('/auth/phone/verify/confirm', post({ code })),
+  phoneLoginRequest: (phone: string) => apiCall<{ sent: boolean }>('/auth/phone/login/request', post({ phone })),
+  phoneLoginConfirm: (phone: string, code: string, remember: boolean) =>
+    apiCall<SignedIn | MfaChallenge>('/auth/phone/login/confirm', post({ phone, code, remember })),
   logout: () => apiCall<{ signed_out: boolean }>('/auth/logout', { method: 'POST' }),
   updateProfile: (patch: ProfilePatch) =>
     apiCall<{ user: SessionUser }>('/auth/profile', { method: 'PATCH', body: JSON.stringify(patch) }),
