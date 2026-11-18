@@ -127,6 +127,8 @@ data/**
 !data/**/
 !data/**/.gitkeep
 !data/README.md
+# Stray copy of uploaded patient files (never commit patient data)
+apps/backend/data/
 
 # Tauri desktop app (apps/desktop)
 apps/desktop/src-tauri/target/
