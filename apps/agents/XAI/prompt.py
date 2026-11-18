@@ -1,4 +1,4 @@
-"""Instructions and output schema for the Grok review of Grad-CAM maps and the draft CXR report.
+"""Instructions and output schema for the vision-model review of Grad-CAM maps and the draft CXR report.
 
 Report structure follows the chest-radiograph-reporting skill summary (lev-os/agents on mcpmarket):
 Technique / Comparison / Findings / Impression, technical adequacy (rotation, inspiration, penetration),
@@ -97,9 +97,14 @@ def model_output_text(scores: list[dict], maps: list[dict], pixel_spacing_mm) ->
             for m in maps
         ],
     }
+    # Compact JSON: indentation carried no information and cost about a fifth of the request, which
+    # matters on Groq's free tier (7,000 input tokens a minute for the review model).
+    def compact(value) -> str:
+        return json.dumps(value, separators=(",", ":"), ensure_ascii=False)
+
     return (
-        f"MODEL_OUTPUT:\n{json.dumps(payload, indent=1)}\n\n"
+        f"MODEL_OUTPUT:\n{compact(payload)}\n\n"
         f"PIXEL_SPACING_MM (row, column, at the ORIGINAL image's full resolution; images sent may be downscaled): "
-        f"{json.dumps(pixel_spacing_mm)}\n\n"
-        f"OUTPUT_SCHEMA:\n{json.dumps(OUTPUT_SCHEMA, indent=1)}"
+        f"{compact(pixel_spacing_mm)}\n\n"
+        f"OUTPUT_SCHEMA:\n{compact(OUTPUT_SCHEMA)}"
     )

@@ -13,7 +13,12 @@ import hmac
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv
+# One OpenMP runtime per process: Anaconda's MKL (numpy/scipy) and the PyTorch wheel each ship
+# libiomp5md.dll, and when both start Intel's runtime aborts the server (OMP Error #15).
+# Sequential MKL never starts OpenMP. Must run before anything imports numpy.
+os.environ.setdefault("MKL_THREADING_LAYER", "SEQUENTIAL")
+
+from dotenv import load_dotenv  # noqa: E402
 from flask import Flask, jsonify, request
 
 # Before the agent imports: they read env vars at import time.
@@ -92,4 +97,12 @@ def run_agent(key: str):
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=int(os.getenv("AGENTS_PORT", "8100")), debug=True)
+    # Reloader off by default (FLASK_RELOAD=1 turns it on): a reload kills requests in flight, and
+    # an X-ray explanation for the chatbot takes about 20 s.
+    app.run(
+        host="127.0.0.1",
+        port=int(os.getenv("AGENTS_PORT", "8100")),
+        debug=True,
+        threaded=True,
+        use_reloader=os.getenv("FLASK_RELOAD", "0").lower() in ("1", "true", "yes"),
+    )

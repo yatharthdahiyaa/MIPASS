@@ -34,7 +34,7 @@ def analyze(upload_id: str, use_grok: bool = True) -> dict:
     if not use_grok:
         review = {"status": "skipped", "reason": "not requested"}
     elif not grok.configured():
-        review = {"status": "skipped", "reason": "XAI_API_KEY is not set"}
+        review = {"status": "skipped", "reason": grok.not_configured_reason()}
     else:
         images = [("ORIGINAL", result["display"])] + [(f"GRAD-CAM: {m['name']}", m["overlay"]) for m in result["maps"]]
         try:

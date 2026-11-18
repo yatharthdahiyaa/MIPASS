@@ -1,5 +1,6 @@
 """The XAI agent's chest X-ray model: same code as the backend, and (when the weights are present) a real run."""
 
+import importlib.util
 from pathlib import Path
 
 import numpy as np
@@ -8,6 +9,19 @@ import pytest
 AGENTS = Path(__file__).resolve().parents[1]
 BACKEND_COPY = AGENTS.parent / "backend" / "app" / "services" / "cxr_ensemble.py"
 CHECKPOINT = AGENTS.parents[1] / "ml" / "chexpert_ensemble.pth"
+
+
+def _need(*modules: str) -> None:
+    """Skip unless every module is installed, WITHOUT importing it.
+
+    pytest.importorskip("torch") would load torch before the XAI package does. On Anaconda for
+    Windows, torch and MKL (numpy/scipy) each ship an OpenMP runtime (libiomp5md.dll); when torch's
+    starts first and MKL's second, Intel's runtime aborts the whole process (OMP Error #15).
+    Importing through the package keeps the order server.py uses, which is safe.
+    """
+    missing = [m for m in modules if importlib.util.find_spec(m) is None]
+    if missing:
+        pytest.skip(f"not installed: {', '.join(missing)}")
 
 
 @pytest.mark.skipif(not BACKEND_COPY.exists(), reason="backend not in this checkout")
@@ -19,8 +33,7 @@ def test_ensemble_module_matches_the_backend():
 
 
 def test_overlay_file_names_have_no_spaces():
-    pytest.importorskip("torch")
-    pytest.importorskip("cv2")
+    _need("torch", "cv2")
     from XAI.model import slug
 
     assert slug("Lung Opacity") == "Lung_Opacity" and slug("Cardiomegaly") == "Cardiomegaly"
@@ -28,8 +41,7 @@ def test_overlay_file_names_have_no_spaces():
 
 @pytest.mark.skipif(not CHECKPOINT.exists(), reason="model weights (ml/chexpert_ensemble.pth) not present")
 def test_real_ensemble_scores_and_maps_a_radiograph_shaped_image():
-    pytest.importorskip("timm")
-    pytest.importorskip("cv2")
+    _need("timm", "cv2")
     from XAI import ensemble, gradcam
     from XAI.model import get_ensemble
 

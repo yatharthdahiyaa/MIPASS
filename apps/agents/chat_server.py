@@ -199,12 +199,26 @@ def _attachments(name: str, text: str, files: PatientFiles) -> list[dict]:
             if "audio" in o
         ]
     upload_id = data.get("upload_id")
-    # The agent's own overlay path (finding names with spaces are stored with "_").
-    return [
-        {"kind": "image", "label": m["name"], "url": "/media" + m["overlay"]}
-        for m in data.get("gradcam", [])
-        if isinstance(m.get("overlay"), str) and m["overlay"].startswith(f"/xai/{upload_id}/image/")
-    ]
+    prefix = f"/xai/{upload_id}/image/"
+    # The agent's own overlay path (finding names with spaces are stored with "_"). The MCP server
+    # hands file paths out as full agents-server URLs (http://127.0.0.1:8100/xai/...), so accept
+    # that form too; otherwise every heat-map was dropped and the reply described images the
+    # patient could not see.
+    attachments = []
+    for m in data.get("gradcam", []):
+        path = _served_path(m.get("overlay"))
+        if path and path.startswith(prefix):
+            attachments.append({"kind": "image", "label": m["name"], "url": "/media" + path})
+    return attachments
+
+
+def _served_path(value) -> str | None:
+    """'/xai/...' from either that path or the agents server's full URL for it; None for anything else."""
+    if not isinstance(value, str):
+        return None
+    if value.startswith(AGENTS_URL + "/"):
+        value = value[len(AGENTS_URL):]
+    return value if value.startswith("/") and ".." not in value else None
 
 
 SHOWN_IN_CHAT = "(shown to the patient in the chat)"
