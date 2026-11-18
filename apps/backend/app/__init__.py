@@ -8,7 +8,13 @@ middleware, and extensions for the MIPAAS API.
 import os
 from pathlib import Path
 
-import structlog
+# One OpenMP runtime per process. Anaconda's MKL (numpy/scipy) and the PyTorch wheel each ship
+# libiomp5md.dll; once the X-ray model has loaded torch, any threaded MKL call starts the second
+# copy and Intel's runtime aborts the whole server (OMP Error #15). Sequential MKL never starts
+# OpenMP, so torch's is the only one. Must run before anything imports numpy.
+os.environ.setdefault("MKL_THREADING_LAYER", "SEQUENTIAL")
+
+import structlog  # noqa: E402
 from flask import Flask
 from flask_cors import CORS
 

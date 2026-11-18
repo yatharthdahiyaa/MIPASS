@@ -29,6 +29,11 @@ class BaseConfig:
     MAIL_BACKEND = os.getenv("MAIL_BACKEND", "outbox")
     MAIL_FROM = os.getenv("MAIL_FROM", "MIPAAS <no-reply@mipaas.local>")
 
+    # Phone one-time codes and updates: PHONE_BACKEND off (default) / console / an add-on name such as twilio, and
+    # PHONE_CHANNEL sms (default) / whatsapp (see services/messaging.py)
+    PHONE_BACKEND = os.getenv("PHONE_BACKEND", os.getenv("WHATSAPP_BACKEND", "off"))
+    PHONE_CHANNEL = os.getenv("PHONE_CHANNEL", "sms")
+
     # Shared rate limiting across instances (optional)
     REDIS_URL = os.getenv("REDIS_URL")
 

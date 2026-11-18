@@ -27,7 +27,7 @@ class AgentRun(Base, TimestampMixin):
 
     status = Column(String(12), nullable=False, default="queued")  # queued, running, succeeded, failed
     params_json = Column(Text, nullable=True)  # the request: ids and options, never record content
-    output_json = Column(Text, nullable=True)
+    output_json = Column(Text, nullable=True)  
     error = Column(String(300), nullable=True)
     duration_ms = Column(Integer, nullable=True)
 

@@ -8,15 +8,11 @@ per-user channel preferences; and the e-mail outbox every message is written to.
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.orm import relationship
-
 from app.database.models.base import Base, TimestampMixin
-
 
 class User(Base, TimestampMixin):
     """Central User model for patients, clinicians, researchers and administrators."""
-
     __tablename__ = "users"
-
     username = Column(String(100), unique=True, nullable=False, index=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=True)
@@ -33,6 +29,8 @@ class User(Base, TimestampMixin):
     is_mfa_enabled = Column(Boolean, default=False, nullable=False)
     # Set when the address was confirmed through a verification link.
     email_verified_at = Column(DateTime(timezone=True), nullable=True)
+    # Set when the phone number was confirmed with a one-time code (SMS or WhatsApp). Cleared if the number changes.
+    phone_verified_at = Column(DateTime(timezone=True), nullable=True)
     # TOTP secret, Fernet-encrypted with MFA_ENCRYPTION_KEY (never stored in clear).
     mfa_secret_enc = Column(Text, nullable=True)
     mfa_enabled_at = Column(DateTime(timezone=True), nullable=True)

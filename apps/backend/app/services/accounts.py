@@ -10,6 +10,7 @@ Single-use tokens (verification links, reset links, MFA challenges) follow the s
 
 from __future__ import annotations
 
+import hmac
 import json
 import re
 import secrets
@@ -23,7 +24,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from app.database.models.iam import AuditLog, AuthToken, MfaRecoveryCode, User, UserSession
 from app.database.models.patient_ehr import ClinicianProfile, PatientProfile
-from app.services import mailer, notify, security
+from app.services import mailer, messaging, notify, security
 from app.services.rbac import ROLE_METADATA, ROLE_PERMISSIONS, Role
 
 logger = structlog.get_logger()
@@ -34,6 +35,8 @@ REMEMBER_TTL = timedelta(days=30)
 VERIFY_TTL = timedelta(hours=24)
 RESET_TTL = timedelta(hours=1)
 MFA_CHALLENGE_TTL = timedelta(minutes=5)
+PHONE_OTP_TTL = timedelta(minutes=10)
+PHONE_OTP_MAX_ATTEMPTS = 5
 RECOVERY_CODES = 8
 
 # Self-service sign-up is segregated by account type:
@@ -163,6 +166,7 @@ def serialize_user(user: User, db: Session | None = None) -> dict:
         "organization": user.organization,
         "department": user.department,
         "phone": user.phone,
+        "phone_verified": user.phone_verified_at is not None,
         "locale": user.locale,
         "permissions": sorted(p.value for p in ROLE_PERMISSIONS.get(role, set())),
         "account_type": account_type_of(role),
@@ -276,7 +280,7 @@ def create_account(
         role=role.value,
         organization=(organization or "").strip()[:150] or None,
         department=None,
-        phone=phone,
+        phone=messaging.normalize_phone(phone) or phone,
         locale=(locale or "")[:10] or None,
         is_active=True,
         password_changed_at=_utcnow(),
@@ -328,6 +332,10 @@ def update_profile(db: Session, user: User, data: dict) -> None:
         phone = str(data.get("phone") or "").strip() or None
         if phone and not _PHONE_RE.match(phone):
             raise AccountError("That doesn't look like a phone number.", 422, "invalid_phone")
+        phone = (messaging.normalize_phone(phone) or phone) if phone else None
+        if phone != user.phone:
+            # A different number has to be confirmed again.
+            user.phone_verified_at = None
         user.phone = phone
     if "organization" in data:
         user.organization = str(data.get("organization") or "").strip()[:150] or None
@@ -393,6 +401,146 @@ def consume_token(db: Session, purpose: str, token: str | None) -> AuthToken | N
     if row is not None:
         row.used_at = _utcnow()
     return row
+
+
+# ---------------------------------------------------------------------------
+# Phone verification and sign-in with a one-time code (SMS or WhatsApp)
+# ---------------------------------------------------------------------------
+
+
+def phone_available() -> bool:
+    return messaging.enabled()
+
+
+def _require_messaging() -> None:
+    if not messaging.enabled():
+        raise AccountError("Phone codes aren't available right now.", 503, "messaging_unavailable")
+
+
+def _otp_hash(user_id: str, phone: str, code: str) -> str:
+    return hash_token(f"{user_id}:{phone}:{code}")
+
+
+def _send_otp(db: Session, user: User, phone: str, purpose: str) -> None:
+    """Deliver a fresh code to ``phone``; any earlier unused code for this purpose stops working."""
+    _require_messaging()
+    if messaging.uses_local_codes():
+        code = f"{secrets.randbelow(10**6):06d}"
+        db.query(AuthToken).filter(
+            AuthToken.user_id == user.id, AuthToken.purpose == purpose, AuthToken.used_at.is_(None)
+        ).update({AuthToken.used_at: _utcnow()}, synchronize_session=False)
+        db.add(
+            AuthToken(
+                user_id=user.id,
+                purpose=purpose,
+                token_hash=hash_token(secrets.token_urlsafe(24)),
+                expires_at=_utcnow() + PHONE_OTP_TTL,
+                meta_json=json.dumps({"phone": phone, "code": _otp_hash(user.id, phone, code), "attempts": 0}),
+            )
+        )
+        db.flush()
+        # Development only: the code never leaves this machine.
+        logger.info("phone_otp_console", channel=messaging.channel(), to=messaging.mask(phone), code=code, purpose=purpose)
+        return
+    try:
+        messaging.start_verification(phone)
+    except messaging.MessagingError as exc:
+        raise AccountError(exc.message, exc.status, exc.code) from exc
+
+
+def _check_otp(db: Session, user: User, phone: str, purpose: str, code: str | None) -> bool:
+    """True when ``code`` is the live code for ``phone``. Wrong codes burn attempts, never raise."""
+    code = re.sub(r"\D", "", code or "")
+    if not 4 <= len(code) <= 10:
+        return False
+    if messaging.uses_local_codes():
+        row = (
+            db.query(AuthToken)
+            .filter(AuthToken.user_id == user.id, AuthToken.purpose == purpose, AuthToken.used_at.is_(None))
+            .order_by(AuthToken.created_at.desc())
+            .first()
+        )
+        if row is None or _as_utc(row.expires_at) <= _utcnow():
+            return False
+        meta = json.loads(row.meta_json or "{}")
+        if meta.get("phone") != phone:
+            return False
+        meta["attempts"] = int(meta.get("attempts", 0)) + 1
+        if meta["attempts"] > PHONE_OTP_MAX_ATTEMPTS:
+            row.used_at = _utcnow()
+            return False
+        row.meta_json = json.dumps(meta)
+        ok = hmac.compare_digest(str(meta.get("code", "")), _otp_hash(user.id, phone, code))
+        if ok:
+            row.used_at = _utcnow()
+        return ok
+    try:
+        return messaging.check_verification(phone, code)
+    except messaging.MessagingError as exc:
+        raise AccountError(exc.message, exc.status, exc.code) from exc
+
+
+def _verified_phone_owner(db: Session, phone: str) -> User | None:
+    return (
+        db.query(User)
+        .filter(User.phone == phone, User.phone_verified_at.is_not(None), User.is_active.is_(True))
+        .first()
+    )
+
+
+def phone_verify_start(db: Session, user: User) -> str:
+    """Send a code to the number on the profile. Returns the masked number for the UI."""
+    _require_messaging()
+    phone = messaging.normalize_phone(user.phone)
+    if phone is None:
+        raise AccountError(
+            "Add your phone number with its country code, for example +91 98765 43210.", 422, "invalid_phone"
+        )
+    owner = _verified_phone_owner(db, phone)
+    if owner is not None and owner.id != user.id:
+        # One verified number per account, otherwise a code could sign in to the wrong person.
+        raise AccountError("That number can't be used. Please try another.", 409, "phone_unavailable")
+    _send_otp(db, user, phone, "phone_verify")
+    return messaging.mask(phone)
+
+
+def phone_verify_confirm(db: Session, user: User, code: str | None) -> bool:
+    phone = messaging.normalize_phone(user.phone)
+    if phone is None or not _check_otp(db, user, phone, "phone_verify", code):
+        return False
+    owner = _verified_phone_owner(db, phone)
+    if owner is not None and owner.id != user.id:
+        return False
+    user.phone, user.phone_verified_at = phone, _utcnow()
+    return True
+
+
+def phone_login_start(db: Session, raw_phone: str | None) -> None:
+    """Send a sign-in code to a verified patient number. Unknown numbers get no error (no probing)."""
+    phone = messaging.normalize_phone(raw_phone)
+    if phone is None:
+        raise AccountError(
+            "Enter your phone number with its country code, for example +91 98765 43210.", 422, "invalid_phone"
+        )
+    _require_messaging()
+    user = _verified_phone_owner(db, phone)
+    if user is not None and role_of(user) == Role.PATIENT:
+        _send_otp(db, user, phone, "phone_login")
+
+
+def phone_login_complete(db: Session, raw_phone: str | None, code: str | None) -> User | None:
+    """The patient who owns this verified number if the code is right, else None.
+
+    Clinicians and administrators keep password sign-in: a phone code alone is not enough for
+    accounts that can see other people's records.
+    """
+    phone = messaging.normalize_phone(raw_phone)
+    if phone is None:
+        return None
+    user = _verified_phone_owner(db, phone)
+    if user is None or role_of(user) != Role.PATIENT:
+        return None
+    return user if _check_otp(db, user, phone, "phone_login", code) else None
 
 
 # ---------------------------------------------------------------------------

@@ -232,6 +232,8 @@ LIMITS = {
     "verify_request": Limit(3, 10 * 60),
     "password_forgot": Limit(3, 15 * 60),
     "mfa_verify": Limit(6, 10 * 60),
+    "phone_otp_send": Limit(3, 10 * 60),
+    "phone_otp_check": Limit(6, 10 * 60),
     "care_invite": Limit(20, 60 * 60),
     "message": Limit(60, 60),
     "agent_run": Limit(60, 60 * 60),

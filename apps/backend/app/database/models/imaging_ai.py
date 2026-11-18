@@ -6,6 +6,7 @@ Grad-CAM++/XAI artifacts, and the 9 clinical AI agents workflow audit runs.
 """
 
 from sqlalchemy import Column, Float, ForeignKey, Integer, String, Text
+
 from sqlalchemy.orm import relationship
 
 from app.database.models.base import Base, TimestampMixin
@@ -22,14 +23,24 @@ class DicomStudy(Base, TimestampMixin):
         nullable=True,
         index=True,
     )
+
+    
     study_instance_uid = Column(String(128), unique=True, nullable=False, index=True)
+    
     study_date = Column(String(20), nullable=True)
+    
     accession_number = Column(String(50), nullable=True, index=True)
+    
     modality = Column(String(20), nullable=False, index=True)  # CT, MR, CR, DX, US
+    
     study_description = Column(String(255), nullable=True)
+    
     num_series = Column(Integer, default=1)
+    
     num_instances = Column(Integer, default=1)
+    
     patient_age = Column(String(20), nullable=True)
+    
     patient_gender = Column(String(20), nullable=True)
 
     # Relationships

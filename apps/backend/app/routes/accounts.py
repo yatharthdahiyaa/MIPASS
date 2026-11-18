@@ -18,6 +18,13 @@ E-mail verification and passwords
     POST /auth/password/reset           {token, password}
     POST /auth/password/change          {current_password, new_password}  (signs out other devices)
 
+Phone number and one-time codes (SMS or WhatsApp, see services/messaging.py)
+    GET  /auth/phone                    {available, channel, updates, phone, verified}
+    POST /auth/phone/verify/request     send a code to the number on the profile
+    POST /auth/phone/verify/confirm     {code}
+    POST /auth/phone/login/request      {phone}  always 200 for a well-formed number
+    POST /auth/phone/login/confirm      {phone, code, remember?}  patients with a verified number
+
 Two-step verification (TOTP)
     GET  /auth/mfa                      status
     POST /auth/mfa/setup                -> {secret, otpauth_uri}
@@ -45,7 +52,7 @@ from flask import Blueprint, current_app, g, make_response, request
 
 from app.database.session import get_db
 from app.middleware.auth_middleware import get_authenticated_user
-from app.services import accounts, events
+from app.services import accounts, events, messaging
 from app.services.security import LIMITS, get_rate_limiter
 from app.utils.response import api_error, api_response
 
@@ -252,6 +259,112 @@ def mfa_verify():
         return api_error(exc.message, exc.status, exc.code)
 
 
+# ---------------------------------------------------------------------------
+# Phone number: verification and sign-in with a one-time code
+# ---------------------------------------------------------------------------
+
+
+@accounts_bp.route("/auth/phone", methods=["GET"])
+def phone_status():
+    user, denied = _require_user()
+    if denied:
+        return denied
+    with get_db() as db:
+        row = _db_user(db)
+        return api_response(
+            {
+                "available": accounts.phone_available(),
+                "channel": messaging.channel(),
+                "updates": messaging.can_send_updates(),
+                "phone": row.phone,
+                "verified": row.phone_verified_at is not None,
+            }
+        )
+
+
+@accounts_bp.route("/auth/phone/verify/request", methods=["POST"])
+def phone_verify_request():
+    user, denied = _require_user()
+    if denied:
+        return denied
+    if (blocked := _throttled("phone_otp_send", user.id)) is not None:
+        return blocked
+    try:
+        with get_db() as db:
+            row = _db_user(db)
+            masked = accounts.phone_verify_start(db, row)
+            accounts.record_audit(db, "auth.phone.request", _ctx(), user=row)
+            return api_response({"sent": True, "phone": masked})
+    except accounts.AccountError as exc:
+        return api_error(exc.message, exc.status, exc.code)
+
+
+@accounts_bp.route("/auth/phone/verify/confirm", methods=["POST"])
+def phone_verify_confirm():
+    user, denied = _require_user()
+    if denied:
+        return denied
+    if (blocked := _throttled("phone_otp_check", user.id)) is not None:
+        return blocked
+    try:
+        with get_db() as db:
+            row = _db_user(db)
+            if not accounts.phone_verify_confirm(db, row, str(_json().get("code") or "")):
+                accounts.record_audit(db, "auth.phone.confirm", _ctx(), user=row, status="failure")
+                return api_error("That code isn't right, or it has expired.", 401, "bad_code")
+            accounts.record_audit(db, "auth.phone.confirm", _ctx(), user=row)
+            return api_response({"verified": True, "user": accounts.serialize_user(row, db)})
+    except accounts.AccountError as exc:
+        return api_error(exc.message, exc.status, exc.code)
+
+
+@accounts_bp.route("/auth/phone/login/request", methods=["POST"])
+def phone_login_request():
+    data = _json()
+    ctx = _ctx()
+    phone = str(data.get("phone") or "")
+    if (blocked := _throttled("phone_otp_send", f"{phone.strip()}|{ctx.ip or ''}")) is not None:
+        return blocked
+    try:
+        with get_db() as db:
+            accounts.phone_login_start(db, phone)
+    except accounts.AccountError as exc:
+        return api_error(exc.message, exc.status, exc.code)
+    # Same answer whether or not the number belongs to an account.
+    return api_response({"sent": True})
+
+
+@accounts_bp.route("/auth/phone/login/confirm", methods=["POST"])
+def phone_login_confirm():
+    data = _json()
+    ctx = _ctx()
+    phone = str(data.get("phone") or "")
+    remember = bool(data.get("remember"))
+    if (blocked := _throttled("phone_otp_check", f"{phone.strip()}|{ctx.ip or ''}")) is not None:
+        return blocked
+    try:
+        with get_db() as db:
+            user = accounts.phone_login_complete(db, phone, str(data.get("code") or ""))
+            if user is None:
+                accounts.record_audit(
+                    db, "auth.phone.login", ctx, username=phone[:100], status="failure"
+                )
+                return api_error("That code isn't right, or it has expired.", 401, "bad_code")
+            if user.is_mfa_enabled:
+                # A phone code replaces the password, not the authenticator app.
+                challenge = accounts.mfa_challenge(db, user, remember=remember, client="web")
+                return api_response(
+                    {
+                        "mfa_required": True,
+                        "mfa_token": challenge,
+                        "expires_in": int(accounts.MFA_CHALLENGE_TTL.total_seconds()),
+                    }
+                )
+            return _signed_in(db, user, ctx, remember=remember, client="web")
+    except accounts.AccountError as exc:
+        return api_error(exc.message, exc.status, exc.code)
+
+
 @accounts_bp.route("/auth/logout", methods=["POST"])
 def logout():
     ctx = _ctx()
@@ -270,7 +383,14 @@ def session_info():
     with get_db() as db:
         resolved = accounts.resolve_session(db, _session_token())
         if resolved is None:
-            return api_response({"authenticated": False, "user": None})
+            return api_response(
+                {
+                    "authenticated": False,
+                    "user": None,
+                    "phone_login": accounts.phone_available(),
+                    "phone_channel": messaging.channel(),
+                }
+            )
         user, record = resolved
         return api_response(
             {

@@ -1,6 +1,5 @@
-"""
-Doctor <-> patient connection tables.
-
+""" Doctor <-> patient connection tables 
+    
 * ``care_links``        a consented relationship between one patient and one verified doctor,
                         with the record scopes the patient has shared.
 * ``care_messages``     secure messages inside a care link (either party can write).
@@ -88,17 +87,21 @@ class ClinicianReview(Base, TimestampMixin):
 
 
 class ConsultRequest(Base, TimestampMixin):
+
     __tablename__ = "consult_requests"
 
     link_id = Column(
         String(64), ForeignKey("care_links.id", ondelete="CASCADE"), nullable=False, index=True
     )
+
     patient_id = Column(
         String(64), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
+
     doctor_id = Column(
         String(64), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    
     status = Column(String(12), nullable=False, default="requested", index=True)
     mode = Column(String(12), nullable=False, default="video")
     reason = Column(Text, nullable=False)

@@ -14,6 +14,7 @@ from app.database.models.base import Base, TimestampMixin
 class FamilyMember(Base, TimestampMixin):
     """Eka.care family health profile linked to user account and ABDM ABHA."""
 
+    
     __tablename__ = "family_members"
 
     user_id = Column(
@@ -40,6 +41,7 @@ class FamilyMember(Base, TimestampMixin):
         return f"<FamilyMember id={self.id} name='{self.name}' abha={self.abha_id}>"
 
 
+
 class Medication(Base, TimestampMixin):
     """Prescription medication schedule with daily adherence tracking."""
 
@@ -58,6 +60,8 @@ class Medication(Base, TimestampMixin):
     time_slot = Column(String(50), nullable=False)
     taken_today = Column(Boolean, default=False, nullable=False)
     last_taken_date = Column(String(20), nullable=True)  # YYYY-MM-DD
+
+
 
     # Relationships
     member = relationship("FamilyMember", back_populates="medications")
@@ -96,6 +100,7 @@ class VitalRecord(Base, TimestampMixin):
 
 
 class HealthRecord(Base, TimestampMixin):
+
     """Encrypted personal health record stored in Eka.care health locker."""
 
     __tablename__ = "health_records"

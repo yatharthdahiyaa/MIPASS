@@ -1,6 +1,5 @@
 """
 Central database session and engine for MIPAAS.
-
 PostgreSQL is the only supported database. The SQLAlchemy models in
 ``app.database.models`` are the single source of truth for the schema;
 ``init_db()`` creates any missing tables on startup.

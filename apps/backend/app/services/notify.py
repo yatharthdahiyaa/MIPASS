@@ -30,7 +30,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database.models.iam import Notification, NotificationPreference, User
-from app.services import mailer
+from app.services import mailer, messaging
 
 logger = structlog.get_logger()
 
@@ -48,6 +48,22 @@ KINDS = (
 )
 # E-mail is on by default for everything except chat messages (those arrive often).
 DEFAULT_EMAIL = {k: k != "care.message" for k in KINDS}
+# Text messages are opt-in, except sign-in and password alerts once the person has verified a number.
+DEFAULT_PHONE = {k: k == "account.security" for k in KINDS}
+
+# SMS and WhatsApp are not clinical channels: messages say that something happened, never what it was.
+PHONE_TEXT = {
+    "care.invite": "A doctor has sent you a connection request.",
+    "care.accepted": "Your care connection is now active.",
+    "care.message": "You have a new secure message.",
+    "care.review": "Your care team reviewed something in your record.",
+    "consult.update": "There is an update on your consultation.",
+    "report.ready": "A report has been shared with you.",
+    "screening.result": "Your screening result is ready.",
+    "vitals.alert": "A reading you logged needs your attention.",
+    "account.security": "There was a security update on your account.",
+    "account.verification": "There is an update on your account verification.",
+}
 
 
 def _utcnow() -> datetime:
@@ -57,7 +73,13 @@ def _utcnow() -> datetime:
 def preferences(db: Session, user_id: str) -> dict[str, dict[str, bool]]:
     row = db.query(NotificationPreference).filter_by(user_id=user_id).first()
     stored = json.loads(row.prefs_json) if row and row.prefs_json else {}
-    return {k: {"email": bool(stored.get(k, {}).get("email", DEFAULT_EMAIL[k]))} for k in KINDS}
+    return {
+        k: {
+            "email": bool(stored.get(k, {}).get("email", DEFAULT_EMAIL[k])),
+            "phone": bool(stored.get(k, {}).get("phone", DEFAULT_PHONE[k])),
+        }
+        for k in KINDS
+    }
 
 
 def update_preferences(db: Session, user_id: str, patch: dict[str, Any]) -> dict:
@@ -67,8 +89,10 @@ def update_preferences(db: Session, user_id: str, patch: dict[str, Any]) -> dict
         db.add(row)
     current = preferences(db, user_id)
     for kind, value in (patch or {}).items():
-        if kind in KINDS and isinstance(value, dict) and "email" in value:
-            current[kind]["email"] = bool(value["email"])
+        if kind in KINDS and isinstance(value, dict):
+            for channel in ("email", "phone"):
+                if channel in value:
+                    current[kind][channel] = bool(value[channel])
     row.prefs_json = json.dumps(current)
     db.flush()
     return current
@@ -126,6 +150,17 @@ def notify(
             user_id=user_id,
         )
         row.emailed_at = _utcnow()
+
+    if (
+        user is not None
+        and user.phone
+        and user.phone_verified_at is not None
+        and messaging.can_send_updates()
+        and preferences(db, user_id)[kind]["phone"]
+    ):
+        messaging.send_update(
+            db, user.phone, f"MIPAAS: {PHONE_TEXT[kind]} Open {mailer.link(link or '/account')}"
+        )
     return row
 
 
